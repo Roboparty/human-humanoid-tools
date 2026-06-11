@@ -29,7 +29,7 @@ class InteractionMeshPipelineConfig:
     bend the foot.
     """
 
-    mpc_horizon: int = 1
+    mpc_horizon: int = 5
     # Weight on the Laplacian (interaction-mesh shape preservation)
     # cost.  Empirical finding (parc_ms BOXES_12 + holosoma parkour_1,
     # 80 frames each, rp1 at ``pw=200``):
@@ -66,7 +66,9 @@ class InteractionMeshPipelineConfig:
     # heightfield in world coordinates.
     laplacian_weight: float = 0.0
     sqp_step_size: float = 0.2
-    sqp_inner_iters: int = 10
+    sqp_inner_iters: int = 3
+    # Extra SQP inner iterations on frame 0 only (base warm-start).
+    sqp_inner_iters_frame0: int = 5
     # The smoothness term ``sw · ‖q_new − q_prev‖²`` couples each
     # frame's QP back to the previous frame's solve, breaking the
     # "valley jumping" failure mode where the SQP, finding the
@@ -100,7 +102,11 @@ class InteractionMeshPipelineConfig:
     # dominate the boxing clip's frame-to-frame change.  Past ~96
     # the trajectory starts visibly lagging behind the source on
     # rapid actions (boxing punches, parkour leaps).
-    smooth_weight: float = 48.0
+    smooth_weight: float = 2.0
+    # Extra temporal smooth multiplier on leg actuated DOFs (hip/knee/ankle).
+    leg_smooth_weight: float = 4.0
+    # Per-iteration trust-region scale on leg hinges (< 1 → smaller |Δq| per SQP step).
+    leg_sqp_step_scale: float = 0.75
     object_surface_samples: int = 32
 
     # Number of terrain-surface anchor points sampled from the
@@ -153,7 +159,7 @@ class InteractionMeshPipelineConfig:
     # targets are slightly unreachable (anatomy mismatch between
     # source bone lengths and robot link lengths after uniform
     # ``smpl_scale``).
-    position_weight: float = 400.0
+    position_weight: float = 200.0
 
     # Tikhonov regularisation pulling the **actuated** joints toward
     # the model's home keyframe (``mj_resetData`` qpos0).  Without
@@ -169,7 +175,7 @@ class InteractionMeshPipelineConfig:
     # the well-constrained DOFs.  Free-joint DOFs (XYZ + quat) are
     # excluded from the regulariser — those are anchored by
     # ``position_weight`` on the pelvis vertex.
-    home_pose_weight: float = 0.5
+    home_pose_weight: float = 1.0
 
     # Position-cost weight multiplier on the wrist / ``hand_tip`` effector for
     # **grasping** clips (those carrying interaction objects, e.g. OMOMO
@@ -181,6 +187,11 @@ class InteractionMeshPipelineConfig:
     # only applied when ``motion.objects`` is non-empty so locomotion clips are
     # unaffected.
     hand_contact_weight: float = 8.0
+
+    # Position-cost multiplier on leg / pelvis effectors (ankle, knee, hip, foot).
+    # Locomotion clips benefit from heavier leg tracking so the solver does not
+    # trade leg accuracy for arm / Laplacian residuals frame-to-frame.
+    leg_effector_weight: float = 3.0
 
     enable_collision: bool = True
 
@@ -200,6 +211,32 @@ class InteractionMeshPipelineConfig:
     # step in one iteration even if some objective gradient points in
     # that direction.
     sqp_base_step_size: float = 0.05
+
+    # Holosoma-style foot sticking: when the source foot is in contact
+    # (low XY velocity), pin the robot foot XY near the previous solved
+    # frame via hard OSQP inequalities.
+    activate_foot_sticking: bool = True
+    foot_sticking_tolerance: float = 1e-3
+    foot_sticking_velocity_threshold: float = 0.01
+    # Keep foot sticky for this many frames after source velocity exceeds the
+    # threshold — stops contact-flag flicker that injects leg micro-jitter.
+    foot_sticking_release_hysteresis: int = 3
+    # SQP Gauss-Seidel passes over the MPC window before committing frame 0.
+    # Only used when ``mpc_horizon > 1``.  With ``mpc_horizon=1`` (holosoma
+    # default, foot sticking only) this is ignored.
+    mpc_window_sqp_iters: int = 2
+    # When ``mpc_horizon > 1``, slide the previous window solution forward
+    # and run at most one outer pass on later frames (large speed win).
+    mpc_window_warm_start: bool = True
+    # Skip ``mj_geomDistance`` collision rows on preview frames (k > 0) inside
+    # the MPC window — only the committed frame needs terrain constraints.
+    mpc_collision_commit_only: bool = True
+
+    # One-pole low-pass on leg actuated qpos after MPC (causal, no phase lag on
+    # arms).  ``beta=0.2`` blends 20 % of the previous frame into each leg joint;
+    # increase toward 0.35 if slight tremble remains, decrease if legs feel mushy.
+    post_smooth_leg_joints: bool = True
+    post_smooth_leg_beta: float = 0.2
 
 
 __all__ = ["InteractionMeshPipelineConfig"]

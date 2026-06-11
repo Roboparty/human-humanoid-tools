@@ -327,6 +327,21 @@ class InteractionMeshPipeline:
                 )
             ]
 
+        leg_w = float(self.cfg.leg_effector_weight)
+        if leg_w != 1.0:
+            import dataclasses
+
+            _leg_keys = ("ankle", "knee", "hip", "foot", "pelvis")
+            robot_points = [
+                dataclasses.replace(
+                    pt,
+                    weight=float(getattr(pt, "weight", 1.0)) * leg_w,
+                )
+                if any(k in str(getattr(pt, "semantic", "")).lower() for k in _leg_keys)
+                else pt
+                for pt in robot_points
+            ]
+
         mapped_pos, z_min, smpl_scale = self._build_contact_scaled_positions(
             motion, robot_points,
         )
@@ -1015,7 +1030,11 @@ class InteractionMeshPipeline:
     ):
         """SQP + RTI MPC on MuJoCo; returns :class:`~hhtools.retarget.newton_basic.pipeline.RetargetedMotion`."""
         from hhtools.retarget.interaction_mesh.collision import cleanup_terrain_files
-        from hhtools.retarget.interaction_mesh.mpc_loop import iterate_mpc_rti
+        from hhtools.retarget.interaction_mesh.mpc_loop import (
+            _leg_actuated_qpos_indices,
+            causal_smooth_actuated_qpos,
+            iterate_mpc_rti,
+        )
         from hhtools.retarget.retarget_result import RetargetedMotion
 
         scene = MujocoScene.from_robot(self.robot)
@@ -1076,8 +1095,18 @@ class InteractionMeshPipeline:
                 smooth_weight=self.cfg.smooth_weight,
                 mpc_horizon=self.cfg.mpc_horizon,
                 sqp_inner_iters=self.cfg.sqp_inner_iters,
+                sqp_inner_iters_frame0=self.cfg.sqp_inner_iters_frame0,
+                mpc_window_sqp_iters=self.cfg.mpc_window_sqp_iters,
+                mpc_window_warm_start=self.cfg.mpc_window_warm_start,
+                mpc_collision_commit_only=self.cfg.mpc_collision_commit_only,
                 position_weight=self.cfg.position_weight,
                 home_pose_weight=self.cfg.home_pose_weight,
+                activate_foot_sticking=self.cfg.activate_foot_sticking,
+                foot_sticking_tolerance=self.cfg.foot_sticking_tolerance,
+                foot_sticking_velocity_threshold=self.cfg.foot_sticking_velocity_threshold,
+                foot_sticking_release_hysteresis=self.cfg.foot_sticking_release_hysteresis,
+                leg_smooth_weight=self.cfg.leg_smooth_weight,
+                leg_sqp_step_scale=self.cfg.leg_sqp_step_scale,
                 collision_model=coll_model,
                 collision_data=coll_data,
                 collision_threshold=self.cfg.collision_threshold,
@@ -1089,6 +1118,14 @@ class InteractionMeshPipeline:
         finally:
             if tmp_terrain_files:
                 cleanup_terrain_files(tmp_terrain_files)
+
+        if self.cfg.post_smooth_leg_joints and traj.shape[0] > 1:
+            leg_idx = _leg_actuated_qpos_indices(mj)
+            traj = causal_smooth_actuated_qpos(
+                traj,
+                leg_idx,
+                beta=float(self.cfg.post_smooth_leg_beta),
+            )
 
         dof_names = self.robot.dof_names()
         rows = [pack_joint_q_csv(mj, dof_names, traj[f]) for f in range(traj.shape[0])]

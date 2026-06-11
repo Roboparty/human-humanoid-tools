@@ -425,6 +425,239 @@ def _compute_hard_nonpenetration_rows(
     )
 
 
+def resolve_foot_mpc_points(
+    robot_points: list[RobotMpcPoint] | None,
+    nh: int,
+) -> tuple[RobotMpcPoint | None, RobotMpcPoint | None]:
+    """Pick left/right foot MPC points for holosoma-style foot sticking."""
+
+    if not robot_points:
+        return None, None
+
+    def _pick(side: str) -> RobotMpcPoint | None:
+        cands: list[tuple[int, RobotMpcPoint]] = []
+        for pt in robot_points:
+            sem = str(getattr(pt, "semantic", "")).lower()
+            if side not in sem:
+                continue
+            if not any(k in sem for k in ("foot", "ankle", "toe")):
+                continue
+            score = 1
+            if ":toe" in sem:
+                score = 3
+            elif sem.endswith("_foot") or sem == f"{side}_foot":
+                score = 2
+            cands.append((score, pt))
+        if not cands:
+            return None
+        cands.sort(key=lambda x: -x[0])
+        return cands[0][1]
+
+    return _pick("left"), _pick("right")
+
+
+def _mpc_point_vertex_index(
+    mpc_points: list[RobotMpcPoint],
+    nh: int,
+    pt: RobotMpcPoint | None,
+) -> int | None:
+    """Index of ``pt`` within ``mpc_points[:nh]``, or ``None`` if not in the Laplacian mesh."""
+    if pt is None:
+        return None
+    for i, p in enumerate(mpc_points[:nh]):
+        if p.body_name != pt.body_name:
+            continue
+        if np.allclose(p.local_offset, pt.local_offset, atol=1e-9):
+            return i
+    return None
+
+
+def extract_foot_sticking_sequences(
+    targets: list[FrameLaplacianTarget],
+    robot_points: list[RobotMpcPoint] | None,
+    *,
+    velocity_threshold: float = 0.01,
+) -> list[dict[str, bool]]:
+    """Contact flags from source-foot XY velocity (holosoma ``extract_foot_sticking_sequence_velocity``)."""
+
+    n = len(targets)
+    if n == 0:
+        return []
+
+    left_vi = right_vi = None
+    if robot_points:
+        for i, pt in enumerate(robot_points):
+            sem = str(getattr(pt, "semantic", "")).lower()
+            if sem == "left_foot" or (
+                left_vi is None and "left" in sem and "foot" in sem and ":" not in sem
+            ):
+                left_vi = i
+            if sem == "right_foot" or (
+                right_vi is None and "right" in sem and "foot" in sem and ":" not in sem
+            ):
+                right_vi = i
+
+    left_xy = right_xy = None
+    if left_vi is not None:
+        left_xy = np.stack(
+            [t.source_vertices[left_vi, :2] for t in targets], axis=0,
+        )
+    if right_vi is not None:
+        right_xy = np.stack(
+            [t.source_vertices[right_vi, :2] for t in targets], axis=0,
+        )
+
+    out: list[dict[str, bool]] = []
+    for i in range(n):
+        l_stick = False
+        r_stick = False
+        if left_xy is not None and i > 0:
+            l_stick = bool(
+                np.linalg.norm(left_xy[i] - left_xy[i - 1]) <= float(velocity_threshold)
+            )
+        if right_xy is not None and i > 0:
+            r_stick = bool(
+                np.linalg.norm(right_xy[i] - right_xy[i - 1]) <= float(velocity_threshold)
+            )
+        out.append({"L_Foot": l_stick, "R_Foot": r_stick})
+    return out
+
+
+def stabilize_foot_sticking_sequences(
+    seq: list[dict[str, bool]],
+    *,
+    release_hysteresis: int = 0,
+) -> list[dict[str, bool]]:
+    """Hysteresis on foot release — avoids one-frame contact drops that jitter legs."""
+    if not seq or release_hysteresis <= 0:
+        return seq
+    keys = list(seq[0].keys())
+    out: list[dict[str, bool]] = [dict(seq[0])]
+    hold = {k: 0 for k in keys}
+    for i in range(1, len(seq)):
+        row: dict[str, bool] = {}
+        for k in keys:
+            if seq[i].get(k, False):
+                hold[k] = int(release_hysteresis)
+                row[k] = True
+            elif hold[k] > 0:
+                hold[k] -= 1
+                row[k] = True
+            else:
+                row[k] = False
+        out.append(row)
+    return out
+
+
+def _leg_actuated_qpos_indices(model) -> NDArray[np.int64]:
+    """qpos rows for leg hinges (hip / knee / ankle and common aliases)."""
+    import mujoco
+
+    keys = ("hip", "knee", "ankle", "thigh", "calf", "leg", "shank")
+    idx: list[int] = []
+    for j in range(model.njnt):
+        jt = int(model.jnt_type[j])
+        if jt not in (
+            int(mujoco.mjtJoint.mjJNT_HINGE),
+            int(mujoco.mjtJoint.mjJNT_SLIDE),
+        ):
+            continue
+        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, j) or ""
+        nl = name.lower()
+        if any(k in nl for k in keys):
+            idx.append(int(model.jnt_qposadr[j]))
+    return np.asarray(idx, dtype=np.int64)
+
+
+def causal_smooth_actuated_qpos(
+    traj: NDArray[np.float64],
+    actuated_idx: NDArray[np.int64],
+    *,
+    beta: float,
+) -> NDArray[np.float64]:
+    """``q[t] ← (1−β)·q[t] + β·q[t−1]`` on selected DOFs (causal leg low-pass)."""
+    if traj.shape[0] < 2 or actuated_idx.size == 0 or beta <= 0.0:
+        return traj
+    b = float(np.clip(beta, 0.0, 0.95))
+    out = np.asarray(traj, dtype=np.float64).copy()
+    idx = actuated_idx
+    for t in range(1, out.shape[0]):
+        out[t, idx] = (1.0 - b) * out[t, idx] + b * out[t - 1, idx]
+    return out
+
+
+def _build_foot_sticking_rows(
+    model,
+    data,
+    q_work: NDArray[np.float64],
+    q_ref: NDArray[np.float64],
+    *,
+    left_foot_pt: RobotMpcPoint | None,
+    right_foot_pt: RobotMpcPoint | None,
+    foot_sticking: dict[str, bool] | None,
+    tolerance: float,
+    nq: int,
+    J_r: NDArray[np.float64] | None = None,
+    left_vi: int | None = None,
+    right_vi: int | None = None,
+) -> tuple[list[NDArray[np.float64]], list[float], list[float]]:
+    """Hard foot XY rows: ``foot_lb ≤ J_xy δq ≤ foot_ub`` (holosoma foot sticking)."""
+    import mujoco
+
+    if not foot_sticking:
+        return [], [], []
+
+    left_key = right_key = None
+    for key, active in foot_sticking.items():
+        if not active:
+            continue
+        kl = key.lower()
+        if kl.startswith("l"):
+            left_key = key
+        elif kl.startswith("r"):
+            right_key = key
+
+    entries: list[tuple[RobotMpcPoint, str, int | None]] = []
+    if left_key is not None and left_foot_pt is not None and foot_sticking.get(left_key, False):
+        entries.append((left_foot_pt, "left", left_vi))
+    if right_key is not None and right_foot_pt is not None and foot_sticking.get(right_key, False):
+        entries.append((right_foot_pt, "right", right_vi))
+    if not entries:
+        return [], [], []
+
+    saved = np.asarray(data.qpos, dtype=np.float64).copy()
+    tol = float(tolerance)
+
+    data.qpos[:] = q_ref
+    mujoco.mj_forward(model, data)
+    ref_xy: dict[str, NDArray[np.float64]] = {}
+    for pt, side, _ in entries:
+        ref_xy[side] = _current_robot_point_positions(model, data, [pt])[0, :2].copy()
+
+    data.qpos[:] = q_work
+    mujoco.mj_forward(model, data)
+
+    j_rows: list[NDArray[np.float64]] = []
+    lbs: list[float] = []
+    ubs: list[float] = []
+    for pt, side, vi in entries:
+        p_cur = _current_robot_point_positions(model, data, [pt])[0, :2]
+        if J_r is not None and vi is not None:
+            j_xy = J_r[3 * vi : 3 * (vi + 1), :][:2]
+        else:
+            j_xy = _stack_vertex_jacobians(model, data, [pt], nq).reshape(3, nq)[:2]
+        delta = ref_xy[side] - p_cur
+        lb = delta - tol
+        ub = lb + 2.0 * tol
+        for d in range(2):
+            j_rows.append(j_xy[d].astype(np.float64, copy=False))
+            lbs.append(float(lb[d]))
+            ubs.append(float(ub[d]))
+
+    data.qpos[:] = saved
+    return j_rows, lbs, ubs
+
+
 def sqp_step_laplacian(
     model,
     data,
@@ -453,6 +686,16 @@ def sqp_step_laplacian(
     penetration_tolerance: float = 0.002,
     collision_fd_epsilon: float = 1e-5,
     collision_max_pairs_per_body: int = 4,
+    # --- holosoma-style foot sticking (hard XY inequalities) ---
+    activate_foot_sticking: bool = False,
+    foot_sticking: dict[str, bool] | None = None,
+    q_foot_ref: NDArray[np.floating] | None = None,
+    left_foot_pt: RobotMpcPoint | None = None,
+    right_foot_pt: RobotMpcPoint | None = None,
+    foot_sticking_tolerance: float = 1e-3,
+    leg_actuated_qpos_idx: NDArray[np.int64] | None = None,
+    leg_smooth_weight: float = 1.0,
+    leg_sqp_step_scale: float = 1.0,
     # --- trust region ---
     base_step_size: float | None = None,
 ) -> NDArray[np.float64]:
@@ -520,6 +763,8 @@ def sqp_step_laplacian(
     q_work = np.asarray(qpos, dtype=np.float64).copy()
 
     has_hard_np = collision_model is not None and collision_data is not None
+    left_foot_vi = _mpc_point_vertex_index(mpc_points, nh, left_foot_pt)
+    right_foot_vi = _mpc_point_vertex_index(mpc_points, nh, right_foot_pt)
 
     for _ in range(sqp_inner_iters):
         data.qpos[:] = q_work
@@ -541,8 +786,27 @@ def sqp_step_laplacian(
         if q_prev is not None and smooth_weight > 0:
             sw = float(smooth_weight)
             dq_smooth = np.asarray(q_prev, dtype=np.float64) - q_work
-            qp.P[:] += 2.0 * sw * np.eye(nq, dtype=np.float64)
-            qp.q_vec[:] += -2.0 * sw * dq_smooth
+            # Holosoma smoothness applies on actuated q_a only — not the FREE
+            # joint (pelvis XYZ/quat are anchored by position_weight instead).
+            # Smoothing all nq DOFs was over-damping the base while under-
+            # constraining hip/knee relative to q_prev, which shows up as leg
+            # jitter especially with mpc_horizon > 1 window solves.
+            if actuated_qpos_idx is not None and actuated_qpos_idx.size > 0:
+                idx = actuated_qpos_idx
+                sw_diag = np.full(int(idx.size), sw, dtype=np.float64)
+                lsw = float(leg_smooth_weight)
+                if (
+                    lsw != 1.0
+                    and leg_actuated_qpos_idx is not None
+                    and leg_actuated_qpos_idx.size > 0
+                ):
+                    leg_mask = np.isin(idx, leg_actuated_qpos_idx)
+                    sw_diag[leg_mask] *= lsw
+                qp.P[np.ix_(idx, idx)] += 2.0 * np.diag(sw_diag)
+                qp.q_vec[idx] += -2.0 * sw_diag * dq_smooth[idx]
+            else:
+                qp.P[:] += 2.0 * sw * np.eye(nq, dtype=np.float64)
+                qp.q_vec[:] += -2.0 * sw * dq_smooth
 
         # ---- Absolute-position tracking cost ------------------
         # Adds ``½ · pw · Σ_i ‖ pos_robot_i − pos_target_i ‖²`` for
@@ -621,19 +885,59 @@ def sqp_step_laplacian(
             jl_ub = q_ub - q_work
             np.maximum(lb, jl_lb, out=lb)
             np.minimum(ub, jl_ub, out=ub)
+        leg_scale = float(leg_sqp_step_scale)
+        if (
+            leg_scale > 0.0
+            and leg_scale < 1.0
+            and leg_actuated_qpos_idx is not None
+            and leg_actuated_qpos_idx.size > 0
+        ):
+            cap = float(step_size) * leg_scale
+            for qi in leg_actuated_qpos_idx:
+                lb[int(qi)] = max(lb[int(qi)], -cap)
+                ub[int(qi)] = min(ub[int(qi)], cap)
 
         # --- Solve QP -----------------------------------------------------
-        if has_hard_np:
-            J_rows, rhs = _compute_hard_nonpenetration_rows(
-                collision_model, collision_data, q_work,
-                threshold=float(collision_threshold),
-                tolerance=float(penetration_tolerance),
-                fd_epsilon=float(collision_fd_epsilon),
-                max_pairs_per_body=int(collision_max_pairs_per_body),
+        foot_j: list[NDArray[np.float64]] = []
+        foot_lb: list[float] = []
+        foot_ub: list[float] = []
+        if (
+            activate_foot_sticking
+            and foot_sticking
+            and q_foot_ref is not None
+            and (left_foot_pt is not None or right_foot_pt is not None)
+        ):
+            foot_j, foot_lb, foot_ub = _build_foot_sticking_rows(
+                model,
+                data,
+                q_work,
+                np.asarray(q_foot_ref, dtype=np.float64),
+                left_foot_pt=left_foot_pt,
+                right_foot_pt=right_foot_pt,
+                foot_sticking=foot_sticking,
+                tolerance=foot_sticking_tolerance,
+                nq=nq,
+                J_r=J_r,
+                left_vi=left_foot_vi,
+                right_vi=right_foot_vi,
             )
+
+        if has_hard_np or foot_j:
+            J_rows, rhs = ([], [])
+            if has_hard_np:
+                J_rows, rhs = _compute_hard_nonpenetration_rows(
+                    collision_model, collision_data, q_work,
+                    threshold=float(collision_threshold),
+                    tolerance=float(penetration_tolerance),
+                    fd_epsilon=float(collision_fd_epsilon),
+                    max_pairs_per_body=int(collision_max_pairs_per_body),
+                )
             try:
                 dq = _solve_qp_with_inequalities(
                     qp.P, qp.q_vec, lb, ub, J_rows, rhs,
+                    foot_J_rows=foot_j,
+                    foot_lb=foot_lb,
+                    foot_ub=foot_ub,
                 ).astype(np.float64, copy=False)
             except OsqpUnreliableError as exc:
                 # Bounded-step box-only fallback — see "Failure
@@ -689,53 +993,51 @@ def _solve_qp_with_inequalities(
     J_rows: list[NDArray[np.float64]],
     rhs: list[float],
     *,
+    foot_J_rows: list[NDArray[np.float64]] | None = None,
+    foot_lb: list[float] | None = None,
+    foot_ub: list[float] | None = None,
     slack_penalty: float = NONPENETRATION_SLACK_PENALTY,
 ) -> NDArray[np.float64]:
-    """Solve QP with box bounds + **soft** non-penetration constraints via OSQP.
+    """Solve QP with box bounds, optional **hard** foot sticking, and soft collision slack.
 
     Combines::
 
         min  0.5 x'Px + q'x  +  0.5·ρ·Σ sᵢ²
         s.t. lb ≤ x ≤ ub                    (box / trust region + joint limits)
+             foot_lb ≤ J_foot x ≤ foot_ub   (foot sticking — hard, no slack)
              J_rows[i] · x + sᵢ ≥ rhs[i]    (non-penetration, slack sᵢ ≥ 0)
 
-    **Why soft, not hard.**  The original formulation fed the
-    non-penetration rows to OSQP as *hard* inequalities.  On contact-rich
-    terrain (holosoma parkour) ``mj_geomDistance`` emits dozens of rows
-    whose required recovery ``rhs[i] = −φ − tol`` routinely exceeds what
-    the per-iteration box trust region (``±step_size``) can deliver in a
-    single step — so the feasible set is empty and OSQP returns
-    ``PRIMAL_INFEASIBLE`` *every frame*.  The old code then fell back to a
-    box-only solve that dropped **all** collision rows, i.e. the constraints
-    were never actually enforced; worse, the active-set thrash that does
-    survive shows up as the whole-robot "flashing" jitter.
+    Foot sticking rows mirror holosoma's ``Jxy @ dqa`` window around the
+    previous-frame foot XY.  They are **hard** inequalities (no slack) because
+    contact jitter is the primary failure mode foot sticking exists to fix.
 
-    The hard formulation was historically justified by the Laplacian
-    cost's translation-invariance (a soft penetration penalty could be
-    cancelled by lifting the floating base instead of bending the foot).
-    That justification no longer holds: ``laplacian_weight`` defaults to 0
-    and the base is anchored in absolute world space by ``position_weight``
-    (=400), which a slack-absorbed penetration cannot trade against.  So a
-    per-row slack with a large quadratic penalty recovers the desired
-    behaviour — the foot bends out of penetration whenever reachable — while
-    guaranteeing the QP is *always feasible*, eliminating the every-frame
-    infeasibility and its fallback jitter.
-
-    Genuine solver failures (``MAX_ITER_REACHED`` etc.) still propagate as
-    :class:`hhtools.retarget.interaction_mesh.qp_step.OsqpUnreliableError`
-    so the caller can take its bounded box-only step as a last resort.
+    Non-penetration rows remain soft-slacked: heightfield witness chatter
+    still makes a fully-hard stack infeasible on contact-rich frames.
     """
     from hhtools.retarget.interaction_mesh.qp_step import solve_qp_osqp
 
     nq = P.shape[0]
     n_ineq = len(J_rows)
+    foot_j = list(foot_J_rows or [])
+    foot_l = list(foot_lb or [])
+    foot_u = list(foot_ub or [])
+    n_foot = len(foot_j)
+    if n_foot and (len(foot_l) != n_foot or len(foot_u) != n_foot):
+        raise ValueError("foot_J_rows, foot_lb, foot_ub length mismatch")
 
-    if n_ineq == 0:
-        # No collision rows this frame — plain box-constrained QP.
+    if n_ineq == 0 and n_foot == 0:
         A = np.eye(nq, dtype=np.float64)
         return solve_qp_osqp(P, q_vec, A, lb.copy(), ub.copy()).astype(
             np.float64, copy=False
         )
+
+    if n_ineq == 0 and n_foot > 0:
+        j_foot = np.vstack(foot_j)
+        a_foot = np.vstack([np.eye(nq, dtype=np.float64), j_foot])
+        l_full = np.concatenate([lb, np.asarray(foot_l, dtype=np.float64)])
+        u_full = np.concatenate([ub, np.asarray(foot_u, dtype=np.float64)])
+        z = solve_qp_osqp(P, q_vec, a_foot, l_full, u_full).astype(np.float64, copy=False)
+        return z[:nq]
 
     # Augmented variable vector z = [δq (nq); s (n_ineq)].
     n_aug = nq + n_ineq
@@ -743,28 +1045,28 @@ def _solve_qp_with_inequalities(
 
     P_aug = np.zeros((n_aug, n_aug), dtype=np.float64)
     P_aug[:nq, :nq] = P
-    # Quadratic slack penalty 0.5·ρ·Σ sᵢ²  → ρ on the slack diagonal.
     P_aug[nq:, nq:] = rho * np.eye(n_ineq, dtype=np.float64)
     q_aug = np.concatenate([q_vec, np.zeros(n_ineq, dtype=np.float64)])
 
     J_np = np.vstack(J_rows)  # (n_ineq, nq)
 
-    # Constraint blocks (standard OSQP ``l ≤ A z ≤ u``):
-    #  1. box on δq:        [I_nq | 0]           ∈ [lb, ub]
-    #  2. slack ≥ 0:        [0    | I_m]         ∈ [0, +inf]
-    #  3. non-penetration:  [J    | I_m]         ∈ [rhs, +inf]
-    A_box = np.hstack([np.eye(nq), np.zeros((nq, n_ineq))])
-    A_slack = np.hstack([np.zeros((n_ineq, nq)), np.eye(n_ineq)])
-    A_np = np.hstack([J_np, np.eye(n_ineq)])
-    A = np.vstack([A_box, A_slack, A_np])
+    blocks = [
+        np.hstack([np.eye(nq), np.zeros((nq, n_ineq))]),
+        np.hstack([np.zeros((n_ineq, nq)), np.eye(n_ineq)]),
+        np.hstack([J_np, np.eye(n_ineq)]),
+    ]
+    l_parts = [lb, np.zeros(n_ineq, dtype=np.float64), np.asarray(rhs, dtype=np.float64)]
+    u_parts = [ub, np.full(n_ineq, 1e20), np.full(n_ineq, 1e20)]
 
-    big = 1e20
-    l_full = np.concatenate(
-        [lb, np.zeros(n_ineq, dtype=np.float64), np.asarray(rhs, dtype=np.float64)]
-    )
-    u_full = np.concatenate(
-        [ub, np.full(n_ineq, big), np.full(n_ineq, big)]
-    )
+    if n_foot > 0:
+        j_foot = np.vstack(foot_j)
+        blocks.append(np.hstack([j_foot, np.zeros((n_foot, n_ineq))]))
+        l_parts.append(np.asarray(foot_l, dtype=np.float64))
+        u_parts.append(np.asarray(foot_u, dtype=np.float64))
+
+    A = np.vstack(blocks)
+    l_full = np.concatenate(l_parts)
+    u_full = np.concatenate(u_parts)
 
     z = solve_qp_osqp(P_aug, q_aug, A, l_full, u_full).astype(np.float64, copy=False)
     return z[:nq]
@@ -782,10 +1084,21 @@ def iterate_mpc_rti(
     smooth_weight: float = 0.6,
     mpc_horizon: int = 1,
     sqp_inner_iters: int = 2,
+    sqp_inner_iters_frame0: int = 5,
+    mpc_window_sqp_iters: int = 2,
+    mpc_window_warm_start: bool = True,
+    mpc_collision_commit_only: bool = True,
     # --- absolute world-position cost (anchors global root motion) ---
     position_weight: float = 0.0,
     # --- home-pose Tikhonov on actuated DOFs (breaks null-space yaw drift) ---
     home_pose_weight: float = 0.0,
+    # --- holosoma-style foot sticking ---
+    activate_foot_sticking: bool = True,
+    foot_sticking_tolerance: float = 1e-3,
+    foot_sticking_velocity_threshold: float = 0.01,
+    foot_sticking_release_hysteresis: int = 0,
+    leg_smooth_weight: float = 1.0,
+    leg_sqp_step_scale: float = 1.0,
     # --- holosoma-style hard non-penetration ---
     collision_model=None,
     collision_data=None,
@@ -797,14 +1110,19 @@ def iterate_mpc_rti(
     base_step_size: float | None = None,
     progress_callback: Callable[[int, int], None] | None = None,
 ) -> NDArray[np.float64]:
-    """RTI-style MPC: per frame SQP with Laplacian matching, joint limits,
-    temporal smoothing, and (optional) hard non-penetration constraints.
+    """Sliding-window MPC with per-frame SQP (holosoma ``iterate_mpc`` pattern).
 
-    Returns ``(F, nq)`` generalized coordinates.
+    **Speed.**  Holosoma defaults to ``mpc_horizon=1``: foot sticking is a
+    per-frame hard constraint and does not require multi-frame lookahead.
+    Set ``mpc_horizon > 1`` only when you need explicit preview smoothing;
+    combine with ``mpc_window_warm_start=True`` so later frames cost ~1 outer
+    pass instead of ``mpc_window_sqp_iters × H`` full solves.
+
+    Foot sticking hard inequalities apply on window index ``k == 0`` only,
+    referencing the previous committed ``qpos``.
     """
     import mujoco
 
-    _ = mpc_horizon
     if not targets:
         return np.zeros((0, model.nq), dtype=np.float64)
     nh = targets[0].n_human_vertices
@@ -815,21 +1133,29 @@ def iterate_mpc_rti(
     else:
         body_names = _mj_body_names_prefix(model, nh)
 
+    H = max(1, int(mpc_horizon))
+    left_foot_pt, right_foot_pt = resolve_foot_mpc_points(robot_points, nh)
+    foot_sticking_seq = extract_foot_sticking_sequences(
+        targets,
+        robot_points,
+        velocity_threshold=foot_sticking_velocity_threshold,
+    )
+    foot_sticking_seq = stabilize_foot_sticking_sequences(
+        foot_sticking_seq,
+        release_hysteresis=foot_sticking_release_hysteresis,
+    )
+
     q_lb, q_ub = _build_joint_limits(model)
+    leg_actuated_qpos_idx = _leg_actuated_qpos_indices(model)
 
     traj = np.zeros((len(targets), model.nq), dtype=np.float64)
     if model.nkey > 0:
         mujoco.mj_resetDataKeyframe(model, data, 0)
     else:
         mujoco.mj_resetData(model, data)
-    q = np.asarray(data.qpos, dtype=np.float64).copy()
+    q_committed = np.asarray(data.qpos, dtype=np.float64).copy()
 
-    # Snapshot ``home_qpos`` and the actuated-DOF qpos indices once.
-    # The home pose is whatever ``mj_resetData`` / keyframe 0 leaves
-    # on ``data.qpos`` — i.e. the URDF/MJCF "rest" pose.  We pin all
-    # HINGE/SLIDE joints to it as a Tikhonov reference; FREE joint
-    # DOFs (XYZ + quat) are excluded by construction.
-    home_qpos = q.copy()
+    home_qpos = q_committed.copy()
     _act_idx: list[int] = []
     for j in range(model.njnt):
         jt = int(model.jnt_type[j])
@@ -839,59 +1165,31 @@ def iterate_mpc_rti(
 
     Ftot = len(targets)
 
-    # Frame-0 base warm-start: jump the FREE joint **XYZ + quat**
-    # straight to the source pelvis pose so the SQP doesn't have to
-    # crawl there 5 cm / ≈30° at a time under the per-iteration
-    # trust region.  Without this, datasets whose source body yaw
-    # differs from the robot's URDF-declared forward (e.g. parc_ms
-    # source actor faces +133° while RP1 faces +X) leave the robot
-    # rotating roughly 90°/sec while the source sweeps several
-    # metres, so the robot's pelvis trajectory ends up rotated
-    # ~135° from the source's — the position cost can't recover
-    # because each per-frame inner-iter budget is consumed just
-    # closing the trans-frame gap.
-    #
-    # ``targets[0].source_vertices[0]`` is the pelvis joint world
-    # position at frame 0 (the first mapped robot point is always
-    # the pelvis for SMPL→humanoid maps).  For the orientation we
-    # use the corresponding source pelvis quaternion which was
-    # stashed on the FrameLaplacianTarget by the precompute step.
-    # Subsequent frames warm-start from the previous frame's solve
-    # so this one-shot jump only matters at frame 0.
     if Ftot > 0 and int(model.jnt_type[0]) == mujoco.mjtJoint.mjJNT_FREE:
         qadr = int(model.jnt_qposadr[0])
         sv = np.asarray(targets[0].source_vertices, dtype=np.float64)
         if sv.shape[0] > 0:
-            q[qadr : qadr + 3] = sv[0, :3]
+            q_committed[qadr : qadr + 3] = sv[0, :3]
         sq = getattr(targets[0], "source_root_quat_xyzw", None)
         if sq is not None:
             sq = np.asarray(sq, dtype=np.float64).reshape(4)
             n = float(np.linalg.norm(sq))
             if n > 1e-9:
                 sq = sq / n
-                q[qadr + 3] = sq[3]
-                q[qadr + 4] = sq[0]
-                q[qadr + 5] = sq[1]
-                q[qadr + 6] = sq[2]
+                q_committed[qadr + 3] = sq[3]
+                q_committed[qadr + 4] = sq[0]
+                q_committed[qadr + 5] = sq[1]
+                q_committed[qadr + 6] = sq[2]
 
-    q_prev: NDArray[np.float64] | None = None
+    q_t_last: NDArray[np.float64] | None = None
     notify_stride = max(1, Ftot // 40)
+    prev_q_window: list[NDArray[np.float64]] | None = None
 
-    first_iters = max(sqp_inner_iters, 20)
-
-    for f, fr in enumerate(targets):
-        iters = first_iters if f == 0 else sqp_inner_iters
-        q = sqp_step_laplacian(
-            model,
-            data,
-            q,
-            fr,
-            body_names,
+    def _sqp_common_kwargs(*, use_collision: bool) -> dict:
+        return dict(
             robot_points=robot_points,
             laplacian_weight=laplacian_weight,
             step_size=step_size,
-            sqp_inner_iters=iters,
-            q_prev=q_prev,
             smooth_weight=smooth_weight,
             q_lb=q_lb,
             q_ub=q_ub,
@@ -899,16 +1197,111 @@ def iterate_mpc_rti(
             home_pose_weight=home_pose_weight,
             home_qpos=home_qpos,
             actuated_qpos_idx=actuated_qpos_idx,
-            collision_model=collision_model,
-            collision_data=collision_data,
+            collision_model=collision_model if use_collision else None,
+            collision_data=collision_data if use_collision else None,
             collision_threshold=collision_threshold,
             penetration_tolerance=penetration_tolerance,
             collision_fd_epsilon=collision_fd_epsilon,
             collision_max_pairs_per_body=collision_max_pairs_per_body,
             base_step_size=base_step_size,
+            activate_foot_sticking=activate_foot_sticking,
+            left_foot_pt=left_foot_pt,
+            right_foot_pt=right_foot_pt,
+            foot_sticking_tolerance=foot_sticking_tolerance,
+            leg_actuated_qpos_idx=leg_actuated_qpos_idx,
+            leg_smooth_weight=leg_smooth_weight,
+            leg_sqp_step_scale=leg_sqp_step_scale,
         )
-        q_prev = q.copy()
-        traj[f] = q
+
+    # --- Fast path: H=1 (holosoma default) — one SQP per frame, no window loop ---
+    if H == 1:
+        for f in range(Ftot):
+            q_ref = q_committed if q_t_last is None else q_t_last
+            inner = sqp_inner_iters_frame0 if f == 0 else sqp_inner_iters
+            q_committed = sqp_step_laplacian(
+                model,
+                data,
+                q_committed,
+                targets[f],
+                body_names,
+                sqp_inner_iters=inner,
+                q_prev=q_ref,
+                foot_sticking=foot_sticking_seq[f] if activate_foot_sticking else None,
+                q_foot_ref=q_ref if activate_foot_sticking else None,
+                **_sqp_common_kwargs(use_collision=True),
+            )
+            q_t_last = q_committed.copy()
+            traj[f] = q_committed
+            if progress_callback is not None and (f % notify_stride == 0 or f == Ftot - 1):
+                try:
+                    progress_callback(f + 1, Ftot)
+                except Exception:
+                    pass
+        return traj
+
+    # --- Multi-frame window MPC (optional preview; slower) ---
+    for f in range(Ftot):
+        win_len = min(H, Ftot - f)
+        window_targets = targets[f : f + win_len]
+        window_fs = foot_sticking_seq[f : f + win_len]
+
+        if (
+            mpc_window_warm_start
+            and prev_q_window is not None
+            and len(prev_q_window) >= 2
+        ):
+            q_window = [prev_q_window[1].copy()]
+            for k in range(1, win_len):
+                src = k + 1
+                if src < len(prev_q_window):
+                    q_window.append(prev_q_window[src].copy())
+                else:
+                    q_window.append(q_window[k - 1].copy())
+        else:
+            q_window = [q_committed.copy()]
+            for k in range(1, win_len):
+                q_window.append(q_window[k - 1].copy())
+
+        q_ref = q_committed if q_t_last is None else q_t_last
+        n_outer = max(1, int(mpc_window_sqp_iters))
+        if f == 0:
+            n_outer = max(n_outer, int(sqp_inner_iters_frame0 // 2))
+
+        for _outer in range(n_outer):
+            q_before = [q.copy() for q in q_window]
+            for k in range(win_len):
+                q_prev_k = q_ref if k == 0 else q_window[k - 1]
+                apply_fs = (k == 0) and activate_foot_sticking
+                use_coll = (k == 0) or not mpc_collision_commit_only
+                if k == 0:
+                    inner = sqp_inner_iters_frame0 if f == 0 else sqp_inner_iters
+                else:
+                    inner = 1
+                q_window[k] = sqp_step_laplacian(
+                    model,
+                    data,
+                    q_window[k],
+                    window_targets[k],
+                    body_names,
+                    sqp_inner_iters=inner,
+                    q_prev=q_prev_k,
+                    foot_sticking=window_fs[k] if apply_fs else None,
+                    q_foot_ref=q_ref if apply_fs else None,
+                    **_sqp_common_kwargs(use_collision=use_coll),
+                )
+            if _outer > 0:
+                max_step = max(
+                    float(np.max(np.abs(q_window[k] - q_before[k])))
+                    for k in range(win_len)
+                )
+                if max_step < 1e-3:
+                    break
+
+        prev_q_window = q_window
+        q_committed = q_window[0].copy()
+        q_t_last = q_committed.copy()
+        traj[f] = q_committed
+
         if progress_callback is not None and (f % notify_stride == 0 or f == Ftot - 1):
             try:
                 progress_callback(f + 1, Ftot)
@@ -921,9 +1314,13 @@ __all__ = [
     "FrameLaplacianTarget",
     "RobotMpcPoint",
     "build_demo_vertices_frame",
+    "causal_smooth_actuated_qpos",
     "count_named_mujoco_bodies",
+    "extract_foot_sticking_sequences",
     "iterate_mpc_rti",
     "precompute_target_laplacians",
+    "resolve_foot_mpc_points",
     "sample_axis_aligned_box",
     "sqp_step_laplacian",
+    "stabilize_foot_sticking_sequences",
 ]
