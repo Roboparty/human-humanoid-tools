@@ -14,8 +14,11 @@ Profiles mirror the human-motion basket layout:
 from __future__ import annotations
 
 import logging
+import pickle
 from dataclasses import dataclass
 from pathlib import Path
+
+import numpy as np
 
 _log = logging.getLogger(__name__)
 
@@ -53,9 +56,63 @@ def _sniff_robot_csv(path: Path) -> bool:
                 if "root_x" in cols or any(c.startswith("dof_") for c in cols):
                     return True
                 return False
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return False
     return False
+
+
+def _joint_q_width_from_pkl(path: Path) -> int:
+    """Return ``joint_q`` column count for hhtools robot-export pkls, else ``0``."""
+    if path.name.lower() in {"terrain.pkl"}:
+        return 0
+    try:
+        with path.open("rb") as fp:
+            blob = pickle.load(fp)
+    except Exception:
+        return 0
+    if not isinstance(blob, dict):
+        return 0
+    # Human PARC MS clips store pickled ``motion_data`` blobs, not robot joint_q.
+    if "motion_data" in blob and not blob.get("hhtools_export"):
+        robot = blob.get("robot")
+        if not (isinstance(robot, dict) and "joint_q" in robot):
+            return 0
+    robot = blob.get("robot", blob)
+    if not isinstance(robot, dict) or "joint_q" not in robot:
+        return 0
+    try:
+        jq = np.asarray(robot["joint_q"])
+    except Exception:
+        return 0
+    if jq.ndim != 2 or jq.shape[1] < 8:
+        return 0
+    return int(jq.shape[1])
+
+
+def _joint_q_width_from_npz(path: Path) -> int:
+    try:
+        data = np.load(path, allow_pickle=True)
+    except Exception:
+        return 0
+    keys = set(data.files)
+    jq_key = next((k for k in ("joint_q", "qpos", "q") if k in keys), None)
+    if jq_key is None:
+        return 0
+    try:
+        jq = np.asarray(data[jq_key])
+    except Exception:
+        return 0
+    if jq.ndim != 2 or jq.shape[1] < 8:
+        return 0
+    return int(jq.shape[1])
+
+
+def _sniff_robot_pkl(path: Path) -> bool:
+    return _joint_q_width_from_pkl(path) > 0
+
+
+def _sniff_robot_npz(path: Path) -> bool:
+    return _joint_q_width_from_npz(path) > 0
 
 
 def _is_robot_export_trajectory(path: Path) -> bool:
@@ -68,13 +125,18 @@ def _is_robot_export_trajectory(path: Path) -> bool:
         return False
     if ext == ".csv":
         return _sniff_robot_csv(path)
-    return True
+    if ext in (".pkl", ".pickle"):
+        return _sniff_robot_pkl(path)
+    if ext == ".npz":
+        return _sniff_robot_npz(path)
+    return False
 
 
 def _robot_traj_rank(path: Path) -> tuple[int, int, str]:
     """Sort key: prefer more DOF columns, then longer stems (main clip name)."""
     score = 0
-    if path.suffix.lower() == ".csv":
+    ext = path.suffix.lower()
+    if ext == ".csv":
         try:
             with path.open(encoding="utf-8") as fp:
                 for line in fp:
@@ -83,8 +145,12 @@ def _robot_traj_rank(path: Path) -> tuple[int, int, str]:
                         continue
                     score = len(s.split(","))
                     break
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             pass
+    elif ext in (".pkl", ".pickle"):
+        score = _joint_q_width_from_pkl(path)
+    elif ext == ".npz":
+        score = _joint_q_width_from_npz(path)
     return (score, len(path.stem), str(path))
 
 

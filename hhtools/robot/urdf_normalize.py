@@ -104,7 +104,8 @@ def _mesh_path_resolved_from_urdf(filename: str, urdf_dir: Path) -> Path:
 def _normalize_meshdir(meshdir: str | None) -> str | None:
     if not meshdir:
         return None
-    return meshdir.replace("\\", "/").strip().rstrip("/") or "."
+    norm = meshdir.replace("\\", "/").strip().lstrip("./").rstrip("/")
+    return norm or "."
 
 
 def _meshdir_doubles_filename_prefix(
@@ -332,10 +333,11 @@ def normalize_urdf_meshes(
             prefixes.add(prefix)
 
     strip_prefix: str | None = None
-    if inline_meshdir:
+    norm_meshdir = _normalize_meshdir(inline_meshdir)
+    if norm_meshdir and norm_meshdir != ".":
         for prefix in prefixes:
-            norm = prefix.replace("\\", "/").lstrip("./")
-            if norm == inline_meshdir:
+            norm = prefix.replace("\\", "/").lstrip("./").rstrip("/")
+            if norm == norm_meshdir:
                 strip_prefix = prefix
                 break
 

@@ -15,7 +15,14 @@ _log = logging.getLogger(__name__)
 
 
 def _parse_comment_meta(path: Path) -> dict[str, str]:
+    """Parse ``# key: value`` comment headers from text robot trajectory files.
+
+    Binary exports (``.pkl`` / ``.npz``) carry metadata inside the archive, not
+    as UTF-8 comment lines — skip them instead of failing decode.
+    """
     meta: dict[str, str] = {}
+    if path.suffix.lower() not in (".csv", ".txt"):
+        return meta
     try:
         with path.open(encoding="utf-8") as fp:
             for line in fp:
@@ -26,7 +33,7 @@ def _parse_comment_meta(path: Path) -> dict[str, str]:
                 if ":" in body:
                     k, _, v = body.partition(":")
                     meta[k.strip()] = v.strip()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         pass
     return meta
 

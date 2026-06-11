@@ -379,10 +379,27 @@ def _load_csv_trajectory(
         )
 
 
+def _extract_robot_trajectory_block(blob: object, *, path: Path | None = None) -> dict:
+    """Pull the ``joint_q`` record from an hhtools robot-export pickle."""
+    label = str(path) if path is not None else "pkl"
+    if not isinstance(blob, dict):
+        raise ValueError(f"{label}: expected a dict at pickle root")
+    robot = blob.get("robot")
+    if isinstance(robot, dict) and "joint_q" in robot:
+        return robot
+    if "joint_q" in blob:
+        return blob
+    keys = sorted(str(k) for k in blob.keys())
+    raise ValueError(
+        f"{label}: no robot joint_q trajectory (keys: {keys}); "
+        "expected hhtools robot export with robot.joint_q"
+    )
+
+
 def _load_pkl_trajectory(path: Path) -> SourceTrajectory:
     with path.open("rb") as fp:
         blob = pickle.load(fp)
-    robot = blob.get("robot", blob) if isinstance(blob, dict) else {}
+    robot = _extract_robot_trajectory_block(blob, path=path)
     joint_q = np.asarray(robot["joint_q"], dtype=np.float32)
     dof_names = tuple(str(n) for n in robot.get("dof_names", ()))
     fps = float(robot.get("sample_rate", robot.get("fps", 30.0)))

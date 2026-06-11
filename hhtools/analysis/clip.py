@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from hhtools.analysis.canonical import project_to_canonical
 from hhtools.analysis.config import load_config
 from hhtools.analysis import metrics as _metrics
@@ -80,11 +82,33 @@ def _load_source(source_path: Path, dataset: str = ""):
     does, so heterogeneous formats (``.pkl`` / ``.npy`` / ``.bvh`` / ...) all load.
     Falls back to the plain loader registry when no dataset name is supplied.
     """
-    suffix = source_path.suffix.lower()
-    if suffix == ".csv":
-        from hhtools.io.robot_csv import load_robot_csv
+    from hhtools.web.r2r_upload_resolve import _is_robot_export_trajectory
 
-        return load_robot_csv(source_path), "robot"
+    suffix = source_path.suffix.lower()
+    is_robot = dataset == "robot" or _is_robot_export_trajectory(source_path)
+    if is_robot and suffix in (".csv", ".pkl", ".pickle", ".npz"):
+        from hhtools.io.robot_csv import RobotCSV, load_robot_csv
+        from hhtools.retarget.robot_to_robot import load_source_trajectory
+
+        if suffix == ".csv":
+            return load_robot_csv(source_path), "robot"
+        traj = load_source_trajectory(source_path, source_model=None)
+        n = int(traj.joint_q.shape[0])
+        fps = float(traj.framerate)
+        if n > 1:
+            times = np.arange(n, dtype=np.float64) / max(fps, 1e-6)
+        else:
+            times = np.zeros((0,), dtype=np.float64)
+        return (
+            RobotCSV(
+                times=times,
+                joint_q=np.asarray(traj.joint_q, dtype=np.float32),
+                dof_names=tuple(traj.dof_names),
+                sample_rate=fps,
+                meta=dict(traj.meta),
+            ),
+            "robot",
+        )
 
     if dataset:
         from hhtools.io.datasets import registered_datasets
