@@ -29,7 +29,7 @@ class InteractionMeshPipelineConfig:
     bend the foot.
     """
 
-    mpc_horizon: int = 5
+    mpc_horizon: int = 1
     # Weight on the Laplacian (interaction-mesh shape preservation)
     # cost.  Empirical finding (parc_ms BOXES_12 + holosoma parkour_1,
     # 80 frames each, rp1 at ``pw=200``):
