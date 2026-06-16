@@ -2,8 +2,7 @@
 
 ``HumanReferencePose`` snapshots describe a single known human skeleton layout
 (hips-relative positions + world quaternions) for a given source naming
-convention — SMPL, SOMA BVH, LAFAN / Mixamo, SMPL-X, a shared static FBX
-T-pose, or a GLB clip's frame 0.  :mod:`hhtools.retarget.calibration.calibration` consumes these structs
+convention — SMPL, SOMA BVH, LAFAN / Mixamo, SMPL-X, or a GLB clip's frame 0.  :mod:`hhtools.retarget.calibration.calibration` consumes these structs
 when deriving per-robot scale / offset parameters.
 """
 
@@ -37,12 +36,13 @@ from hhtools.retarget.newton_basic.human_aliases import (
 if TYPE_CHECKING:
     from hhtools.core.motion import Motion
 
-ReferenceName = Literal["smplx", "smpl", "gvhmr", "soma_bvh", "lafan_bvh", "fbx", "glb"]
+ReferenceName = Literal["smplx", "smpl", "gvhmr", "soma_bvh", "lafan_bvh", "glb"]
 
 
 _LEGACY_REFERENCE_ALIASES: dict[str, str] = {
     "canonical_human": "smpl",
     "mixamo_bvh": "lafan_bvh",
+    "fbx": "lafan_bvh",
 }
 
 # SMPL / Mixamo-style 17-joint subset (native SMPL names) used for ``smpl`` calibration.
@@ -585,11 +585,6 @@ def _build_static_lafan() -> HumanReferencePose:
     )
 
 
-def _build_static_fbx() -> HumanReferencePose:
-    """Single shared Mixamo-style T-pose for every FBX calibration (clip-independent)."""
-    return replace(_build_static_lafan(), name="fbx")
-
-
 def _load_smpl(*, allow_engine: bool) -> HumanReferencePose:
     if allow_engine:
         got = _try_smpl_forward("smpl")
@@ -668,13 +663,12 @@ def _load_gvhmr() -> HumanReferencePose:
 
 
 def list_reference_names() -> tuple[str, ...]:
-    return ("smplx", "smpl", "gvhmr", "soma_bvh", "lafan_bvh", "fbx", "glb")
+    return ("smplx", "smpl", "gvhmr", "soma_bvh", "lafan_bvh", "glb")
 
 
 def load_reference_pose(name: str) -> HumanReferencePose:
     """Load a built-in static reference.
 
-    ``fbx`` is the shared Mixamo-style T-pose (same geometry for all FBX clips).
     ``glb`` still requires :func:`build_motion_reference` — it uses the loaded
     clip's frame 0.
     """
@@ -684,8 +678,6 @@ def load_reference_pose(name: str) -> HumanReferencePose:
             "reference 'glb' requires a loaded motion — use "
             "build_motion_reference(motion, 'glb') instead."
         )
-    if key == "fbx":
-        return _build_static_fbx()
     if key == "smpl":
         return _load_smpl(allow_engine=True)
     if key == "smplx":
@@ -740,7 +732,7 @@ def _skip_virtual_roots(
     return cur
 
 
-def build_motion_reference(motion: "Motion", name: Literal["fbx", "glb"]) -> HumanReferencePose:
+def build_motion_reference(motion: "Motion", name: Literal["glb"] = "glb") -> HumanReferencePose:
     """Frame-0 skeleton from ``motion``, root-anchored at the origin.
 
     When the hierarchy root is a known virtual wrapper node (``body_world``,
@@ -750,8 +742,8 @@ def build_motion_reference(motion: "Motion", name: Literal["fbx", "glb"]) -> Hum
     calibration scales (all 1.0) because downstream code treats it as the
     anatomical anchor.
     """
-    if name not in ("fbx", "glb"):
-        raise ValueError("build_motion_reference only supports name='fbx' or 'glb'")
+    if name != "glb":
+        raise ValueError("build_motion_reference only supports name='glb'")
     if motion.num_frames < 1:
         raise ValueError("motion has no frames")
     hier = motion.hierarchy
@@ -785,7 +777,7 @@ def build_motion_reference(motion: "Motion", name: Literal["fbx", "glb"]) -> Hum
 def reference_pose_from_motion_frame0_quantized(
     motion: "Motion",
     *,
-    display_name: str = "fbx",
+    display_name: str = "glb",
 ) -> HumanReferencePose:
     """Frame-0 pose with per-bone local rotations snapped to π/2, then FK (Z-up)."""
     if motion.num_frames < 1:

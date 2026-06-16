@@ -107,7 +107,7 @@
         <div>
           <div class="glyph">🎞</div>
           <div class="big">把动作拖到这里预览</div>
-          <div class="sub">支持 BVH / GLB / FBX / NPZ 以及 AMASS · Motion-X · OMOMO · holosoma 等数据集。可拖到此舞台、在右侧「导入本地动作」选择文件 / 文件夹，或直接从下方资源库点选。</div>
+          <div class="sub">支持 BVH / GLB / NPZ 以及 AMASS · Motion-X · OMOMO · holosoma 等数据集。可拖到此舞台、在右侧「导入本地动作」选择文件 / 文件夹，或直接从下方资源库点选。</div>
         </div>
       </div>
       <div class="stage-overlay">
@@ -171,7 +171,7 @@
             </div>
             <div class="fmt-tags" style="margin-top:8px">
               <span class="fmt-tag">.npz</span><span class="fmt-tag">.bvh</span>
-              <span class="fmt-tag">.glb</span><span class="fmt-tag">.fbx</span>
+              <span class="fmt-tag">.glb</span>
             </div>
           </div>
         </div>
@@ -291,7 +291,7 @@
             </label>
           </div>
           <p class="hint" id="rt-ground-follow-hint" style="margin-top:4px">
-            勾选后机器人脚底会逐帧跟随地面高度贴地，适合<b>攀爬/上下台阶</b>等需要贴住地形的动作。<b>翻滚/后空翻</b>等动作请<b>关闭</b>，否则脚翻到头顶时机器人 Z 会突然窜起；关闭时也更快。
+            勾选后机器人脚底会逐帧跟随<b>地形高度</b>贴地，适合<b>攀爬/上下台阶</b>。<b>翻滚/后空翻</b>等腾空动作请<b>关闭</b>，否则脚翻到头顶时 Z 会突然窜起；平地动作（含倒地爬起）默认关闭即可。
           </p>
           <p class="hint" id="rt-first-hint" style="margin-top:6px">
             <b>首次 Retarget 较慢：</b>新机器人第一次求解会编译 GPU/Warp IK 内核并捕获 CUDA 图（约 10–60 秒）。进度条可能短暂不动，属正常现象，请耐心等待；加载机器人后会在后台预热，同一机器人后续会快很多。

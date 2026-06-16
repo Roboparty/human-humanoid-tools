@@ -79,7 +79,7 @@ configs/body_models/*
 **/SMPLX_*.pkl
 
 # Motion datasets: ignore bulk downloads; curated demo clips are tracked.
-# (holosoma, parc_ms, FBX, GLB are not listed here — they commit as-is.)
+# (holosoma, parc_ms, GLB are not listed here — they commit as-is.)
 # Bulk folders — negated below for assets/motions/mimic/ examples.
 assets/motions/**/GVHMR/
 !assets/motions/mimic/GVHMR/

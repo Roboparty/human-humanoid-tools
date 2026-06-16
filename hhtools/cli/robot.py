@@ -378,14 +378,20 @@ def validate_robot(
     from hhtools.robot.kinematics import (
         CRITICAL_IK_SLOTS,
         infer_ik_map_from_kinematics,
+        infer_smooth_joint_filter_masks,
         prepare_ik_map,
         validate_ik_map,
     )
 
     issues = validate_ik_map(preset.urdf_path, preset.ik_map)
+    duplicate_trunk = [
+        i for i in issues
+        if "is shared with" in i.message
+    ]
     critical = [
         i for i in issues
-        if i.slot in CRITICAL_IK_SLOTS
+        if i in duplicate_trunk
+        or i.slot in CRITICAL_IK_SLOTS
         or i.slot.endswith("_knee")
         or i.slot.endswith("_wrist")
         or i.slot == "head"
@@ -445,9 +451,19 @@ def validate_robot(
         _console.print("[red]Cannot --fix: preset has no yaml_path in metadata[/]")
         raise typer.Exit(code=1)
 
-    from hhtools.robot.yaml_io import update_robot_yaml_ik_map
+    from hhtools.robot.yaml_io import (
+        update_robot_yaml_ik_map,
+        update_robot_yaml_smooth_joint_filter_masks,
+    )
 
     update_robot_yaml_ik_map(yaml_path, repaired)
+    smooth_masks = infer_smooth_joint_filter_masks(preset.urdf_path, repaired)
+    if smooth_masks:
+        update_robot_yaml_smooth_joint_filter_masks(yaml_path, smooth_masks)
+        _console.print(
+            f"[green]Updated smooth_joint_filter_masks[/] "
+            f"({len(smooth_masks)} link(s))"
+        )
     refresh()
     _console.print("[green]Updated ik_map[/] in " + str(yaml_path))
     for line in changes:

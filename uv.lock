@@ -584,10 +584,6 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
 ]
-fbx = [
-    { name = "bpy", marker = "python_full_version == '3.13.*'" },
-    { name = "pyassimp" },
-]
 formats = [
     { name = "pygltflib" },
 ]
@@ -633,7 +629,6 @@ web = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bpy", marker = "python_full_version == '3.13.*' and extra == 'fbx'", specifier = ">=5.1" },
     { name = "chumpy", marker = "extra == 'smpl'", specifier = ">=0.70" },
     { name = "chumpy", marker = "extra == 'web'", specifier = ">=0.70" },
     { name = "fastapi", marker = "extra == 'viewer'", specifier = ">=0.111" },
@@ -652,7 +647,6 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.2" },
     { name = "platformdirs", specifier = ">=4.2" },
     { name = "pyarrow", specifier = ">=15.0" },
-    { name = "pyassimp", marker = "extra == 'fbx'", specifier = ">=5.0" },
     { name = "pydantic", specifier = ">=2.6" },
     { name = "pygltflib", marker = "extra == 'formats'", specifier = ">=1.16" },
     { name = "pygltflib", marker = "extra == 'web'", specifier = ">=1.16" },
@@ -682,7 +676,7 @@ requires-dist = [
     { name = "yourdfpy", marker = "extra == 'robot'", specifier = ">=0.0.56" },
     { name = "yourdfpy", marker = "extra == 'web'", specifier = ">=0.0.56" },
 ]
-provides-extras = ["viewer", "web", "formats", "fbx", "smpl", "robot", "retarget", "retarget-interaction", "dev", "all"]
+provides-extras = ["viewer", "web", "formats", "smpl", "robot", "retarget", "retarget-interaction", "dev", "all"]
 
 [[package]]
 name = "httpcore"

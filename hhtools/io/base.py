@@ -97,7 +97,6 @@ def _norm(ext: str) -> str:
 def _install_default_handlers() -> None:
     # Imported here to avoid circular imports during package init.
     from hhtools.io import bvh as _bvh
-    from hhtools.io import fbx as _fbx
     from hhtools.io import glb as _glb
     from hhtools.io import npz as _npz
 
@@ -111,10 +110,6 @@ def _install_default_handlers() -> None:
     # friendly ModuleNotFoundError if the user didn't install it.
     register_loader(".glb", _glb.load_glb)
     register_loader(".gltf", _glb.load_glb)
-    # FBX dispatches to a backend probe (FBX2glTF CLI → Autodesk SDK → pyassimp). The
-    # function raises NotImplementedError with a multi-line install guide if none of the
-    # backends are present, instead of silently no-op'ing.
-    register_loader(".fbx", _fbx.load_fbx)
 
 
 _install_default_handlers()

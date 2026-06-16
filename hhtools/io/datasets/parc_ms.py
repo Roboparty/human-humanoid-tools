@@ -59,7 +59,7 @@ class ParcMsAdapter(DatasetAdapter):
             parent = p.parent
             if any(
                 (parent / f"{stem}{ext}").is_file()
-                for ext in (".npz", ".npy", ".bvh", ".glb", ".gltf", ".fbx")
+                for ext in (".npz", ".npy", ".bvh", ".glb", ".gltf")
             ):
                 continue
             yield str(p.relative_to(self.root))

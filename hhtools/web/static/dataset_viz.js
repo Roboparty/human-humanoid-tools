@@ -348,7 +348,7 @@ function guessUploadKind(files) {
     if (n.endsWith(".csv")) {
       csv++;
       if (/root_x|dof_/.test(f.name || "")) robotCsv++;
-    } else if (/\.(bvh|npz|pkl|npy|glb|fbx|pt)$/.test(n)) motion++;
+    } else if (/\.(bvh|npz|pkl|npy|glb|pt)$/.test(n)) motion++;
   }
   if (csv && motion) return "mixed";
   if (csv) return "robot";

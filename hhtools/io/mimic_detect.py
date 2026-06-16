@@ -14,7 +14,7 @@ Registered mimic datasets (see :data:`hhtools.viewer.library._DIR_TO_ADAPTER`):
 * ``gvhmr``, ``kungfu_athlete`` — HMR4D ``.pt`` results
 * ``meshmimic_holosoma`` — holosoma ``.npy`` + ``source.yaml``
 * ``unified_npz`` — hhtools internal NPZ schema
-* ``glb``, ``fbx`` — authored rig clips
+* ``glb`` — authored rig clips
 """
 
 from __future__ import annotations
@@ -171,8 +171,6 @@ def infer_mimic_dataset(
 
     if suf in (".glb", ".gltf"):
         return "glb"
-    if suf == ".fbx":
-        return "fbx"
     if suf == ".bvh":
         from hhtools.io.bvh_detect import infer_bvh_dataset
 

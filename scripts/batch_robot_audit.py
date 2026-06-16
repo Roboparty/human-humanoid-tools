@@ -42,7 +42,7 @@ _SKIP_PATH_RE = re.compile(
     re.VERBOSE | re.IGNORECASE,
 )
 
-REFERENCES = ("soma_bvh", "lafan_bvh", "smpl", "smplx", "fbx", "gvhmr")
+REFERENCES = ("soma_bvh", "lafan_bvh", "smpl", "smplx", "gvhmr")
 RETARGET_REFS = ("soma_bvh", "lafan_bvh", "smplx")
 TEST_BVH = REPO / "assets/motions/mimic/SOMA/big_light_one_hand_pick_up_front_low_R_005__A508.bvh"
 CONFIGS = REPO / "configs/robots"
@@ -210,21 +210,32 @@ def _audit_one(name: str, urdf: Path, *, do_import: bool, do_retarget: bool) -> 
         issues = validate_ik_map(preset.urdf_path, preset.ik_map)
         rep.ik_critical = [
             i.format() for i in issues
-            if i.slot in CRITICAL_IK_SLOTS or i.slot.endswith("_knee")
+            if i.slot in CRITICAL_IK_SLOTS
+            or i.slot.endswith("_knee")
+            or "is shared with" in i.message
         ]
         if rep.ik_critical:
             repaired, _ = prepare_ik_map(preset.urdf_path, dict(preset.ik_map))
-            from hhtools.robot.yaml_io import update_robot_yaml_ik_map
+            from hhtools.robot.kinematics import infer_smooth_joint_filter_masks
+            from hhtools.robot.yaml_io import (
+                update_robot_yaml_ik_map,
+                update_robot_yaml_smooth_joint_filter_masks,
+            )
 
             yaml_file = Path(preset.meta.get("yaml_path", preset.urdf_path.parent / "robot.yaml"))
             update_robot_yaml_ik_map(yaml_file, repaired)
+            smooth_masks = infer_smooth_joint_filter_masks(preset.urdf_path, repaired)
+            if smooth_masks:
+                update_robot_yaml_smooth_joint_filter_masks(yaml_file, smooth_masks)
             refresh()
             preset = get(name)
             model = load_robot(preset, compile_mjcf=False)
             issues2 = validate_ik_map(preset.urdf_path, preset.ik_map)
             rep.ik_critical = [
                 i.format() for i in issues2
-                if i.slot in CRITICAL_IK_SLOTS or i.slot.endswith("_knee")
+                if i.slot in CRITICAL_IK_SLOTS
+                or i.slot.endswith("_knee")
+                or "is shared with" in i.message
             ]
 
         from hhtools.retarget.calibration import (
@@ -312,7 +323,7 @@ def main() -> int:
         rep = _audit_one(name, urdf, do_import=args.do_import, do_retarget=args.retarget)
         reports.append(rep)
         ik_ok = not rep.ik_critical
-        cal_ok = all(v == "ok" for k, v in rep.calib.items() if k != "fbx")
+        cal_ok = all(v == "ok" for v in rep.calib.values())
         rt_ok = all(v.startswith("ok") for v in rep.retarget.values()) if rep.retarget else True
         status = "OK" if rep.load_ok and ik_ok and cal_ok and rt_ok else "FAIL"
         print(
@@ -339,7 +350,7 @@ def main() -> int:
         1 for r in reports
         if not r.load_ok
         or r.ik_critical
-        or any(v != "ok" for k, v in r.calib.items() if k != "fbx")
+        or any(v != "ok" for v in r.calib.values())
         or (r.retarget and any(not v.startswith("ok") for v in r.retarget.values()))
     )
     print(f"\nSummary: {len(reports) - fails}/{len(reports)} pass (load+ik+calib+retarget)")

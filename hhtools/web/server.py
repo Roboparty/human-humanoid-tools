@@ -55,7 +55,6 @@ _FORMAT_TO_REFERENCE: dict[str, str] = {
     "bvh": "lafan_bvh",
     "glb": "glb",
     "gltf": "glb",
-    "fbx": "fbx",
     "npz": "smpl",
     "csv": "smpl",
     "unknown": "smpl",
@@ -72,7 +71,6 @@ _DATASET_TO_REFERENCE: dict[str, str] = {
     "omomo": "smplx",
     "meshmimic_holosoma": "smplx",
     "glb": "glb",
-    "fbx": "fbx",
     "unified_npz": "smpl",
     "parc_ms": "smpl",
 }
@@ -96,16 +94,10 @@ def _start_robot_prewarm(state: SessionState, model: Any, name: str) -> None:
         try:
             _require_newton_package()
             from hhtools.retarget.newton_basic._warp_config import configure as configure_warp_cache
-            from hhtools.retarget.newton_basic.pipeline import (
-                NewtonBasicPipeline,
-                PipelineConfig,
-            )
+            from hhtools.retarget.newton_basic.pipeline import NewtonBasicPipeline
 
             configure_warp_cache()
-            NewtonBasicPipeline.prewarm_for_robot(
-                model,
-                pipeline_config=PipelineConfig(ik_iterations=1, ik_use_cuda_graph=False),
-            )
+            NewtonBasicPipeline.prewarm_for_robot(model)
         except Exception:  # noqa: BLE001 — optional GPU / missing newton
             _log.debug("background IK prewarm failed for %r", name, exc_info=True)
 
@@ -247,7 +239,6 @@ def create_app(
                 {"ext": ".bvh", "label": "BVH mocap", "needs": None},
                 {"ext": ".glb", "label": "glTF / GLB (skinned)", "needs": None},
                 {"ext": ".gltf", "label": "glTF", "needs": None},
-                {"ext": ".fbx", "label": "FBX (needs FBX backend)", "needs": "fbx-backend"},
                 {"ext": ".npz", "label": "hhtools unified NPZ", "needs": None},
             ],
             "dataset_formats": [
@@ -653,7 +644,7 @@ def create_app(
             clips = enumerate_upload_clips(drop, profile)
             if not clips:
                 raise ValueError(
-                    "未找到可识别的动作 clip（支持 .npz / .pkl / .bvh / .glb / .fbx …，"
+                    "未找到可识别的动作 clip（支持 .npz / .pkl / .bvh / .glb …，"
                     "可拖入整个文件夹保留子目录结构）"
                 )
             entries = []
@@ -1107,8 +1098,8 @@ def create_app(
             ik_iters = int(body.get("ik_iterations", 24))
             # Foot-follow grounding (mesh sole tracks the rising terrain) is an
             # opt-in: it keeps the robot glued to a climbing surface but snaps the
-            # body upward on tumbles / backflips (feet sweep overhead), and costs
-            # a per-frame trimesh rebuild.  Default off keeps flips correct + fast.
+            # body upward on tumbles / backflips (feet sweep overhead).  Prone /
+            # crawl grounding is handled in the Newton IK pipeline instead.
             ground_follow = bool(body.get("ground_follow", False))
             from hhtools.robot.registry import get as _get_preset
 
@@ -1645,7 +1636,7 @@ def create_app(
         return {"job_id": job.id}
 
     @app.get("/api/r2r/scene_glb")
-    def r2r_scene_glb(token: str, mesh: str) -> Response:
+    def r2r_scene_glb(token: str, mesh: str, scale: float | None = None) -> Response:
         """Serve an interaction-object mesh from an uploaded R2R clip folder."""
         from types import SimpleNamespace
 
@@ -1659,7 +1650,11 @@ def create_app(
         path = (clip_dir / safe).resolve()
         if not path.is_file() or clip_dir.resolve() not in path.parents:
             raise HTTPException(status_code=404, detail="mesh not found")
-        glb = object_mesh_glb(SimpleNamespace(mesh_path=str(path), scale=1.0))
+        scale_override = float(scale) if scale is not None and scale > 0 else None
+        glb = object_mesh_glb(
+            SimpleNamespace(mesh_path=str(path), scale=scale_override or 1.0),
+            scale=scale_override,
+        )
         if glb is None:
             raise HTTPException(status_code=404, detail="mesh export failed")
         return Response(content=glb, media_type="model/gltf-binary")
@@ -1774,7 +1769,22 @@ def create_app(
                 tgt, ret, scaled_preview=scaled, ground_follow=False,
             )
             scaled = _align_r2r_scaled_preview_to_ground(tgt, ret, scaled, traj)
-            tgt_scene = rec.get("scaled_scene")
+            from hhtools.web.r2r_scene import compute_r2r_target_scaled_scene
+
+            src_scene = rec.get("scaled_scene")
+            tgt_scene = None
+            if src_scene and rec.get("clip_dir") and rec.get("source_path"):
+                tgt_scene = compute_r2r_target_scaled_scene(
+                    src,
+                    tgt,
+                    motion,
+                    calib,
+                    clip_dir=Path(rec["clip_dir"]),
+                    profile=str(rec.get("upload_profile") or "mimic"),
+                    robot_path=Path(rec["source_path"]),
+                    num_frames=int(ret.num_frames),
+                    framerate=float(ret.sample_rate),
+                )
             export_token = uuid.uuid4().hex[:10]
             has_scene = bool(tgt_scene)
             state.motions[f"export::{export_token}"] = {
@@ -2834,7 +2844,7 @@ def _retarget_newton_batch_chunk(
         motion=loaded[0][1],
         human_height=human_height,
     )
-    feet_cfg = build_feet_stabilizer_config(preset, reference)
+    feet_cfg = build_feet_stabilizer_config(preset, reference, model=model)
     _set_batch_job_progress(
         job,
         f"并行 IK {chunk_label} · 参考 {reference} · 编译内核…",
@@ -3156,7 +3166,6 @@ def _load_motion_for_web(entry, cache, *, progress=None):
 def _load_motion_file(path: Path, *, progress=None):
     """Load a motion file with mesh enabled for GLB when possible."""
     cb = progress.as_callback() if progress is not None else None
-    fbx_pin = progress.fbx_pin if progress is not None else None
     suf = path.suffix.lower()
     if suf in (".glb", ".gltf"):
         from hhtools.io.glb import load_glb
@@ -3167,12 +3176,6 @@ def _load_motion_file(path: Path, *, progress=None):
         if cb is not None:
             cb(1.0, "GLB 解析完成")
         return motion
-    if suf == ".fbx":
-        from hhtools.io.fbx import load_fbx
-
-        if cb is not None:
-            cb(0.0, f"解析 FBX {path.name}…")
-        return load_fbx(path, with_mesh=True, progress_callback=fbx_pin or cb)
     if cb is not None:
         cb(0.1, f"读取 {path.name}…")
     from hhtools.io.base import load_motion
@@ -3466,7 +3469,7 @@ def _request_human_height(body: dict, preset, reference: str) -> float:
     """Resolve source-human height from the request, with a scaler-aware default.
 
     Falls back to a reference-family canonical height (1.65 m for SMPL / SOMA /
-    LAFAN / FBX / GLB) when the UI does not send an explicit height.
+    LAFAN / GLB) when the UI does not send an explicit height.
     """
     from hhtools.robot.retarget_profile import default_human_height
 
@@ -3681,7 +3684,7 @@ def _retarget_single(
         motion=motion,
         human_height=human_height,
     )
-    feet_cfg = build_feet_stabilizer_config(preset, reference)
+    feet_cfg = build_feet_stabilizer_config(preset, reference, model=model)
     if job is not None:
         # Only advertise kernel compilation when this robot has NOT been
         # prewarmed yet — once Warp's cache is populated (and writable) the

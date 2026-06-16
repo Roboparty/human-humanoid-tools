@@ -17,14 +17,14 @@ from pathlib import Path
 
 _log = logging.getLogger(__name__)
 
-_MOTION_EXTS = (".bvh", ".glb", ".gltf", ".fbx", ".npz", ".npy", ".pkl", ".pt")
-_MIMIC_PRIORITY = (".npz", ".bvh", ".glb", ".gltf", ".fbx", ".npy", ".pkl", ".pt")
+_MOTION_EXTS = (".bvh", ".glb", ".gltf", ".npz", ".npy", ".pkl", ".pt")
+_MIMIC_PRIORITY = (".npz", ".bvh", ".glb", ".gltf", ".npy", ".pkl", ".pt")
 
 
 def _is_sidecar_pkl(pkl: Path) -> bool:
     parent = pkl.parent
     stem = pkl.stem
-    return any((parent / f"{stem}{ext}").is_file() for ext in (".npz", ".npy", ".bvh", ".glb", ".gltf", ".fbx"))
+    return any((parent / f"{stem}{ext}").is_file() for ext in (".npz", ".npy", ".bvh", ".glb", ".gltf"))
 
 
 def _is_omomo_pkl(pkl: Path) -> bool:
@@ -425,7 +425,7 @@ def resolve_upload_drop(
     primaries = _find_mimic_primaries(drop_dir)
     if not primaries:
         raise ValueError(
-            "未找到可识别的动作文件（.npz / .bvh / .glb / .fbx / .pkl …）"
+            "未找到可识别的动作文件（.npz / .bvh / .glb / .pkl …）"
         )
     path = primaries[0]
     info["picked"] = str(path)

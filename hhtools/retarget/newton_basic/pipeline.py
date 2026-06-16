@@ -403,6 +403,11 @@ class PipelineConfig:
     # disabled together with the parent knob under the soma-style
     # builder.
     pelvis_yaw_only_rotation_target: bool = False
+    # Ground-plane capsule collision (soma ``IKObjectiveGroundCollision``).
+    ground_collision_weight: float = 0.0
+    ground_collision_z: float = 0.0
+    ground_collision_bodies: tuple[dict, ...] = ()
+    ground_collision_dynamic_boost: bool = True
     ik_use_cuda_graph: bool = field(default_factory=_default_ik_use_cuda_graph)
 
 
@@ -639,6 +644,25 @@ class NewtonBasicPipeline:
         )
         return to_up_axis(motion, "Z")
 
+    @staticmethod
+    def _floor_normalize_motion(motion: Motion) -> Motion:
+        """Subtract the clip foot-floor so IK targets match the yellow overlay.
+
+        Interaction-mesh retarget already does this; Newton basic relied on
+        calibration ``root_z_offset`` alone, which leaves prone frames below
+        ``z=0`` when the clip's lowest foot contact is not at frame 0.
+        """
+        from dataclasses import replace
+
+        from hhtools.core.grounding import human_source_floor_z_world
+
+        z_min = float(human_source_floor_z_world(motion))
+        if abs(z_min) < 1e-6:
+            return motion
+        pos = np.asarray(motion.positions, dtype=np.float32).copy()
+        pos[:, :, 2] -= np.float32(z_min)
+        return replace(motion, positions=pos)
+
     def run(
         self,
         motion: Motion,
@@ -654,6 +678,7 @@ class NewtonBasicPipeline:
                 callback are swallowed so a buggy UI doesn't abort the solve.
         """
         motion = self._ensure_z_up(motion)
+        motion = self._floor_normalize_motion(motion)
         if motion.num_frames == 0:
             return RetargetedMotion(
                 name=motion.name,
@@ -669,9 +694,14 @@ class NewtonBasicPipeline:
 
         # 2. Optional feet stabilizer.
         targets = scaled.transforms  # (F, M, 7)
+        hand_ground_drop: np.ndarray | None = None
         if self.config.apply_feet_stabilizer and self.feet_stabilizer_config is not None:
             stab = self._build_feet_stabilizer(scaler.joint_names)
             targets = stab.apply(targets)
+            if stab.hand_ground_drop_per_frame.size:
+                hand_ground_drop = stab.hand_ground_drop_per_frame.astype(
+                    np.float32, copy=False,
+                )
 
         # 3. Translate scaler-native joint names (often SMPL-X: pelvis /
         # spine1 / …) to the canonical hhtools names that robot.yaml ik_map
@@ -781,10 +811,19 @@ class NewtonBasicPipeline:
 
         # 4. Solve IK per frame (including any prepended init / appended
         # stab frames; see step 3a).
+        drop_for_ik = hand_ground_drop
+        if drop_for_ik is not None and (n_init > 0 or n_stab > 0):
+            padded = np.zeros(ik_targets.shape[0], dtype=np.float32)
+            n_drop = min(int(drop_for_ik.shape[0]), int(ik_targets.shape[0]) - n_init - n_stab)
+            if n_drop > 0:
+                padded[n_init : n_init + n_drop] = drop_for_ik[:n_drop]
+            drop_for_ik = padded
+
         joint_q_all = self._solve_ik_sequence(
             ik_targets,
             progress_callback=progress_callback,
             force_disable_rotation_objectives=_pos_only,
+            hand_ground_drop=drop_for_ik,
         )
 
         # 4b. Trim warm-up frames so the user sees exactly the original
@@ -825,6 +864,8 @@ class NewtonBasicPipeline:
         # 9. Root displacement is already scaled inside HumanToRobotScaler so
         #    IK targets and final floating-base motion stay consistent.
         joint_q_out = self._rescale_root_displacement(joint_q_out)
+        joint_q_out = self._clamp_solved_foot_heights(joint_q_out)
+        joint_q_out = self._clamp_solved_foot_lateral(joint_q_out)
 
         return RetargetedMotion(
             name=motion.name,
@@ -1197,7 +1238,9 @@ class NewtonBasicPipeline:
         return None
 
     def _postprocess_joint_q(
-        self, joint_q_all: NDArray, motion: Motion,
+        self,
+        joint_q_all: NDArray,
+        motion: Motion,
     ) -> RetargetedMotion:
         """Clamp, rate-limit, align and wrap a raw ``(F, coord)`` array."""
         root7 = joint_q_all[:, : self.ctx.root_coord_count]
@@ -1217,6 +1260,8 @@ class NewtonBasicPipeline:
         jq_out = joint_q_all[:, :csv_width].astype(np.float32, copy=False)
         jq_out = self._align_root_to_source_heading(jq_out)
         jq_out = self._rescale_root_displacement(jq_out)
+        jq_out = self._clamp_solved_foot_heights(jq_out)
+        jq_out = self._clamp_solved_foot_lateral(jq_out)
 
         return RetargetedMotion(
             name=motion.name,
@@ -1283,6 +1328,113 @@ class NewtonBasicPipeline:
         """
         return joint_q
 
+    def _clamp_solved_foot_heights(self, joint_q: NDArray) -> NDArray:
+        """Post-IK safety clamp mirroring soma ``_clamp_foot_positions``.
+
+        Immediately lifts the floating base when solved ankle links sit below
+        the ground plane.  Anti-floating corrections use an uprightness blend
+        and per-frame rate limit so cartwheels are not snapped downward.
+        """
+        from hhtools.web.serialize import _lowest_ankle_z, _quat_xyzw_to_rotmat
+
+        ik_map = dict(self.robot.preset.ik_map) if self.robot.preset.ik_map else {}
+        if not ik_map:
+            return joint_q
+
+        _FOOT_COLLISION_OFFSET = 0.05
+        _GROUND_CLEARANCE = 0.01
+        _MIN_ANKLE_Z = _FOOT_COLLISION_OFFSET + _GROUND_CLEARANCE
+        _FLOAT_TOL = 0.015
+        _UPRIGHT_BLEND_RANGE = 0.30
+        _MAX_FLOAT_CORRECTION = 0.05
+        _MAX_CORRECTION_RATE = 0.008
+
+        out = joint_q.astype(np.float32, copy=True)
+        dof_names = self.robot.dof_names()
+        n_dof = min(out.shape[1] - self.ctx.root_coord_count, len(dof_names))
+        if n_dof <= 0:
+            return out
+
+        rest_cfg = {dof_names[i]: 0.0 for i in range(n_dof)}
+        self.robot.apply_configuration(rest_cfg)
+        root_rot0 = _quat_xyzw_to_rotmat(out[0, 3:7])
+        rest_ankle = _lowest_ankle_z(self.robot, ik_map, root_rot0)
+        rest_foot_z = float(rest_ankle) if rest_ankle is not None else 0.0
+
+        prev_float_correction = 0.0
+        for f in range(out.shape[0]):
+            cfg = {
+                dof_names[i]: float(out[f, self.ctx.root_coord_count + i])
+                for i in range(n_dof)
+            }
+            self.robot.apply_configuration(cfg)
+            ankle_z = _lowest_ankle_z(
+                self.robot, ik_map, _quat_xyzw_to_rotmat(out[f, 3:7]),
+            )
+            if ankle_z is None:
+                continue
+            root_z = float(out[f, 2])
+            world_ankle_z = root_z + float(ankle_z)
+
+            if world_ankle_z < _MIN_ANKLE_Z:
+                out[f, 2] += np.float32(_MIN_ANKLE_Z - world_ankle_z)
+                prev_float_correction = 0.0
+                continue
+
+            target = 0.0
+            if world_ankle_z > rest_foot_z + _FLOAT_TOL:
+                uprightness = max(
+                    0.0,
+                    min(1.0, (root_z - world_ankle_z) / _UPRIGHT_BLEND_RANGE),
+                )
+                target = min(
+                    (world_ankle_z - rest_foot_z - _FLOAT_TOL) * uprightness,
+                    _MAX_FLOAT_CORRECTION,
+                )
+            delta = target - prev_float_correction
+            delta = max(-_MAX_CORRECTION_RATE, min(_MAX_CORRECTION_RATE, delta))
+            correction = prev_float_correction + delta
+            prev_float_correction = correction
+            if correction > 0.001:
+                out[f, 2] -= np.float32(correction)
+        return out
+
+    def _clamp_solved_foot_lateral(self, joint_q: NDArray) -> NDArray:
+        """Post-IK hip abduction spread when solved foot meshes overlap."""
+        min_clearance = self._resolved_foot_lateral_clearance_m()
+        if min_clearance <= 0.0 or joint_q.shape[0] == 0:
+            return joint_q
+
+        from hhtools.robot.foot_geometry import clamp_joint_q_foot_lateral_clearance
+
+        feet_cfg = self.feet_stabilizer_config
+        ankle_prefilter = 0.0
+        if feet_cfg is not None and float(feet_cfg.min_lateral_separation) > 0.0:
+            min_lat = float(feet_cfg.min_lateral_separation)
+            ankle_prefilter = min_lat + max(0.03, min_lat * 0.3)
+
+        dof_names = self.robot.dof_names()
+        out = joint_q.astype(np.float32, copy=True)
+        for f in range(out.shape[0]):
+            out[f] = clamp_joint_q_foot_lateral_clearance(
+                self.robot,
+                out[f],
+                dof_names,
+                root_coord_count=self.ctx.root_coord_count,
+                min_clearance_m=min_clearance,
+                ankle_prefilter_m=ankle_prefilter if ankle_prefilter > 0.0 else None,
+            )
+        return out
+
+    def _resolved_foot_lateral_clearance_m(self) -> float:
+        """Target inner foot-mesh clearance from feet stabilizer / robot geometry."""
+        feet_cfg = self.feet_stabilizer_config
+        if feet_cfg is not None and float(feet_cfg.min_foot_clearance) > 0.0:
+            return float(feet_cfg.min_foot_clearance)
+        if feet_cfg is not None and float(feet_cfg.min_lateral_separation) > 0.0:
+            return 0.01
+        return 0.0
+
     def _build_scaler(self, motion: Motion) -> HumanToRobotScaler:
         key = id(motion.hierarchy)
         cached = self._scaler_by_hierarchy.get(key)
@@ -1296,6 +1448,31 @@ class NewtonBasicPipeline:
         self._scaler_by_hierarchy[key] = scaler
         return scaler
 
+    def _build_ground_collision_objective(self, model) -> ik.IKObjective | None:
+        weight = float(self.config.ground_collision_weight)
+        bodies = list(self.config.ground_collision_bodies or ())
+        if weight <= 0.0 or not bodies:
+            return None
+        from hhtools.retarget.newton_basic.ik_collision_objective import (
+            IKObjectiveGroundCollision,
+            resolve_ground_collision_bodies,
+        )
+
+        resolved = resolve_ground_collision_bodies(self.ctx.body_labels, bodies)
+        if not resolved:
+            _log.warning(
+                "ground_collision_bodies configured but none match robot links %s",
+                self.ctx.body_labels[:8],
+            )
+            return None
+        return IKObjectiveGroundCollision(
+            model,
+            body_labels=self.ctx.body_labels,
+            ground_bodies=resolved,
+            weight=weight,
+            ground_z=float(self.config.ground_collision_z),
+        )
+
     def _build_feet_stabilizer(
         self, joint_names: tuple[str, ...]
     ) -> FeetStabilizer:
@@ -1305,7 +1482,7 @@ class NewtonBasicPipeline:
             return cached
         assert self.feet_stabilizer_config is not None
         stab = FeetStabilizer(
-            self.feet_stabilizer_config, joint_names=joint_names
+            self.feet_stabilizer_config, joint_names=joint_names,
         )
         self._feet_stab_by_hierarchy[key] = stab
         return stab
@@ -1318,6 +1495,7 @@ class NewtonBasicPipeline:
         *,
         progress_callback: Callable[[int, int], None] | None = None,
         force_disable_rotation_objectives: bool = False,
+        hand_ground_drop: NDArray | None = None,
     ) -> NDArray:
         """Run the IK solver frame-by-frame and return ``(F, joint_coord_count)``.
 
@@ -1335,6 +1513,7 @@ class NewtonBasicPipeline:
                 ik_targets,
                 progress_callback=progress_callback,
                 force_disable_rotation_objectives=force_disable_rotation_objectives,
+                hand_ground_drop=hand_ground_drop,
             )
 
     def _solve_ik_sequence_inner(
@@ -1343,6 +1522,7 @@ class NewtonBasicPipeline:
         *,
         progress_callback: Callable[[int, int], None] | None,
         force_disable_rotation_objectives: bool,
+        hand_ground_drop: NDArray | None = None,
     ) -> NDArray:
         num_frames = ik_targets.shape[0]
         num_mapped = ik_targets.shape[1]
@@ -1417,6 +1597,27 @@ class NewtonBasicPipeline:
                 )
             )
 
+        ground_collision_obj = self._build_ground_collision_objective(model)
+        if ground_collision_obj is not None:
+            objectives.append(ground_collision_obj)
+
+        use_dynamic_ground = (
+            ground_collision_obj is not None
+            and self.config.ground_collision_dynamic_boost
+        )
+        _STANDING_ROOT_Z = 0.70
+        _GROUND_ROOT_Z = 0.25
+        _COLLISION_BOOST = 2.0
+        pelvis_entry = next(
+            (e for e in entries if e.canonical_name in ("hips", "pelvis")),
+            None,
+        )
+        pelvis_i = entries.index(pelvis_entry) if pelvis_entry is not None else -1
+        hips_default_weight = (
+            float(entries[pelvis_i].t_weight) if pelvis_i >= 0 else 10.0
+        )
+        _HIPS_REDUCED_WEIGHT = 3.0
+
         solver = ik.IKSolver(
             model=model,
             n_problems=1,
@@ -1432,14 +1633,10 @@ class NewtonBasicPipeline:
         # default is the URDF zero-pose which often has the pelvis at origin;
         # this prevents an aggressive first-frame root drift that otherwise
         # shows up as a single-frame "jump" in the CSV.
-        pelvis_entry = next(
-            (e for e in entries if e.canonical_name in ("hips", "pelvis")),
-            None,
-        )
         if pelvis_entry is not None:
             jq = joint_q.numpy().copy()
-            jq[0, 0:3] = ik_targets[0, entries.index(pelvis_entry), 0:3]
-            jq[0, 3:7] = ik_targets[0, entries.index(pelvis_entry), 3:7]
+            jq[0, 0:3] = ik_targets[0, pelvis_i, 0:3]
+            jq[0, 3:7] = ik_targets[0, pelvis_i, 3:7]
             joint_q.assign(jq)
 
         out = np.empty((num_frames, model.joint_coord_count), dtype=np.float32)
@@ -1462,6 +1659,32 @@ class NewtonBasicPipeline:
             ik_graph = _try_capture_ik_step(_ik_step_once)
 
         for frame in range(num_frames):
+            if use_dynamic_ground and pelvis_i >= 0:
+                root_z = float(ik_targets[frame, pelvis_i, 2])
+                groundedness = max(
+                    0.0,
+                    min(
+                        1.0,
+                        (_STANDING_ROOT_Z - root_z)
+                        / max(_STANDING_ROOT_Z - _GROUND_ROOT_Z, 0.01),
+                    ),
+                )
+                boost = 1.0 + _COLLISION_BOOST * groundedness
+                ground_collision_obj.set_weight(
+                    float(self.config.ground_collision_weight) * boost
+                )
+
+            if pelvis_i >= 0 and hand_ground_drop is not None and frame < len(hand_ground_drop):
+                drop = float(hand_ground_drop[frame])
+                if drop > 0.01:
+                    blend = min(1.0, drop / 0.10)
+                    position_objectives[pelvis_i].weight = (
+                        hips_default_weight * (1.0 - blend)
+                        + _HIPS_REDUCED_WEIGHT * blend
+                    )
+                else:
+                    position_objectives[pelvis_i].weight = hips_default_weight
+
             for i in range(num_mapped):
                 position_objectives[i].set_target_position(
                     0, wp.vec3(*ik_targets[frame, i, 0:3])
@@ -1699,6 +1922,12 @@ class NewtonBasicPipeline:
         masks = self.config.smooth_joint_filter_masks
         if masks is None:
             masks = dict(self.ctx.preset.smooth_joint_filter_masks or {})
+        if not masks and self.ctx.preset.urdf_path is not None and self.ctx.preset.ik_map:
+            from hhtools.robot.kinematics import infer_smooth_joint_filter_masks
+
+            masks = infer_smooth_joint_filter_masks(
+                self.ctx.preset.urdf_path, dict(self.ctx.preset.ik_map),
+            )
         if not masks:
             return None  # uniform weight — let IKSmoothJointFilter default
         try:
@@ -1805,9 +2034,16 @@ def prewarm_newton_ik_for_robot(
         model_height=1.3,
         human_height_assumption=1.7,
     )
-    pcfg = pipeline_config or PipelineConfig(
-        ik_iterations=max(1, int(ik_iterations)),
-    )
+    if pipeline_config is None:
+        from hhtools.robot.retarget_profile import build_pipeline_config_for_preset
+
+        pcfg = build_pipeline_config_for_preset(
+            robot.preset,
+            "lafan_bvh",
+            ik_iterations=max(1, int(ik_iterations)),
+        )
+    else:
+        pcfg = pipeline_config
     # Prewarm only JIT-compiles kernels — CUDA graph capture here races the
     # retarget worker on the same device and can poison subsequent launches.
     pcfg = replace(pcfg, ik_use_cuda_graph=False)

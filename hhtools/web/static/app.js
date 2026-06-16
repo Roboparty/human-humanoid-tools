@@ -1251,6 +1251,7 @@ class RobotView {
     this.group = new THREE.Group();
     world.add(this.group);
     this.linkMeshes = {}; // link -> [{mesh, bakedWorld}]
+    this.meshToLink = {}; // GLB node / mesh basename -> URDF link
     this.zeroInv = {}; // link -> THREE.Matrix4 inverse of zero transform
     this.links = [];
     this.trajectory = null;
@@ -1261,6 +1262,7 @@ class RobotView {
   clear() {
     while (this.group.children.length) this.group.remove(this.group.children[0]);
     this.linkMeshes = {};
+    this.meshToLink = {};
     this.zeroInv = {};
     this.trajectory = null;
   }
@@ -1280,6 +1282,7 @@ class RobotView {
   async load(robot) {
     this.clear();
     this.links = robot.links;
+    this.meshToLink = robot.mesh_to_link || {};
     this.zero = robot.link_transforms_zero;
     this.groundOffset = robot.ground_offset_z || 0;
     for (const link of this.links) {
@@ -1301,6 +1304,8 @@ class RobotView {
         gltf.scene.traverse((n) => { if (n.isMesh) meshes.push(n); });
         for (const mesh of meshes) {
           const link = this._linkForNode(mesh);
+          if (!link) continue;
+          mesh.userData.hhtoolsLink = link;
           const baked = mesh.matrixWorld.clone();
           mesh.matrixAutoUpdate = false;
           // trimesh→GLB exports frequently omit vertex normals; without them
@@ -1321,19 +1326,38 @@ class RobotView {
     });
     this.applyStatic();
   }
+  _normPickKey(s) {
+    return (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+  _meshBasename(name) {
+    const base = String(name || "").split(/[/\\]/).pop();
+    return base.replace(/\.[^.]+$/, "");
+  }
   _linkForNode(node) {
     const names = this.links;
-    const norm = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
     let cur = node;
     while (cur) {
-      const cn = norm(cur.name);
-      for (const l of names) if (norm(l) === cn && cn) return l;
+      const tagged = cur.userData?.hhtoolsLink;
+      if (tagged) return tagged;
+      const raw = cur.name || "";
+      if (this.meshToLink[raw]) return this.meshToLink[raw];
+      const base = this._meshBasename(raw);
+      if (this.meshToLink[base]) return this.meshToLink[base];
+      const cn = this._normPickKey(raw);
+      for (const l of names) {
+        if (this._normPickKey(l) === cn && cn) return l;
+      }
+      const sn = this._normPickKey(base);
+      if (sn) {
+        for (const l of names) {
+          const ln = this._normPickKey(l);
+          const lc = ln.endsWith("link") ? ln.slice(0, -4) : ln;
+          if (lc === sn || ln === sn) return l;
+        }
+      }
       cur = cur.parent;
     }
-    // substring fallback on node name
-    const nn = norm(node.name);
-    for (const l of names) if (nn && nn.includes(norm(l))) return l;
-    return names[0]; // base link
+    return null;
   }
   _buildLinkSkeleton() {
     const geo = new THREE.SphereGeometry(0.02, 8, 8);
@@ -1722,7 +1746,6 @@ const REFERENCE_LABELS = {
   gvhmr: "GVHMR",
   soma_bvh: "SOMA BVH",
   lafan_bvh: "LAFAN / Mixamo BVH",
-  fbx: "FBX",
   glb: "GLB / GLTF",
 };
 
@@ -1737,7 +1760,6 @@ const DATASET_TO_REFERENCE = {
   omomo: "smplx",
   meshmimic_holosoma: "smplx",
   glb: "glb",
-  fbx: "fbx",
   unified_npz: "smpl",
   parc_ms: "smpl",
 };
@@ -1762,7 +1784,6 @@ const DATASET_LABELS = {
   gvhmr: "GVHMR (SMPL-H)",
   omomo: "OMOMO (SMPL-X)",
   glb: "GLB 骨骼",
-  fbx: "FBX 骨骼",
   parc_ms: "parc_ms / meshmimic",
   meshmimic_holosoma: "holosoma NPY",
   unified_npz: "hhtools NPZ",
@@ -1803,11 +1824,6 @@ const REFERENCE_HELP = {
     input: "带骨骼的 .glb / .gltf",
     calib: "标定参考「GLB / GLTF」— 对齐<b>蓝色 GLB 第 0 帧参考骨架</b>",
     file: "retarget_calibration_glb.yaml",
-  },
-  fbx: {
-    input: "带骨骼的 .fbx",
-    calib: "标定参考「FBX」— 对齐<b>蓝色 FBX 参考骨架</b>",
-    file: "retarget_calibration_fbx.yaml",
   },
 };
 
@@ -2298,7 +2314,33 @@ document.getElementById("add-to-basket").onclick = () => {
 };
 
 // =================================================================  ROBOT
+let _robotPanelLockDepth = 0;
+
+function setRobotPanelLocked(locked) {
+  if (locked) _robotPanelLockDepth++;
+  else _robotPanelLockDepth = Math.max(0, _robotPanelLockDepth - 1);
+  const busy = _robotPanelLockDepth > 0;
+  state.robotPanelLocked = busy;
+
+  const sel = document.getElementById("robot-select");
+  if (sel) sel.disabled = busy;
+  for (const id of ["robot-load-btn", "robot-pick-urdf", "robot-pick-mesh-folder"]) {
+    const el = document.getElementById(id);
+    if (el) el.disabled = busy;
+  }
+  const delBtn = document.getElementById("robot-delete-btn");
+  if (delBtn && busy) delBtn.disabled = true;
+  if (!busy) updateRobotDeleteBtn();
+  for (const id of ["robot-drop-urdf", "robot-drop-mesh"]) {
+    document.getElementById(id)?.classList.toggle("disabled", busy);
+  }
+}
+
 async function applyRobot(robotData) {
+  if (state.robotPanelLocked) {
+    toast("Retarget 进行中，请等待完成后再切换机器人", true);
+    return;
+  }
   state.robot = robotData;
   await robot.load(robotData);
   document.getElementById("robot-meta-card").style.display = "block";
@@ -2338,7 +2380,8 @@ function updateRobotDeleteBtn() {
   const opt = sel.selectedOptions[0];
   const deletable = opt?.dataset.deletable === "1";
   btn.style.display = deletable ? "" : "none";
-  btn.disabled = !deletable;
+  btn.dataset.deletable = deletable ? "1" : "0";
+  btn.disabled = state.robotPanelLocked || !deletable;
 }
 
 async function refreshRobotList() {
@@ -2366,6 +2409,10 @@ async function refreshRobotList() {
 }
 document.getElementById("robot-select")?.addEventListener("change", updateRobotDeleteBtn);
 document.getElementById("robot-load-btn").onclick = async () => {
+  if (state.robotPanelLocked) {
+    toast("Retarget 进行中，请等待完成后再切换机器人", true);
+    return;
+  }
   const name = document.getElementById("robot-select").value;
   if (!name) return;
   toast("加载机器人…");
@@ -2373,6 +2420,10 @@ document.getElementById("robot-load-btn").onclick = async () => {
   catch (e) { toast(e.message, true); }
 };
 document.getElementById("robot-delete-btn").onclick = async () => {
+  if (state.robotPanelLocked) {
+    toast("Retarget 进行中，请等待完成后再操作", true);
+    return;
+  }
   const sel = document.getElementById("robot-select");
   const name = sel?.value;
   if (!name) return;
@@ -2417,6 +2468,10 @@ function updateRobotImportStatus() {
 }
 
 async function tryUploadRobot() {
+  if (state.robotPanelLocked) {
+    toast("Retarget 进行中，请等待完成后再切换机器人", true);
+    return;
+  }
   if (!robotImport.urdf) {
     toast("请先放入 .urdf 文件", true);
     return;
@@ -2447,6 +2502,10 @@ async function tryUploadRobot() {
 }
 
 function ingestRobotUrdf(files) {
+  if (state.robotPanelLocked) {
+    toast("Retarget 进行中，请等待完成后再切换机器人", true);
+    return;
+  }
   if (!files?.length) return;
   const urdf = files.find(isUrdfFile);
   if (!urdf) { toast("此区域需要 .urdf 文件", true); return; }
@@ -2466,6 +2525,10 @@ function ingestRobotUrdf(files) {
 }
 
 function ingestRobotMesh(files) {
+  if (state.robotPanelLocked) {
+    toast("Retarget 进行中，请等待完成后再切换机器人", true);
+    return;
+  }
   if (!files?.length) return;
   const meshes = files.filter((f) => !isUrdfFile(f));
   if (!meshes.length) { toast("未找到 mesh 文件", true); return; }
@@ -3582,6 +3645,7 @@ function setRetargetProgress(prog, bar, jp) {
 
 document.getElementById("retarget-btn").onclick = async () => {
   if (!state.motion || !state.robot) return;
+  const retargetRobotName = state.robot.name;
   const prog = document.getElementById("rt-progress");
   const bar = prog.querySelector(".bar");
   const status = document.getElementById("rt-status");
@@ -3593,10 +3657,11 @@ document.getElementById("retarget-btn").onclick = async () => {
     ? `<span class="spin"></span> 正在 retarget…（新机器人首次较慢，进度条可能短暂不动）`
     : `<span class="spin"></span> 正在 retarget…`;
   document.getElementById("retarget-btn").disabled = true;
+  setRobotPanelLocked(true);
   try {
     const retargetFps = parseOptionalFps(document.getElementById("rt-retarget-fps"));
     const body = {
-      robot: state.robot.name,
+      robot: retargetRobotName,
       motion_token: state.motion.token,
       reference: state.reference,
       backend: document.getElementById("rt-backend").value,
@@ -3609,6 +3674,12 @@ document.getElementById("retarget-btn").onclick = async () => {
       const msg = jp.message || (firstHint ? "新机器人首次 retarget 编译中，请耐心等待…" : "正在 retarget…");
       status.innerHTML = `<span class="spin"></span> ${msg}`;
     });
+    if (state.robot?.name !== retargetRobotName) {
+      prog.classList.remove("indet");
+      status.textContent = "";
+      toast("Retarget 已完成，但过程中机器人已变更，结果已丢弃。请重新执行 Retarget。", true);
+      return;
+    }
     prog.classList.remove("indet");
     bar.style.width = "100%";
     if (state.robot) state.robot.ik_prewarmed = true;
@@ -3669,6 +3740,7 @@ document.getElementById("retarget-btn").onclick = async () => {
     prog.classList.remove("indet");
     toast(e.message, true);
   } finally {
+    setRobotPanelLocked(false);
     document.getElementById("retarget-btn").disabled = false;
   }
 };
@@ -3873,6 +3945,7 @@ function setBatchProgress(jp) {
 
 document.getElementById("batch-run").onclick = async () => {
   if (!basket.length || !state.robot) return;
+  const batchRobotName = state.robot.name;
   const progStack = document.getElementById("batch-progress-stack");
   const status = document.getElementById("batch-status");
   const failBox = document.getElementById("batch-failures");
@@ -3883,9 +3956,10 @@ document.getElementById("batch-run").onclick = async () => {
   progStack?.classList.remove("hidden");
   setBatchProgress({ status: "running", progress: 0, clip_progress: 0 });
   status.innerHTML = `<span class="spin"></span> 批量处理中…`;
+  setRobotPanelLocked(true);
   try {
     const batchBody = {
-      robot: state.robot.name,
+      robot: batchRobotName,
       reference: state.reference || "smpl",
       backend: document.getElementById("batch-backend").value,
       out_dir: document.getElementById("batch-out").value || "batch_export",
@@ -3931,6 +4005,8 @@ document.getElementById("batch-run").onclick = async () => {
     status.textContent = "";
     renderBatchFailures(null);
     toast(e.message, true);
+  } finally {
+    setRobotPanelLocked(false);
   }
 };
 
@@ -4093,7 +4169,12 @@ function r2rSyncPlayerDuration() {
 function r2rSceneGlbUrl(token, o) {
   const mesh = o.mesh_file || "";
   if (!token || !mesh) return null;
-  return `/api/r2r/scene_glb?token=${encodeURIComponent(token)}&mesh=${encodeURIComponent(mesh)}`;
+  let url =
+    `/api/r2r/scene_glb?token=${encodeURIComponent(token)}&mesh=${encodeURIComponent(mesh)}`;
+  if (o.scale != null && Number.isFinite(o.scale)) {
+    url += `&scale=${encodeURIComponent(o.scale)}`;
+  }
+  return url;
 }
 
 function r2rLoadSrcScene(scene, token, duration) {

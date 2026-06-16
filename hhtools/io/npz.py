@@ -6,7 +6,7 @@ The on-disk layout is a single ``.npz`` archive with the following keys:
 - ``name``: scalar string. Human-readable motion name (used as the default export stem).
 - ``framerate``: scalar float64. Samples per second.
 - ``up_axis``: scalar string (``"X" | "Y" | "Z"``). Up axis of the stored ``positions``.
-- ``source_format``: scalar string. Original format (``"bvh" | "glb" | "fbx" | "smpl" | ...``).
+- ``source_format``: scalar string. Original format (``"bvh" | "glb" | "smpl" | ...``).
 - ``bone_names``: array of length ``num_bones`` (``U128``). Bone names.
 - ``parent_indices``: int32 array of length ``num_bones``. ``-1`` marks the root.
 - ``positions``: float32 array of shape ``(num_frames, num_bones, 3)``.
@@ -395,7 +395,7 @@ def _strip_unserialisable_meta(meta: dict) -> dict:
                 "num_joints": int(value.num_joints),
                 "influences_per_vertex": int(value.influences_per_vertex),
                 "note": (
-                    "SkinnedMesh dropped at NPZ save time; re-open the authored GLB/FBX "
+                    "SkinnedMesh dropped at NPZ save time; re-open the authored GLB "
                     "with ``load_glb(with_mesh=True)`` to get the mesh back."
                 ),
             }

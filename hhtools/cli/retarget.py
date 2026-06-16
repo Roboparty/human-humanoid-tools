@@ -125,7 +125,7 @@ def retarget(
         "--calibration-reference",
         help=(
             "Which saved calibration to load (matches the viewer's Reference "
-            "pose): smpl, smplx, soma_bvh, lafan_bvh, fbx, glb. "
+            "pose): smpl, smplx, soma_bvh, lafan_bvh, glb. "
             "Looks for retarget_calibration_<ref>.yaml beside the URDF, then "
             "legacy retarget_calibration.yaml if its embedded reference matches."
         ),
@@ -155,9 +155,12 @@ def retarget(
         NewtonBasicPipeline,
         PipelineConfig,
     )
-    from hhtools.retarget.newton_basic.config import FeetStabilizerConfig
     from hhtools.robot.loader import load_robot
     from hhtools.robot.registry import get as get_preset
+    from hhtools.robot.retarget_profile import (
+        build_feet_stabilizer_config,
+        build_pipeline_config_for_preset,
+    )
 
     files = _expand_inputs(inputs)
     if not files:
@@ -204,13 +207,33 @@ def retarget(
     if not output_is_file:
         output.mkdir(parents=True, exist_ok=True)
 
-    pipeline_cfg = PipelineConfig(
+    from dataclasses import replace
+
+    pipeline_cfg = build_pipeline_config_for_preset(
+        preset,
+        calibration_reference,
         ik_iterations=ik_iterations,
+    )
+    pipeline_cfg = replace(
+        pipeline_cfg,
         joint_limit_weight=joint_limit_weight,
         smooth_joint_filter_weight=smooth_joint_filter_weight,
-        max_joint_velocity=max_joint_velocity,
-        apply_feet_stabilizer=apply_feet_stabilizer,
+        max_joint_velocity=(
+            max_joint_velocity
+            if max_joint_velocity > 0.0
+            else pipeline_cfg.max_joint_velocity
+        ),
+        apply_feet_stabilizer=(
+            apply_feet_stabilizer or pipeline_cfg.apply_feet_stabilizer
+        ),
     )
+    feet_stabilizer_config = None
+    if pipeline_cfg.apply_feet_stabilizer:
+        feet_stabilizer_config = build_feet_stabilizer_config(
+            preset,
+            calibration_reference,
+            model=robot_model,
+        )
 
     pipeline: NewtonBasicPipeline | None = None
     errors: list[tuple[Path, str]] = []
@@ -247,9 +270,7 @@ def retarget(
             pipeline = NewtonBasicPipeline(
                 robot_model,
                 scaler_config=scaler_cfg,
-                feet_stabilizer_config=(
-                    FeetStabilizerConfig() if apply_feet_stabilizer else None
-                ),
+                feet_stabilizer_config=feet_stabilizer_config,
                 pipeline_config=pipeline_cfg,
                 human_height=human_height,
                 configure_warp=False,

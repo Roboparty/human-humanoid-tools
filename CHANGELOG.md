@@ -14,5 +14,5 @@ All notable changes to this project will be documented in this file. The format 
   layer (quaternion, rotation, transform, vector utilities) in `hhtools.core`.
 - Unified internal NPZ schema at `hhtools.io.npz` together with a self-written Apache-2.0 BVH
   parser and exporter at `hhtools.io.bvh`.
-- `hhtools convert` CLI entry point for headless BVH/GLB/FBX to NPZ batch conversion.
+- `hhtools convert` CLI entry point for headless BVH/GLB to NPZ batch conversion.
 - Minimal Viser + FastAPI viewer (`hhtools ui`) that loads an NPZ and draws a playable skeleton.

@@ -656,7 +656,9 @@ def retarget_robot_to_robot(
     )
 
     configure_warp()
-    feet_cfg = build_feet_stabilizer_config(target_model.preset, reference_key)
+    feet_cfg = build_feet_stabilizer_config(
+        target_model.preset, reference_key, model=target_model,
+    )
     pipeline = NewtonBasicPipeline(
         target_model,
         scaler_config=cfg,

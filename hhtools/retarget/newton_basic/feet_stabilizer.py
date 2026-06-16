@@ -25,6 +25,7 @@ Attribution:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -87,8 +88,21 @@ class FeetStabilizer:
 
         self._foot_indices = self._resolve_foot_indices()
         self._foot_toe_pairs = self._resolve_foot_toe_pairs()
-        self._hips_idx = self._resolve("hips_name")
+        self._hips_idx = self._resolve(
+            "hips_name",
+            fallbacks=("Hips", "hips", "pelvis"),
+        )
         self._lateral_pairs = self._resolve_lateral_pairs()
+        self._body_probe_indices, self._body_probe_below = self._resolve_body_probes()
+        self._body_ground_lift_smoothed = 0.0
+        self._hand_chain_indices = self._resolve_hand_chains()
+        self._arm_chains = self._resolve_arm_chains()
+        self._arm_reach_map = self._build_arm_reach_map()
+        self._chest_idx = self._resolve_joint(
+            self._config.chest_name,
+            fallbacks=("Spine2", "chest", "spine", "Spine1"),
+        )
+        self.hand_ground_drop_per_frame = np.zeros(0, dtype=np.float32)
 
     # --------------------------------------------------------------- properties
 
@@ -121,7 +135,9 @@ class FeetStabilizer:
         1. Foot planting       — lock horizontal positions when a foot is still.
         2. Min lateral sep     — push L/R pairs apart.
         3. Ground contact      — lift blocks that float in upright poses.
-        4. Smoothing           — rate-limit the deltas we just added.
+        4. Hand ground contact — lower torso so hands can reach the floor.
+        5. Smoothing           — rate-limit the deltas we just added.
+        6. Body ground clearance — lift probes that still penetrate.
         """
         arr = np.asarray(effectors, dtype=np.float32)
         if arr.ndim != 3 or arr.shape[-1] != 7:
@@ -140,7 +156,9 @@ class FeetStabilizer:
         planted = self._apply_foot_planting(out)
         self._apply_min_lateral_separation(out)
         ground_corr = self._apply_ground_contact(out)
+        self._apply_hand_ground_contact(out)
         smoothed_frames = self._smooth_corrections(out, pre_constraints_pos)
+        self._apply_body_ground_clearance(out)
 
         if not return_stats:
             return out
@@ -275,6 +293,120 @@ class FeetStabilizer:
 
         return corrections
 
+    # --------------------------------------------------------- hand ground contact
+
+    def _apply_hand_ground_contact(self, effectors: NDArray) -> None:
+        """Pull torso/arms down so hand targets can touch the ground plane.
+
+        Port of soma ``_enforce_hand_ground_contact``.  Populates
+        :attr:`hand_ground_drop_per_frame` for dynamic Hips IK weight reduction.
+        """
+        cfg = self._config
+        if cfg.hand_ground_contact_z <= 0.0 or not self._hand_chain_indices:
+            self.hand_ground_drop_per_frame = np.zeros(effectors.shape[0], dtype=np.float32)
+            return
+
+        hand_ref = float(cfg.hand_ground_contact_z)
+        approach_threshold = 0.20
+        sh_pull_ratio = 0.70
+        up = self._up
+        h_axes = [self._fwd, self._lat]
+        spine_idx = self._chest_idx
+
+        self.hand_ground_drop_per_frame = np.zeros(effectors.shape[0], dtype=np.float32)
+
+        for f in range(effectors.shape[0]):
+            max_torso_drop = 0.0
+            for hips_idx, sh_idx, fa_idx, h_idx in self._hand_chain_indices:
+                hand_h = float(effectors[f, h_idx, up])
+                hips_h = float(effectors[f, hips_idx, up])
+                if hand_h >= approach_threshold or hand_h >= hips_h:
+                    continue
+                rough_deficit = hand_h - hand_ref
+                if rough_deficit <= 0.01:
+                    continue
+
+                sh_h_orig = float(effectors[f, sh_idx, up])
+                arm_vert = sh_h_orig - hand_h
+                if arm_vert < 0.05:
+                    continue
+
+                sh_shift = rough_deficit * sh_pull_ratio
+                effectors[f, sh_idx, up] -= np.float32(sh_shift)
+
+                target_h = hand_ref
+                if h_idx in self._arm_reach_map:
+                    arm_sh_idx, max_reach = self._arm_reach_map[h_idx]
+                    sh_pos = effectors[f, arm_sh_idx, 0:3].copy()
+                    h_horiz = effectors[f, h_idx, h_axes]
+                    sh_horiz = sh_pos[h_axes]
+                    horiz_dist_sq = float(np.sum((h_horiz - sh_horiz) ** 2))
+                    vert_budget_sq = max_reach ** 2 - horiz_dist_sq
+                    if vert_budget_sq > 0.0:
+                        min_h = float(sh_pos[up]) - math.sqrt(vert_budget_sq)
+                        target_h = max(hand_ref, min_h)
+                    else:
+                        effectors[f, sh_idx, up] += np.float32(sh_shift)
+                        continue
+
+                actual_deficit = hand_h - target_h
+                if actual_deficit <= 0.01:
+                    effectors[f, sh_idx, up] += np.float32(sh_shift)
+                    continue
+
+                effectors[f, h_idx, up] = np.float32(target_h)
+                fa_h = float(effectors[f, fa_idx, up])
+                fa_ratio = (fa_h - hand_h) / arm_vert if arm_vert > 1e-6 else 0.0
+                effectors[f, fa_idx, up] -= np.float32(actual_deficit * (1.0 - fa_ratio))
+
+                needed_torso_drop = max(0.0, target_h - hand_ref + 0.02)
+                if needed_torso_drop > max_torso_drop:
+                    max_torso_drop = needed_torso_drop
+
+            if max_torso_drop > 0.0:
+                hips_idx = self._hand_chain_indices[0][0]
+                effectors[f, hips_idx, up] -= np.float32(max_torso_drop * 0.8)
+                if spine_idx >= 0:
+                    effectors[f, spine_idx, up] -= np.float32(max_torso_drop * 0.5)
+                self.hand_ground_drop_per_frame[f] = np.float32(max_torso_drop)
+
+    # --------------------------------------------------------- body ground clearance
+
+    def _apply_body_ground_clearance(self, effectors: NDArray) -> None:
+        """Lift effectors when probe joints penetrate the ground plane.
+
+        Adapted from soma-retargeter ``_enforce_body_ground_clearance``.  Runs
+        after smoothing so foot-planting blends are not rate-limited twice.
+        """
+        cfg = self._config
+        if not cfg.enable_body_ground_clearance or not self._body_probe_indices:
+            return
+
+        up = self._up
+        floor = float(cfg.body_ground_plane_z) + float(cfg.body_ground_clearance)
+        max_rate = float(cfg.body_ground_lift_max_rate)
+        snap = bool(cfg.body_ground_snap_on_penetration)
+        probes = self._body_probe_indices
+        belows = self._body_probe_below
+
+        for f in range(effectors.shape[0]):
+            min_h = min(
+                effectors[f, idx, up] - b for idx, b in zip(probes, belows)
+            )
+            lift_inst = max(0.0, floor - min_h)
+            if snap and lift_inst > 1e-7:
+                self._body_ground_lift_smoothed = lift_inst
+            else:
+                delta = lift_inst - self._body_ground_lift_smoothed
+                if max_rate > 0.0:
+                    if delta > max_rate:
+                        delta = max_rate
+                    elif delta < -max_rate:
+                        delta = -max_rate
+                self._body_ground_lift_smoothed += delta
+            if abs(self._body_ground_lift_smoothed) > 1e-10:
+                effectors[f, :, up] += self._body_ground_lift_smoothed
+
     # --------------------------------------------------------- smoothing
 
     def _smooth_corrections(
@@ -315,41 +447,120 @@ class FeetStabilizer:
 
     # --------------------------------------------------------- name resolution
 
-    def _resolve(self, attr: str) -> int:
-        name = getattr(self._config, attr)
-        if name is None:
-            return -1
-        try:
-            return self._joint_names.index(name)
-        except ValueError:
-            return -1
+    def _resolve(self, attr: str, *, fallbacks: tuple[str, ...] = ()) -> int:
+        name = getattr(self._config, attr, None)
+        return self._resolve_joint(name, fallbacks=fallbacks)
+
+    def _resolve_joint(self, name: str | None, *, fallbacks: tuple[str, ...] = ()) -> int:
+        candidates: list[str] = []
+        if name:
+            candidates.append(str(name))
+        candidates.extend(fallbacks)
+        lower_map = {n.lower(): i for i, n in enumerate(self._joint_names)}
+        for cand in candidates:
+            if not cand:
+                continue
+            try:
+                return self._joint_names.index(cand)
+            except ValueError:
+                pass
+            idx = lower_map.get(str(cand).lower())
+            if idx is not None:
+                return idx
+        return -1
 
     def _resolve_foot_indices(self) -> tuple[int, ...]:
         out = []
-        for attr in ("left_foot_name", "right_foot_name"):
-            idx = self._resolve(attr)
+        for attr, fallbacks in (
+            ("left_foot_name", ("LeftFoot", "left_foot", "LeftLeg")),
+            ("right_foot_name", ("RightFoot", "right_foot", "RightLeg")),
+        ):
+            idx = self._resolve(attr, fallbacks=fallbacks)
             if idx >= 0:
                 out.append(idx)
         return tuple(out)
 
     def _resolve_foot_toe_pairs(self) -> tuple[tuple[int, int | None], ...]:
         pairs = []
-        for foot_attr, toe_attr in (
-            ("left_foot_name", "left_toe_name"),
-            ("right_foot_name", "right_toe_name"),
+        for foot_attr, toe_attr, foot_fb, toe_fb in (
+            ("left_foot_name", "left_toe_name", ("LeftFoot",), ("LeftToe", "LeftFootMod")),
+            ("right_foot_name", "right_toe_name", ("RightFoot",), ("RightToe", "RightFootMod")),
         ):
-            foot_idx = self._resolve(foot_attr)
+            foot_idx = self._resolve(foot_attr, fallbacks=foot_fb)
             if foot_idx < 0:
                 continue
-            toe_idx = self._resolve(toe_attr)
+            toe_name = getattr(self._config, toe_attr, None)
+            toe_idx = self._resolve_joint(toe_name, fallbacks=toe_fb)
             pairs.append((foot_idx, toe_idx if toe_idx >= 0 else None))
         return tuple(pairs)
 
+    def _resolve_body_probes(self) -> tuple[tuple[int, ...], tuple[float, ...]]:
+        cfg = self._config
+        if not cfg.enable_body_ground_clearance:
+            return (), ()
+        indices: list[int] = []
+        belows: list[float] = []
+        default_below = float(cfg.body_ground_default_probe_below)
+        below_map = dict(cfg.body_ground_probe_below_meters or {})
+        for jname in cfg.body_ground_probe_joints:
+            idx = self._resolve_joint(jname)
+            if idx < 0:
+                continue
+            indices.append(idx)
+            belows.append(float(below_map.get(jname, default_below)))
+        return tuple(indices), tuple(belows)
+
+    def _resolve_hand_chains(self) -> tuple[tuple[int, int, int, int], ...]:
+        """Per-side (hips, shoulder, forearm, hand) effector indices."""
+        if self._hips_idx < 0:
+            return ()
+        chains: list[tuple[int, int, int, int]] = []
+        for side in ("Left", "Right"):
+            shoulder = self._resolve_joint(
+                f"{side}Arm",
+                fallbacks=(f"{side.lower()}_shoulder", f"{side}Shoulder"),
+            )
+            forearm = self._resolve_joint(
+                f"{side}ForeArm",
+                fallbacks=(f"{side.lower()}_elbow", f"{side}Elbow"),
+            )
+            hand = self._resolve_joint(
+                f"{side}Hand",
+                fallbacks=(f"{side.lower()}_wrist", f"{side}Wrist"),
+            )
+            if shoulder >= 0 and forearm >= 0 and hand >= 0:
+                chains.append((self._hips_idx, shoulder, forearm, hand))
+        return tuple(chains)
+
+    def _resolve_arm_chains(self) -> tuple[tuple[int, tuple[int, ...], float], ...]:
+        out: list[tuple[int, tuple[int, ...], float]] = []
+        for spec in self._config.arm_chains:
+            sh_idx = self._resolve_joint(spec.shoulder)
+            if sh_idx < 0:
+                continue
+            chain_idx: list[int] = []
+            for name in spec.chain:
+                ji = self._resolve_joint(name)
+                if ji >= 0:
+                    chain_idx.append(ji)
+            if chain_idx:
+                out.append((sh_idx, tuple(chain_idx), float(spec.max_reach)))
+        return tuple(out)
+
+    def _build_arm_reach_map(self) -> dict[int, tuple[int, float]]:
+        reach: dict[int, tuple[int, float]] = {}
+        for sh_idx, chain_idx, max_reach in self._arm_chains:
+            if chain_idx:
+                reach[chain_idx[-1]] = (sh_idx, max_reach)
+        return reach
+
     def _resolve_lateral_pairs(self) -> tuple[tuple[int, int], ...]:
-        pairs = []
+        pairs: list[tuple[int, int]] = []
         for left, right in self._config.lateral_pairs:
             li = self._joint_names.index(left) if left in self._joint_names else -1
             ri = self._joint_names.index(right) if right in self._joint_names else -1
             if li >= 0 and ri >= 0:
                 pairs.append((li, ri))
+        if not pairs and len(self._foot_indices) >= 2:
+            pairs.append((self._foot_indices[0], self._foot_indices[1]))
         return tuple(pairs)

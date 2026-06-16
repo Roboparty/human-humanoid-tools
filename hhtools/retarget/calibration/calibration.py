@@ -78,15 +78,16 @@ _CALIBRATION_REFERENCE_LEGACY: dict[str, str] = {
     "canonical_human": "smpl",
     "mixamo_bvh": "lafan_bvh",
     "custom": "smpl",
+    "fbx": "lafan_bvh",
 }
 
 _VALID_CALIBRATION_REFERENCES: frozenset[str] = frozenset(
-    {"smplx", "smpl", "gvhmr", "soma_bvh", "lafan_bvh", "fbx", "glb"}
+    {"smplx", "smpl", "gvhmr", "soma_bvh", "lafan_bvh", "glb"}
 )
 
 # Canonical adult-human stature (metres) used by
 # :func:`build_scaler_config_from_calibration` as
-# ``ScalerConfig.human_height_assumption`` for SMPL / FBX / GLB sources.
+# ``ScalerConfig.human_height_assumption`` for SMPL / GLB sources.
 # Pinning every clip to this value (instead of the per-clip measured Z-extent
 # which jitters with frame-0 pose) gives a consistent
 # ``smpl_scale = robot_height / 1.65`` for the yellow uniform-scale overlay
@@ -111,13 +112,13 @@ def _reference_pose_for_calibration(
 
     Static references (``smpl``, ``smplx``, …) load via
     :func:`~hhtools.retarget.calibration.reference.load_reference_pose`.
-    ``fbx`` / ``glb`` are clip-specific and require the same
+    ``glb`` is clip-specific and requires the same
     :class:`~hhtools.core.motion.Motion` whose frame-0 skeleton was used
     when the user calibrated.
     """
 
     ref = normalize_calibration_reference(reference)
-    if ref in ("fbx", "glb"):
+    if ref == "glb":
         if motion is None:
             raise ValueError(
                 f"calibration reference {reference!r} (→ {ref!r}) requires a loaded "
@@ -545,7 +546,7 @@ def derive_calibration_params(
     ----------
     reference_motion
         Pass the live :class:`~hhtools.core.motion.Motion` when
-        ``calibration.reference`` is ``fbx`` or ``glb`` (same clip as at
+        ``calibration.reference`` is ``glb`` (same clip as at
         calibration time).  Ignored for static references.
     """
 
@@ -739,7 +740,7 @@ def build_scaler_config_from_calibration(
       — the same file soma-retargeter ships.  Clip frame 0 is **not** used:
       SOMA clips often open mid-motion, and using frame 0 would bake the
       starting pose into the scaler instead of the format's canonical rest.
-    * **LAFAN / FBX / GLB / other BVH**: frame-0 rest
+    * **LAFAN / GLB / other BVH**: frame-0 rest
       (:func:`~hhtools.retarget.newton_basic.rest_pose.rest_pose_from_motion`).
 
     ``human_height`` and ``preserve_root_yaw`` are retained for API
@@ -781,15 +782,15 @@ def build_scaler_config_from_calibration(
             clip, source_tag="build_scaler_config_from_calibration_bind"
         )
     else:
-        # FBX / GLB / clip-specific BVH: frame 0 matches calibration reference.
+        # GLB / clip-specific BVH: frame 0 matches calibration reference.
         rest_pose = rest_pose_from_motion(
             clip, frame=0, source_tag="build_scaler_config_from_calibration"
         )
 
     # ---- Canonical-stature normalisation ----------------------------------
-    # SMPL / FBX / GLB clips represent adult humans of varying stature
+    # SMPL / GLB clips represent adult humans of varying stature
     # (subject-dependent ``betas`` for SMPL, rigging-dependent ``armature
-    # scale`` for FBX/GLB).  Without normalisation the yellow uniform-scale
+    # scale`` for GLB).  Without normalisation the yellow uniform-scale
     # overlay is ``robot_height / measured_subject_stature``, which is
     # ``robot_height / 1.55`` for short subjects (overlay too tall) and
     # ``robot_height / 1.85`` for tall subjects (overlay too short).
@@ -809,7 +810,7 @@ def build_scaler_config_from_calibration(
     # 1.65m is the user-chosen canonical adult Asian-male stature; tweak
     # via :data:`_CANONICAL_HUMAN_HEIGHT_M` if a future preset (children,
     # very tall reference humans) needs a different normalisation.
-    if _ref in ("smpl", "smplx", "gvhmr", "soma_bvh", "lafan_bvh", "fbx", "glb"):
+    if _ref in ("smpl", "smplx", "gvhmr", "soma_bvh", "lafan_bvh", "glb"):
         rest_pose = _dc_replace(
             rest_pose,
             height_m=_CANONICAL_HUMAN_HEIGHT_M,
@@ -1028,7 +1029,7 @@ def build_scaler_config_soma_style(
         with the clip's first frame; for unit tests it can come from
         ``rest_pose_from_reference(canonical)``.
     reference_motion
-        Required when ``calibration.reference`` is ``fbx`` or ``glb`` —
+        Required when ``calibration.reference`` is ``glb`` —
         the same :class:`~hhtools.core.motion.Motion` whose frame-0
         skeleton was used during calibration.  Ignored for static references.
         :func:`build_scaler_config_from_calibration` passes ``clip`` here.

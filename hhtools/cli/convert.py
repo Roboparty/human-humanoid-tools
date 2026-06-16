@@ -13,7 +13,7 @@ from hhtools.core.resample import resample_motion
 from hhtools.io import bvh, npz
 from hhtools.io.base import load_motion
 
-app = typer.Typer(no_args_is_help=True, help="Convert BVH / GLB / FBX to the unified NPZ.")
+app = typer.Typer(no_args_is_help=True, help="Convert BVH / GLB to the unified NPZ.")
 _console = Console()
 
 
@@ -75,7 +75,7 @@ def run_convert(
 
 
 def _collect_input_files(inputs: list[Path], *, recursive: bool) -> list[Path]:
-    extensions = {".bvh", ".glb", ".gltf", ".fbx", ".npz"}
+    extensions = {".bvh", ".glb", ".gltf", ".npz"}
     out: list[Path] = []
     for item in inputs:
         if item.is_file():

@@ -32,6 +32,7 @@ from typing import Mapping
 
 __all__ = [
     "update_robot_yaml_ik_map",
+    "update_robot_yaml_smooth_joint_filter_masks",
     "load_robot_yaml",
 ]
 
@@ -136,6 +137,53 @@ def update_robot_yaml_ik_map(
         for k, v in ik_map.items():
             if k not in seen:
                 existing[k] = v
+
+    with path.open("w", encoding="utf-8") as fp:
+        yaml_io.dump(data, fp)
+
+
+def update_robot_yaml_smooth_joint_filter_masks(
+    path: str | Path,
+    masks: Mapping[str, float],
+) -> None:
+    """Rewrite ``smooth_joint_filter_masks`` in ``robot.yaml``; preserves rest."""
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(f"robot.yaml not found at {path}")
+
+    for k, v in masks.items():
+        if not isinstance(k, str) or not k.strip():
+            raise ValueError(f"smooth_joint_filter_masks key {k!r} must be a non-empty string")
+        if not isinstance(v, (int, float)):
+            raise ValueError(f"smooth_joint_filter_masks[{k!r}]={v!r} must be numeric")
+
+    yaml_io = _yaml_rt()
+    with path.open("r", encoding="utf-8") as fp:
+        data = yaml_io.load(fp)
+
+    if data is None:
+        from ruamel.yaml.comments import CommentedMap  # type: ignore[import]
+
+        data = CommentedMap()
+
+    from ruamel.yaml.comments import CommentedMap  # type: ignore[import]
+
+    existing = data.get("smooth_joint_filter_masks")
+    if existing is None:
+        data["smooth_joint_filter_masks"] = CommentedMap(
+            {k: float(v) for k, v in masks.items()}
+        )
+    else:
+        seen: set[str] = set()
+        for k in list(existing.keys()):
+            if k in masks:
+                existing[k] = float(masks[k])
+                seen.add(k)
+            else:
+                del existing[k]
+        for k, v in masks.items():
+            if k not in seen:
+                existing[k] = float(v)
 
     with path.open("w", encoding="utf-8") as fp:
         yaml_io.dump(data, fp)

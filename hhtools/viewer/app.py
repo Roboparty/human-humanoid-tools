@@ -101,7 +101,7 @@ from hhtools.robot import (
 # used when the user clicks Save) because the NPZ round-trip strips ``meta["skinned_mesh"]``
 # — without this bypass, picking a GLB clip from the library would only render the
 # skeleton even though the file actually carries a mesh.
-_MESH_CARRYING_EXTS = {".glb", ".gltf", ".fbx"}
+_MESH_CARRYING_EXTS = {".glb", ".gltf"}
 
 # Dataset adapters that drive a parametric body model (SMPL / SMPL-H / SMPL-X) and can
 # optionally bake per-frame vertex caches when invoked with ``with_mesh=True``.  The
@@ -146,9 +146,9 @@ def _suggested_calibration_reference(
         # mismatches bind proportions and breaks scaler rest + scale preview.
         if ds == "omomo" or ds.startswith("meshmimic"):
             return "smpl"
-    # Prefer the library row's *authored* file (``.fbx`` / ``.glb``) for format;
+    # Prefer the library row's *authored* file (``.glb``) for format;
     # ``source_path`` from callers is often a converted cache ``.npz`` and would
-    # miss the extension-based ``fbx``/``glb`` hint.
+    # miss the extension-based ``glb`` hint.
     ext_path: Path | None = None
     if isinstance(entry, LibraryEntry):
         ext_path = entry.source_path
@@ -156,8 +156,6 @@ def _suggested_calibration_reference(
         ext_path = source_path
     if ext_path is not None:
         ext = ext_path.suffix.lower()
-        if ext == ".fbx":
-            return "fbx"
         if ext in (".glb", ".gltf"):
             return "glb"
     if isinstance(entry, LibraryEntry):
@@ -525,10 +523,10 @@ def run_viewer(
                 show_skeleton = server.gui.add_checkbox("Skeleton lines", initial_value=True)
                 show_capsules = server.gui.add_checkbox("Capsule body mesh", initial_value=True)
                 show_skinned_mesh = server.gui.add_checkbox(
-                    "Skinned mesh (GLB/FBX)", initial_value=True,
+                    "Skinned mesh (GLB/glTF)", initial_value=True,
                     hint=(
                         "Real skinned body mesh deformed per-frame via linear-blend skinning. "
-                        "Only active when the clip carries one (GLB/glTF/FBX with skin data). "
+                        "Only active when the clip carries one (GLB/glTF with skin data). "
                         "Automatically hidden for skeleton-only NPZ / BVH / SMPL clips."
                     ),
                 )
@@ -714,7 +712,7 @@ def run_viewer(
         """Dispatch ``fn(*args, **kwargs)`` onto a named daemon thread and return it.
 
         Viser ``on_update`` / ``on_click`` callbacks run synchronously on the
-        asyncio event-loop thread; long-running adapters / SMPL FK / FBX
+        asyncio event-loop thread; long-running adapters / SMPL FK
         imports would freeze the WebSocket and starve the progress bar.
         Kicking work onto a daemon thread keeps the event loop free to ship
         frames and lets the ticker animate in real time.  Daemon threads
@@ -916,7 +914,7 @@ def run_viewer(
             # Direct path (e.g. Upload NPZ → .glb, or legacy flat-dir pointing at .glb).
             # Force with_mesh=True so skinned-mesh rendering lights up end-to-end.
             kwargs["with_mesh"] = True
-            # Route per-milestone progress pins into the loader so FBX/bpy's
+            # Route per-milestone progress pins into the loader.
             # real stage transitions (parsed, exporting GLB, done) show up on
             # the bar instead of us having to guess from the time curve alone.
             if progress_pin is not None:
@@ -969,7 +967,7 @@ def run_viewer(
     def _load_entry(entry: LibraryEntry) -> None:
         """Lazily convert ``entry`` through the ephemeral cache, then display it.
 
-        Authored-rig formats (.glb / .gltf / .fbx) bypass the NPZ cache *for display*
+        Authored-rig formats (.glb / .gltf) bypass the NPZ cache *for display*
         because the cache-trip strips ``meta["skinned_mesh"]`` (NPZ has no room for
         skinned geometry in the current schema).  The cache is still populated on Save
         button clicks via :meth:`cache.save_clip`, so "Save" still works — it just
@@ -1023,9 +1021,6 @@ def run_viewer(
                 # crawling toward 95%, it never stalls or blows past 100.
                 hint = ""
                 expected_s = 4.0  # GLB/glTF default
-                if src_ext == ".fbx":
-                    hint = " — FBX import can take 30–90 s (bpy subprocess)"
-                    expected_s = 60.0
                 progress.start(
                     f"Parsing <b>{_html_escape(entry.folder_label)}</b>"
                     f" · {_html_escape(entry.stem)}{hint}",
@@ -1324,7 +1319,7 @@ def run_viewer(
                         # generously for FBX; anything faster just means the
                         # synthetic curve crawls instead of saturating.
                         est_ext = current.source_path.suffix.lower()
-                        est_s = 30.0 if est_ext == ".fbx" else 5.0
+                        est_s = 5.0
                         progress.start(
                             f"Converting & saving "
                             f"<b>{_html_escape(current.folder_label)}</b>"
@@ -2493,9 +2488,9 @@ def _build_robot_tab(  # type: ignore[no-untyped-def]
         prev = _last_rig_type["value"]
 
         # Same rules as :func:`_suggested_calibration_reference` (motion load):
-        # prefer the library's *source* file (e.g. ``.fbx``) over
+        # prefer the library's *source* file (e.g. ``.glb``) over
         # ``get_last_loaded_source_path`` (often a converted ``.npz`` in the cache);
-        # otherwise the extension-based ``fbx``/``glb`` hint is lost and Mixamo-style
+        # otherwise the extension-based ``glb`` hint is lost and Mixamo-style
         # rigs are mis-tagged as ``lafan_bvh``.
         cur_le: LibraryEntry | None = None
         if motion_sync is not None:
@@ -2608,14 +2603,13 @@ def _build_robot_tab(  # type: ignore[no-untyped-def]
             options=(
                 "smplx", "smpl", "gvhmr",
                 "soma_bvh", "lafan_bvh",
-                "fbx", "glb",
+                "glb",
             ),
             initial_value="smpl",
             hint=(
                 "smpl / smplx = canonical zero-pose (same joint layout as "
                 "SMPL-family clips: AMASS, Motion-X, PHUMA, GVHMR, …); "
                 "soma_bvh / lafan_bvh = format-specific rest poses; "
-                "fbx = one shared Mixamo-style T-pose for all FBX clips; "
                 "glb = frame 0 of the clip loaded in the viewer."
             ),
         )
@@ -3464,22 +3458,18 @@ def _build_robot_tab(  # type: ignore[no-untyped-def]
                 z_min_uniform = float(human_source_floor_z_world(clip))
                 src_pos_full[:, :, 2] -= z_min_uniform
                 src_pos_full *= smpl_scale
-                # Align pelvis height with soma-style IK scaler (``root_z_offset``).
-                # Skip on terrain / prop clips — the overlay must stay glued to the
-                # uniformly-scaled scene (see ``_publish_robot_objects``).
                 if not motion_has_interaction_scene(clip):
-                    try:
-                        root_name = str(scaler_cfg.root_joint)
-                        j_root = list(jn).index(root_name)
-                        hi_src = clip.hierarchy.bone_names.index(root_name)
-                        uniform_z = float(
-                            (clip.positions[0, hi_src, 2] - z_min_uniform) * smpl_scale
+                    from hhtools.web.scaled_preview import (
+                        resolve_scaled_overlay_z_correction,
+                    )
+
+                    z_corr = float(
+                        resolve_scaled_overlay_z_correction(
+                            clip, scaler, smpl_scale,
                         )
-                        z_corr = float(scaled.transforms[0, j_root, 2]) - uniform_z
-                        if abs(z_corr) > 1e-6:
-                            src_pos_full[:, :, 2] += np.float32(z_corr)
-                    except (ValueError, IndexError):
-                        pass
+                    )
+                    if abs(z_corr) > 1e-6:
+                        src_pos_full[:, :, 2] += np.float32(z_corr)
 
                 src_quat_full = np.asarray(clip.quaternions, dtype=np.float32).copy()
 
@@ -4298,11 +4288,23 @@ def _build_robot_tab(  # type: ignore[no-untyped-def]
                     return
 
                 preset = model.preset
+                ref_name = str(calib_reference_picker.value)
+                from hhtools.robot.retarget_profile import (
+                    build_feet_stabilizer_config,
+                    build_pipeline_config_for_preset,
+                )
+
+                pipeline_cfg = build_pipeline_config_for_preset(
+                    preset, ref_name, ik_iterations=ik_iters,
+                )
+                feet_cfg = build_feet_stabilizer_config(
+                    preset, ref_name, model=model,
+                )
                 cal_path_str: str | None = None
                 if preset.urdf_path is not None:
                     cr = resolve_calibration_file(
                         preset.urdf_path.parent,
-                        str(calib_reference_picker.value),
+                        ref_name,
                     )
                     if cr is not None and cr.is_file():
                         cal_path_str = str(cr)
@@ -4328,10 +4330,8 @@ def _build_robot_tab(  # type: ignore[no-untyped-def]
                     pipeline = NewtonBasicPipeline(
                         model,
                         scaler_config=scaler_cfg,
-                        pipeline_config=PipelineConfig(
-                            ik_iterations=ik_iters,
-                            joint_limit_weight=10.0,
-                        ),
+                        pipeline_config=pipeline_cfg,
+                        feet_stabilizer_config=feet_cfg,
                         human_height=human_h,
                         configure_warp=False,
                     )
@@ -4443,10 +4443,8 @@ def _build_robot_tab(  # type: ignore[no-untyped-def]
                             newton_pipe = NewtonBasicPipeline(
                                 model,
                                 scaler_config=sc,
-                                pipeline_config=PipelineConfig(
-                                    ik_iterations=ik_iters,
-                                    joint_limit_weight=10.0,
-                                ),
+                                pipeline_config=pipeline_cfg,
+                                feet_stabilizer_config=feet_cfg,
                                 human_height=human_h,
                                 configure_warp=False,
                             )
@@ -4898,9 +4896,7 @@ def _build_robot_tab(  # type: ignore[no-untyped-def]
         try:
             ref_name = calib_reference_picker.value
             motion_obj = state.get("current_motion")
-            if ref_name == "fbx":
-                ref = load_reference_pose("fbx")
-            elif ref_name == "glb":
+            if ref_name == "glb":
                 if motion_obj is not None:
                     ref = build_motion_reference(motion_obj, "glb")
                 else:
@@ -5154,11 +5150,8 @@ def _build_robot_tab(  # type: ignore[no-untyped-def]
                 get_current_motion() if callable(get_current_motion) else None
             )
             ref = None
-            # Static refs (smpl, …): ``load_reference_pose``.  ``fbx``: shared
-            # Mixamo T-pose (same for every FBX).  ``glb``: loaded clip frame 0.
-            if ref_name == "fbx":
-                ref = load_reference_pose("fbx")
-            elif ref_name == "glb":
+            # Static refs (smpl, …): ``load_reference_pose``.  ``glb``: loaded clip frame 0.
+            if ref_name == "glb":
                 if motion_live is None or motion_live.num_frames == 0:
                     _notify_all(
                         server, "No motion loaded",
@@ -5199,8 +5192,7 @@ def _build_robot_tab(  # type: ignore[no-untyped-def]
         #
         #   1. Robot: shoulder links in URDF (biacromial × +Z) when
         #      available, else ``forward_axis`` on the preset.
-        #   2. Reference: ``glb`` uses clip frame 0; ``fbx`` uses the shared
-        #      static pose — biacromial from shoulder geometry; SOMA can fall
+        #   2. Reference: ``glb`` uses clip frame 0 — biacromial from shoulder geometry;
         #      back to line across hips.
         #   3. ``heading_rad = robot_yaw − ref_yaw`` rotates the blue
         #      skeleton in the horizontal plane.

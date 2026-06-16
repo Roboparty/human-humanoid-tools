@@ -22,7 +22,7 @@ app = typer.Typer(
 
 # (cli name, module path, help text)
 _SUBCOMMANDS: list[tuple[str, str, str]] = [
-    ("convert", "hhtools.cli.convert", "Convert BVH / GLB / FBX to the unified NPZ."),
+    ("convert", "hhtools.cli.convert", "Convert BVH / GLB to the unified NPZ."),
     (
         "import",
         "hhtools.cli.dataset",

@@ -21,7 +21,6 @@ keywords = [
     "amass",
     "motion-x",
     "bvh",
-    "fbx",
     "glb",
 ]
 classifiers = [
@@ -79,23 +78,6 @@ web = [
 ]
 formats = [
     "pygltflib>=1.16",
-]
-fbx = [
-    # bpy (Blender as a Python module) ships the best-maintained open-source FBX
-    # importer and is the only backend in hhtools/io/fbx.py that is fully wired up
-    # end-to-end (fbx2gltf/blender_cli also work if present on PATH; the autodesk
-    # SDK and pyassimp backends are detection-only placeholders for now).
-    #
-    # The bpy wheel is hard-pinned to one CPython ABI per release: 4.x → cp311,
-    # 5.0 → cp311, 5.1 → cp313. There is NO bpy wheel for CPython 3.12 at all.
-    # Because ``requires-python`` is ``>=3.12``, uv builds a *universal* lock
-    # across every supported interpreter, so an unconditional ``bpy`` makes the
-    # whole project (and even ``hhtools web``) unresolvable on the 3.12 split.
-    # Marker-gate it to 3.13.x — the only interpreter with a current wheel — so
-    # other Python versions just fall back to the pyassimp/CLI backends.
-    "bpy>=5.1; python_full_version >= '3.13' and python_full_version < '3.14'",
-    # pyassimp kept as an optional fallback hook (system libassimp required).
-    "pyassimp>=5.0",
 ]
 smpl = [
     "smplx>=0.1.28",

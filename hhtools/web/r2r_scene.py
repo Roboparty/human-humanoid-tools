@@ -208,6 +208,74 @@ def load_r2r_clip_scene(
     return payload
 
 
+def compute_r2r_target_scaled_scene(
+    source_model,
+    target_model,
+    motion,
+    calibrated_joint_q: dict[str, float],
+    *,
+    clip_dir: Path,
+    profile: str,
+    robot_path: Path,
+    num_frames: int,
+    framerate: float,
+) -> dict[str, Any] | None:
+    """Scale source-robot terrain/objects for target-robot web preview.
+
+    Uses the same uniform ``ratio`` as the yellow overlay and
+    :func:`~hhtools.web.r2r_export_bundle.write_r2r_export_bundle`.
+    """
+
+    from hhtools.web.r2r_export_bundle import r2r_scene_scale_ratio
+    from hhtools.web.serialize import _serialize_terrain
+
+    scene_motion = attach_r2r_clip_scene_to_motion(
+        motion,
+        clip_dir,
+        profile=profile,
+        robot_path=robot_path,
+    )
+    if scene_motion.terrain is None and not scene_motion.objects:
+        return None
+
+    ratio = float(
+        r2r_scene_scale_ratio(
+            source_model, target_model, motion, calibrated_joint_q,
+        )
+    )
+    idx = _downsample_scene_frames(int(num_frames))
+    payload: dict[str, Any] = {
+        "scale_ratio": round(ratio, 5),
+        "objects": [],
+        "terrain": None,
+        "framerate": float(framerate),
+        "clip_dir": str(Path(clip_dir).resolve()),
+    }
+
+    for i, ob in enumerate(scene_motion.objects):
+        pos, quat = _align_track_frames(
+            np.asarray(ob.positions, dtype=np.float32) * np.float32(ratio),
+            np.asarray(ob.quaternions, dtype=np.float32),
+            int(num_frames),
+        )
+        scaled = {
+            "name": ob.name,
+            "positions": pos,
+            "quaternions": quat,
+            "extents": np.asarray(ob.extents, dtype=np.float32) * np.float32(ratio),
+            "mesh_path": ob.mesh_path,
+            "scale": float(ob.scale) * ratio,
+        }
+        payload["objects"].append(
+            _serialize_object_for_web(scaled, idx, source_index=i),
+        )
+
+    if scene_motion.terrain is not None:
+        payload["terrain"] = _serialize_terrain(scene_motion.terrain.scaled(ratio))
+
+    return payload
+
+
 def _align_track_frames(
     positions: np.ndarray,
     quaternions: np.ndarray,

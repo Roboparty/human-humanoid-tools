@@ -417,6 +417,7 @@ button { font-family: inherit; cursor: pointer; }
   background: var(--panel);
 }
 .dropzone.hover { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone.disabled { opacity: 0.55; pointer-events: none; }
 .dropzone .dz-title { font-size: 14px; font-weight: 600; margin-bottom: 5px; }
 .dropzone .dz-sub { font-size: 12px; color: var(--ink-secondary); line-height: 1.45; }
 .dropzone .dz-glyph { font-size: 28px; opacity: 0.5; margin-bottom: 8px; }

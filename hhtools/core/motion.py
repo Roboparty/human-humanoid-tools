@@ -21,7 +21,7 @@ from hhtools.core.math import quaternion as Q
 from hhtools.core.scene import SceneObject, TerrainHeightfield
 
 UpAxis = Literal["X", "Y", "Z"]
-SourceFormat = Literal["bvh", "glb", "fbx", "npz", "smpl", "smplh", "smplx", "csv", "unknown"]
+SourceFormat = Literal["bvh", "glb", "npz", "smpl", "smplh", "smplx", "csv", "unknown"]
 
 
 @dataclass

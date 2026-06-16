@@ -22,10 +22,6 @@ class MotionLoadProgress:
         self._job.message = str(message)
         self._job.progress = self._base + self._span * f
 
-    def fbx_pin(self, message: str, *, floor: float = 0.0, **_: object) -> None:
-        """Adapter for FBX/bpy loaders that pin milestones with ``floor`` in 0–100."""
-        self.report(float(floor) / 100.0, str(message))
-
     def as_callback(self) -> ProgressFn:
         return self.report
 

@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 __all__ = [
+    "ArmChainConfig",
     "ScalerConfig",
     "FeetStabilizerConfig",
     "load_scaler_config",
@@ -270,6 +271,35 @@ class FeetStabilizerConfig:
     # appear as keys in the scaler ``joint_scales`` map.
     lateral_pairs: tuple[tuple[str, str], ...] = ()
 
+    # ---- body ground clearance (prone / crawl) ---------------------------
+    # Mirrors soma ``_enforce_body_ground_clearance``: lift the whole effector
+    # block when probe joints would sit below ``body_ground_plane_z + clearance``.
+    enable_body_ground_clearance: bool = False
+    body_ground_plane_z: float = 0.0
+    body_ground_clearance: float = 0.025
+    body_ground_probe_joints: tuple[str, ...] = ()
+    body_ground_probe_below_meters: dict[str, float] = field(default_factory=dict)
+    body_ground_default_probe_below: float = 0.0
+    body_ground_lift_max_rate: float = 0.015
+    body_ground_snap_on_penetration: bool = True
+
+    # ---- hand ground contact (push-up / prone) ----------------------------
+    # Mirrors soma ``_enforce_hand_ground_contact``: lower torso/arms so hand
+    # effectors can reach ``hand_ground_contact_z`` when the scaled arm is too
+    # short to touch the floor with hips at standing height.
+    hand_ground_contact_z: float = 0.0
+    chest_name: str = "Spine2"
+    arm_chains: tuple["ArmChainConfig", ...] = ()
+
+
+@dataclass(frozen=True)
+class ArmChainConfig:
+    """One arm chain for hand-ground reach budgeting (soma ``arm_chains``)."""
+
+    shoulder: str
+    chain: tuple[str, ...]
+    max_reach: float
+
 
 def load_feet_stabilizer_config(path: str | Path) -> FeetStabilizerConfig:
     """Read a :class:`FeetStabilizerConfig` from a YAML file."""
@@ -288,6 +318,29 @@ def load_feet_stabilizer_config(path: str | Path) -> FeetStabilizerConfig:
         (str(pair[0]), str(pair[1])) for pair in lateral_raw
         if isinstance(pair, (list, tuple)) and len(pair) == 2
     )
+
+    probe_raw = data.get("body_ground_probe_joints") or ()
+    probe_below_raw = data.get("body_ground_probe_below_meters") or {}
+    probe_below = {
+        str(k): float(v) for k, v in probe_below_raw.items()
+        if isinstance(probe_below_raw, dict)
+    }
+
+    arm_chains: list[ArmChainConfig] = []
+    for entry in data.get("arm_chains") or ():
+        if not isinstance(entry, dict):
+            continue
+        shoulder = str(entry.get("shoulder", ""))
+        chain_raw = entry.get("chain") or ()
+        max_reach = float(entry.get("max_reach", 0.0) or 0.0)
+        if shoulder and chain_raw and max_reach > 0.0:
+            arm_chains.append(
+                ArmChainConfig(
+                    shoulder=shoulder,
+                    chain=tuple(str(c) for c in chain_raw),
+                    max_reach=max_reach,
+                )
+            )
 
     return FeetStabilizerConfig(
         up_axis=str(data.get("up_axis", "Z")),  # type: ignore[arg-type]
@@ -313,4 +366,23 @@ def load_feet_stabilizer_config(path: str | Path) -> FeetStabilizerConfig:
         right_toe_name=data.get("right_toe_name"),
         hips_name=str(data.get("hips_name", "hips")),
         lateral_pairs=lateral_pairs,
+        enable_body_ground_clearance=bool(
+            data.get("enable_body_ground_clearance", False)
+        ),
+        body_ground_plane_z=float(data.get("body_ground_plane_z", 0.0)),
+        body_ground_clearance=float(data.get("body_ground_clearance", 0.025)),
+        body_ground_probe_joints=tuple(str(j) for j in probe_raw),
+        body_ground_probe_below_meters=probe_below,
+        body_ground_default_probe_below=float(
+            data.get("body_ground_default_probe_below", 0.0)
+        ),
+        body_ground_lift_max_rate=float(
+            data.get("body_ground_lift_max_rate", 0.015)
+        ),
+        body_ground_snap_on_penetration=bool(
+            data.get("body_ground_snap_on_penetration", True)
+        ),
+        hand_ground_contact_z=float(data.get("hand_ground_contact_z", 0.0)),
+        chest_name=str(data.get("chest_name", "Spine2")),
+        arm_chains=tuple(arm_chains),
     )

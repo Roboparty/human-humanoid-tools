@@ -53,12 +53,11 @@ _DIR_TO_ADAPTER: dict[str, str] = {
     # ("holosoma · parkour_1" etc.) and different sources can coexist with
     # their own source.yaml manifests.
     "holosoma": "meshmimic_holosoma",
-    # Authored-rig folders: each clip is a self-contained .glb/.gltf/.fbx with its own
+    # Authored-rig folders: each clip is a self-contained .glb/.gltf with its own
     # skeleton + animation + optional skinned mesh. These light up mesh rendering
     # automatically because the adapter loads with ``with_mesh=True`` by default.
     "glb": "glb",
     "gltf": "glb",
-    "fbx": "fbx",
     "parc_ms": "parc_ms",
     "parcms": "parc_ms",
     "unified_npz": "unified_npz",
@@ -69,7 +68,7 @@ _DIR_TO_ADAPTER: dict[str, str] = {
 
 # File extensions the library will try to enumerate from each dataset directory. The
 # actual parsing is delegated to the adapter's ``list_sequences`` / ``load_motion``.
-_SUPPORTED_EXTS = {".npz", ".npy", ".pt", ".pkl", ".bvh", ".fbx", ".glb", ".gltf"}
+_SUPPORTED_EXTS = {".npz", ".npy", ".pt", ".pkl", ".bvh", ".glb", ".gltf"}
 
 
 @dataclass(frozen=True)

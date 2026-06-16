@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import base64
 import gzip
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -449,11 +450,37 @@ def object_mesh_glb(obj, *, scale: float | None = None) -> bytes | None:
 # --------------------------------------------------------------------------- robot
 
 
+def _mesh_to_link_payload(model) -> dict[str, str]:
+    """Map trimesh / GLB geometry node names to URDF link names for ray picking.
+
+    SolidWorks and other exporters name GLB nodes after mesh files
+    (``Left_hip_pitch.STL``) rather than link names (``left_hip_pitch_link``).
+    Calibration drag in the web UI needs the authoritative URDF mapping.
+    """
+    out: dict[str, str] = {}
+    link_map = getattr(model.urdf, "link_map", None) or {}
+    for link_name, link in link_map.items():
+        out.setdefault(str(link_name), str(link_name))
+        for attr in ("visuals", "collisions"):
+            for item in getattr(link, attr, None) or []:
+                mesh = getattr(getattr(item, "geometry", None), "mesh", None)
+                fname = getattr(mesh, "filename", None) if mesh is not None else None
+                if not fname:
+                    continue
+                path = Path(str(fname))
+                for key in (path.name, path.stem):
+                    if key:
+                        out.setdefault(key, str(link_name))
+    return out
+
+
 def serialize_robot(model, *, name: str) -> dict[str, Any]:
     """Serialise a URDFRobotModel: link metadata + a GLB of the zero-pose scene.
 
-    The GLB nodes are named after their links so the front-end can address
-    each link group and pose the robot per frame from DOF transforms.
+    GLB mesh nodes are usually named after link frames, but some URDF exporters
+    (SolidWorks, Onshape, …) emit geometry nodes named after mesh files; see
+    ``mesh_to_link`` for the authoritative node→link map used by calibration
+    picking in the browser.
     """
     from hhtools.robot.dof_schema import header_columns  # noqa: F401 - validate import
 
@@ -491,6 +518,7 @@ def serialize_robot(model, *, name: str) -> dict[str, Any]:
         "ik_map": ik_map,
         "ik_prewarmed": False,
         "link_transforms_zero": link_transforms,
+        "mesh_to_link": _mesh_to_link_payload(model),
         "glb_base64": glb_b64,
         # Vertical lift so the lowest mesh vertex sits on z=0 at the zero pose
         # (URDFs often place the base at the pelvis, leaving feet below ground).
@@ -669,9 +697,9 @@ def serialize_robot_trajectory(
     * ``False`` (default): a **single constant** lift, computed once, is reused
       for every frame.  The mesh sole rests on the ground at the standing pose
       and the clip's own root-Z then carries the body up/down — so tumbling and
-      backflips do **not** snap upward.  This also avoids rebuilding the trimesh
-      scene every frame (the dominant post-solve serialisation cost on long
-      clips), restoring earlier visualisation speed.
+      backflips do **not** snap upward.  Prone / crawl penetration is handled
+      in the IK pipeline (body-ground clearance + post-solve foot clamp), not
+      by per-frame mesh lifting here.
     * ``True``: the per-frame foot-follow correction (mesh sole tracks the
       yellow overlay foot) used for climbing / terrain so the robot stays glued
       to a rising surface.  Costs one ``trimesh_scene`` rebuild per frame.

@@ -1,7 +1,7 @@
-"""Generic adapter for flat directories of authored rigs (GLB / glTF / FBX).
+"""Generic adapter for flat directories of authored rigs (GLB / glTF).
 
 These rigs ship as single-clip files authored in Blender / Maya / Mixamo.  Unlike
-AMASS / OMOMO / Motion-X which need dataset-specific decoding, a .glb or .fbx holds
+AMASS / OMOMO / Motion-X which need dataset-specific decoding, a ``.glb`` holds
 its own skeleton, animation tracks, and optional skinned mesh already, so the
 "adapter" here is just a thin indexer over a folder of such files.
 
@@ -16,9 +16,7 @@ format dispatch:
   session picking up a GLB clip gets skinned-mesh rendering for free.
 
 The adapter is intentionally tiny: it delegates actual parsing to
-:func:`hhtools.io.glb.load_glb` / :func:`hhtools.io.fbx.load_fbx` (which in turn
-delegate to one of multiple FBX backends).  If the user's environment can't handle
-a given FBX file the error surfaces through those functions, not here.
+:func:`hhtools.io.glb.load_glb`.
 """
 
 from __future__ import annotations
@@ -60,7 +58,7 @@ class _FlatAuthoredClipAdapter(DatasetAdapter):
 
     # Subclasses override this to delegate to the right loader.  We keep it on the
     # instance (not a module-level reference) so tests can monkey-patch it when
-    # exercising the adapter-level glue without pulling in pygltflib / FBX backends.
+    # exercising the adapter-level glue without pulling in pygltflib.
     def _load(self, path: Path, **kwargs: Any) -> Motion:  # pragma: no cover - stub
         raise NotImplementedError
 
@@ -81,23 +79,4 @@ class GlbFolderAdapter(_FlatAuthoredClipAdapter):
         return load_glb(path, **kwargs)
 
 
-@register_dataset
-class FbxFolderAdapter(_FlatAuthoredClipAdapter):
-    """Browse a flat directory of ``.fbx`` rigs (dispatches through load_fbx backends)."""
-
-    name = "fbx"
-    display_name = "FBX authored rigs"
-    requires = "formats"
-    file_patterns = ("*.fbx",)
-
-    def _load(self, path: Path, **kwargs: Any) -> Motion:
-        from hhtools.io.fbx import load_fbx
-
-        # load_fbx currently routes through FBX2glTF CLI → glb loader when available,
-        # so the same with_mesh kwarg plumbs through and skinned-mesh rendering lights
-        # up automatically when the conversion path is taken.
-        kwargs.setdefault("with_mesh", self._with_mesh_default)
-        return load_fbx(path, **kwargs)
-
-
-__all__ = ["FbxFolderAdapter", "GlbFolderAdapter"]
+__all__ = ["GlbFolderAdapter"]

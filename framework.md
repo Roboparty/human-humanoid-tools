@@ -51,7 +51,7 @@ hhtools/
 ├── io/                    # 第 3 层：格式适配
 │   ├── base.py            #   load_motion / save_motion 注册表
 │   ├── npz.py             #   统一 NPZ schema（v1）
-│   ├── bvh.py / glb.py / fbx.py
+│   ├── bvh.py / glb.py
 │   ├── robot_csv.py       #   机器人轨迹 CSV
 │   ├── parc_export.py     #   PARC MSFileData 导出
 │   └── datasets/          #   公开数据集 adapter
@@ -97,7 +97,7 @@ hhtools/
 ```
 原始输入                    统一中间表示              重映射输出
 ─────────                  ────────────              ──────────
-BVH / GLB / FBX  ──┐
+BVH / GLB  ──┐
 SMPL 参数序列    ──┼──►  Motion + NPZ  ──►  RetargetedMotion  ──►  robot CSV / PARC pkl
 公开数据集目录   ──┘         │                      ▲
                             │                      │
@@ -296,7 +296,7 @@ J_L = \mathrm{kron}(L, I_3) \cdot J_V, \quad
 | `web` | FastAPI + three.js UI + SMPL + MuJoCo + OSQP |
 | `retarget` | Newton IK（warp-lang + newton） |
 | `retarget-interaction` | 交互网格 MPC/SQP |
-| `formats` / `fbx` / `smpl` / `robot` | 按需拆分 |
+| `formats` / `smpl` / `robot` | 按需拆分 |
 | `all` | 一次安装全部应用依赖 |
 
 ---

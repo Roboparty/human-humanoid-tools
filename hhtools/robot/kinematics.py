@@ -19,6 +19,7 @@ __all__ = [
     "IkMapIssue",
     "KinematicModel",
     "infer_ik_map_from_kinematics",
+    "infer_smooth_joint_filter_masks",
     "mujoco_body_names",
     "prepare_ik_map",
     "repair_ik_map",
@@ -209,6 +210,22 @@ class KinematicModel:
             seen.add(cur)
             cur = self.parent_of.get(cur)
         return False
+
+    def lca(self, a: str, b: str) -> str | None:
+        """Lowest common ancestor of two links, or ``None``."""
+        if not a or not b:
+            return None
+        anc_a: set[str] = set()
+        cur: str | None = a
+        while cur:
+            anc_a.add(cur)
+            cur = self.parent_of.get(cur)
+        cur = b
+        while cur:
+            if cur in anc_a:
+                return cur
+            cur = self.parent_of.get(cur)
+        return None
 
     def _links_with_tokens(self, side: str, tokens: frozenset[str]) -> list[str]:
         out: list[str] = []
@@ -524,6 +541,99 @@ def _pick_trunk(km: KinematicModel) -> str | None:
     return min(candidates, key=rank)
 
 
+def _resolve_hips_chest_duplicate(
+    km: KinematicModel,
+    ik_map: dict[str, str],
+) -> list[str]:
+    """Split ``hips`` / ``chest`` when scaffold mapped both to the same link.
+
+    Inverted humanoids (e.g. Booster T1: floating ``Trunk`` + leg root
+    ``Waist``) and pelvis-root rigs with a separate arm trunk (Ultron:
+    ``base_link`` legs + ``trunk_link`` arms) need distinct pelvis vs upper-
+    torso targets.  When both slots collide on one link, use the LCA of the
+    leg chains for ``hips`` and the LCA of the arm chains for ``chest``.
+    """
+    hips = ik_map.get("hips")
+    chest = ik_map.get("chest")
+    if not hips or not chest or hips != chest:
+        return []
+
+    lh, rh = ik_map.get("left_hip"), ik_map.get("right_hip")
+    ls, rs = ik_map.get("left_shoulder"), ik_map.get("right_shoulder")
+    leg_lca = km.lca(lh, rh) if lh and rh else None
+    sh_lca = km.lca(ls, rs) if ls and rs else None
+    changes: list[str] = []
+    if leg_lca and sh_lca and leg_lca != sh_lca:
+        ik_map["hips"] = leg_lca
+        ik_map["chest"] = sh_lca
+        changes.append(
+            f"hips/chest: split duplicate {hips!r} → hips={leg_lca!r}, chest={sh_lca!r}"
+        )
+    elif sh_lca and sh_lca != hips:
+        ik_map["chest"] = sh_lca
+        changes.append(f"chest: {hips!r} → {sh_lca!r} (was duplicate of hips)")
+    return changes
+
+
+def _path_toward(km: KinematicModel, start: str, end: str) -> list[str]:
+    """Links on the chain from ``start`` toward ``end`` (inclusive of ``start``)."""
+    path: list[str] = []
+    cur: str | None = start
+    seen: set[str] = set()
+    while cur and cur not in seen:
+        seen.add(cur)
+        path.append(cur)
+        if cur == end:
+            break
+        nxt = None
+        for child in km.children_of.get(cur, ()):
+            if child == end or km.is_ancestor(child, end):
+                nxt = child
+                break
+        if nxt is None:
+            break
+        cur = nxt
+    return path
+
+
+def _gimbal_smooth_masks_on_path(
+    km: KinematicModel,
+    start: str,
+    end: str,
+) -> dict[str, float]:
+    """Per-link smoother weights for a 2–3 link gimbal segment."""
+    path = _path_toward(km, start, end)
+    if len(path) < 2:
+        return {}
+    masks: dict[str, float] = {path[0]: 0.1}
+    for link in path[1:3]:
+        jn = km.joint_for_child.get(link, "").lower()
+        if "roll" in jn or "_r_" in jn or jn.endswith("_r"):
+            masks[link] = 1.0
+        elif "yaw" in jn or "_y_" in jn or jn.endswith("_y"):
+            masks[link] = 0.3
+        else:
+            masks[link] = 0.1
+    return masks
+
+
+def infer_smooth_joint_filter_masks(
+    urdf_path: Path,
+    ik_map: dict[str, str],
+) -> dict[str, float]:
+    """Infer gimbal smoother masks from URDF topology + ``ik_map``."""
+    km = KinematicModel.from_urdf(urdf_path)
+    masks: dict[str, float] = {}
+    for side in ("left", "right"):
+        sh, el = ik_map.get(f"{side}_shoulder"), ik_map.get(f"{side}_elbow")
+        if sh and el:
+            masks.update(_gimbal_smooth_masks_on_path(km, sh, el))
+        hip, kn = ik_map.get(f"{side}_hip"), ik_map.get(f"{side}_knee")
+        if hip and kn:
+            masks.update(_gimbal_smooth_masks_on_path(km, hip, kn))
+    return masks
+
+
 def _pick_head_neck(km: KinematicModel, trunk: str | None) -> tuple[str | None, str | None]:
     """Infer head/neck from a short non-limb branch off the trunk."""
     if not trunk:
@@ -628,7 +738,28 @@ def infer_ik_map_from_kinematics(urdf_path: Path) -> dict[str, str]:
         if hip:
             out[f"{side}_hip"] = hip
 
+    _resolve_hips_chest_duplicate(km, out)
     return out
+
+
+def _validate_duplicate_trunk_slots(ik_map: dict[str, str]) -> list[IkMapIssue]:
+    """Flag when multiple trunk slots share one URDF link."""
+    by_link: dict[str, list[str]] = {}
+    for slot, link in ik_map.items():
+        if not link or slot not in ("hips", "chest", "spine"):
+            continue
+        by_link.setdefault(link, []).append(slot)
+    issues: list[IkMapIssue] = []
+    for link, slots in by_link.items():
+        if len(slots) > 1:
+            issues.append(
+                IkMapIssue(
+                    slots[0],
+                    f"→ {link!r} is shared with {', '.join(slots[1:])} "
+                    f"(over-constrains IK and misaligns the yellow overlay)",
+                )
+            )
+    return issues
 
 
 def _validate_slot_link(
@@ -695,7 +826,7 @@ def validate_ik_map(
     if not ik_map:
         return []
     km = KinematicModel.from_urdf(urdf_path)
-    issues: list[IkMapIssue] = []
+    issues: list[IkMapIssue] = _validate_duplicate_trunk_slots(ik_map)
 
     for slot, link in ik_map.items():
         if not link:
@@ -826,6 +957,16 @@ def prepare_ik_map(
     ):
         old = repaired.pop("spine")
         changes.append(f"spine: removed duplicate of chest ({old!r})")
+    changes.extend(_resolve_hips_chest_duplicate(
+        KinematicModel.from_urdf(urdf_path), repaired,
+    ))
+    if (
+        repaired.get("spine")
+        and repaired.get("hips")
+        and repaired["spine"] == repaired["hips"]
+    ):
+        old = repaired.pop("spine")
+        changes.append(f"spine: removed duplicate of hips ({old!r})")
     issues = validate_ik_map(urdf_path, repaired)
     for issue in issues:
         slot = issue.slot
@@ -965,6 +1106,7 @@ def require_valid_ik_map(
             slot in CRITICAL_IK_SLOTS
             or slot.endswith("_knee")
             or slot == "head"
+            or "is shared with" in issue.message
         )
         if slot.endswith(("_wrist", "_elbow", "_shoulder")):
             side = "left" if slot.startswith("left_") else "right"

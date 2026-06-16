@@ -189,8 +189,6 @@ def _load_reference_pose_for_session(
 ):
     from hhtools.retarget.calibration.reference import build_motion_reference, load_reference_pose
 
-    if reference == "fbx":
-        return load_reference_pose("fbx")
     if reference == "glb":
         if motion is None or motion.num_frames == 0:
             raise ValueError("load a motion first for glb reference (frame 0)")

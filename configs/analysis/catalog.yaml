@@ -22,7 +22,7 @@ stages:
     desc: "在已筛选 clip 中推荐 K% 个既多样又偏复杂的训练子集；滑块实时高亮推荐点，非删除过滤。"
 
 data_sources:
-  human: "人体源轨迹：AMASS / LAFAN / OMOMO / parc_ms / holosoma / BVH / GLB / FBX / NPZ / PKL / NPY（由 dataset adapter 识别）"
+  human: "人体源轨迹：AMASS / LAFAN / OMOMO / parc_ms / holosoma / BVH / GLB / NPZ / PKL / NPY（由 dataset adapter 识别）"
   robot: "机器人 retarget 轨迹 CSV（root + 关节角）；L2 脚部位姿需 FK，可能降级"
   mixed: "同一目录可混合人体与机器人，embedding 在 canonical 空间可比"
   note: "分析的是源轨迹（含物体/地形 sidecar），不会移动或删除源文件"
