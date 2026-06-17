@@ -2,11 +2,12 @@
 
 **让人形机器人在约 30 秒内完成跑酷 / 跳舞 / 交互动作的重映射**
 
+**[项目主页](https://jaggerShen.github.io/human-humanoid-tools/)** · **[English README](README.md)**
+
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![GitHub](https://img.shields.io/badge/GitHub-jaggerShen%2Fhuman--humanoid--tools-blue)](https://github.com/jaggerShen/human-humanoid-tools)
-
-**[English README](README.md)**
+[![Project Page](https://img.shields.io/badge/Project%20Page-GitHub%20Pages-blue)](https://jaggerShen.github.io/human-humanoid-tools/)
 
 | | |
 | :---: | :---: |

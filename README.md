@@ -2,11 +2,12 @@
 
 **Retarget parkour, dance, and interaction clips onto any humanoid in ~30 seconds**
 
+**[Project page](https://jaggerShen.github.io/human-humanoid-tools/)** · **[中文说明](README_cn.md)**
+
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![GitHub](https://img.shields.io/badge/GitHub-jaggerShen%2Fhuman--humanoid--tools-blue)](https://github.com/jaggerShen/human-humanoid-tools)
-
-**[中文说明](README_cn.md)**
+[![Project Page](https://img.shields.io/badge/Project%20Page-GitHub%20Pages-blue)](https://jaggerShen.github.io/human-humanoid-tools/)
 
 | | |
 | :---: | :---: |
