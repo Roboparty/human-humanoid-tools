@@ -425,6 +425,24 @@ def _apply_abduction_delta(
     return out
 
 
+def _abduction_joint_limits(
+    model: "URDFRobotModel",
+    left_joint: str,
+    right_joint: str,
+) -> tuple[tuple[float, float], tuple[float, float]] | None:
+    """Return ((l_lo, l_hi), (r_lo, r_hi)) limits for the abduction joints."""
+    lo_hi: dict[str, tuple[float, float]] = {}
+    for j in getattr(model, "actuated_joints", ()):  # type: ignore[attr-defined]
+        lo = getattr(j, "limit_lower", None)
+        hi = getattr(j, "limit_upper", None)
+        if lo is None or hi is None or hi <= lo:
+            continue
+        lo_hi[str(j.name)] = (float(lo), float(hi))
+    if left_joint not in lo_hi or right_joint not in lo_hi:
+        return None
+    return lo_hi[left_joint], lo_hi[right_joint]
+
+
 def clamp_joint_q_foot_lateral_clearance(
     model: "URDFRobotModel",
     joint_q_row: np.ndarray,
@@ -433,15 +451,21 @@ def clamp_joint_q_foot_lateral_clearance(
     root_coord_count: int = 7,
     min_clearance_m: float = 0.01,
     ankle_prefilter_m: float | None = None,
-    max_iterations: int = 1,
-    step_rad: float = 0.03,
+    max_iterations: int = 12,
+    step_rad: float = 0.02,
+    max_abduction_rad: float = 0.20,
 ) -> np.ndarray:
     """Spread hip abduction until foot meshes have ``min_clearance_m`` inner gap.
 
-    ``max_iterations`` is kept for API compatibility; the implementation uses a
-    single best-of-two abduction trial per frame for speed on long clips.
+    Triggered purely by actual foot-*mesh* interpenetration (``gap <
+    min_clearance_m``): poses where the feet already clear — including
+    wide-stance dance frames — are left untouched, so normal gait is
+    unaffected.  Unlike earlier revisions this also corrects *crossed-ankle*
+    frames (e.g. a narrow-hip robot whose scaled ankle targets cross during a
+    leg-crossing dance move), iteratively abducting both hips a little at a
+    time, respecting joint limits and a ``max_abduction_rad`` cap per leg so
+    the correction stays local and does not snap into an unnatural splay.
     """
-    _ = max_iterations
     if min_clearance_m <= 0.0:
         return np.asarray(joint_q_row, dtype=np.float32, copy=True)
 
@@ -463,29 +487,48 @@ def clamp_joint_q_foot_lateral_clearance(
     if gap is None or gap >= min_clearance_m:
         return out
 
-    lat_i = _lateral_axis_idx(model.preset)
-    ankle_gap = _ankle_lateral_separation(model, cfg, root, lat_i)
-    # Crossed ankles — hip abduction cannot fix mesh overlap and often
-    # makes choreography / IK poses worse (e.g. wide-stance dance frames).
-    if ankle_gap is not None and float(ankle_gap) < 0.0:
-        return out
+    # Determine which abduction sign spreads the feet apart for each leg by
+    # probing both directions once; then iterate in that direction.  This
+    # handles either left/right joint-axis convention.
+    limits = _abduction_joint_limits(model, left_joint, right_joint)
+    l_lo, l_hi = limits[0] if limits else (-1e9, 1e9)
+    r_lo, r_hi = limits[1] if limits else (-1e9, 1e9)
+
+    l0 = float(cfg.get(left_joint, 0.0))
+    r0 = float(cfg.get(right_joint, 0.0))
+    step = abs(float(step_rad))
+    cap = abs(float(max_abduction_rad))
+    n_iter = max(1, int(max_iterations))
 
     best_cfg = cfg
     best_gap = float(gap)
-    for l_delta, r_delta in ((step_rad, -step_rad), (-step_rad, step_rad)):
-        trial = _apply_abduction_delta(cfg, left_joint, right_joint, l_delta, r_delta)
-        trial_gap = foot_mesh_lateral_inner_gap(model, trial, root)
-        if trial_gap is not None and trial_gap > best_gap:
-            best_gap = float(trial_gap)
-            best_cfg = trial
+    for _ in range(n_iter):
+        improved = False
+        for l_delta, r_delta in ((step, -step), (-step, step)):
+            l_new = best_cfg.get(left_joint, l0) + l_delta
+            r_new = best_cfg.get(right_joint, r0) + r_delta
+            # respect URDF limits and the per-leg correction cap
+            if not (l_lo <= l_new <= l_hi and r_lo <= r_new <= r_hi):
+                continue
+            if abs(l_new - l0) > cap or abs(r_new - r0) > cap:
+                continue
+            trial = _apply_abduction_delta(best_cfg, left_joint, right_joint, l_delta, r_delta)
+            trial_gap = foot_mesh_lateral_inner_gap(model, trial, root)
+            if trial_gap is not None and trial_gap > best_gap + 1e-5:
+                best_gap = float(trial_gap)
+                best_cfg = trial
+                improved = True
+                break
+        if not improved or best_gap >= min_clearance_m:
+            break
+
     if best_cfg is cfg:
         return out
 
-    cfg = best_cfg
     base = int(root_coord_count)
     for i, name in enumerate(dof_names):
         if base + i >= out.size:
             break
-        out[base + i] = np.float32(cfg.get(name, float(out[base + i])))
+        out[base + i] = np.float32(best_cfg.get(name, float(out[base + i])))
 
     return out

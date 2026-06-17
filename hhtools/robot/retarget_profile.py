@@ -391,7 +391,12 @@ def build_feet_stabilizer_config(
         up_axis=str(feet_raw.get("up_axis", preset.up_axis)),  # type: ignore[arg-type]
         forward_axis=str(feet_raw.get("forward_axis", preset.forward_axis)),  # type: ignore[arg-type]
         ground_contact_z=float(feet_raw.get("ground_contact_z", 0.0)),
-        min_foot_clearance=float(feet_raw.get("min_foot_clearance", 0.0)),
+        # Default ON (0.02 m): the post-IK clamp it drives only nudges hip
+        # abduction on frames where the solved foot *meshes* actually
+        # interpenetrate, so it is a no-op for normal gait / wide stances and
+        # safe for every robot.  Set ``min_foot_clearance: 0.0`` in robot.yaml
+        # to explicitly disable.
+        min_foot_clearance=float(feet_raw.get("min_foot_clearance", 0.02)),
         max_ground_correction=float(feet_raw.get("max_ground_correction", 0.05)),
         ground_uprightness_range=float(feet_raw.get("ground_uprightness_range", 0.30)),
         foot_planting_velocity_threshold=float(

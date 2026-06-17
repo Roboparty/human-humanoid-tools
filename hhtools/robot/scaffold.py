@@ -159,7 +159,12 @@ _DEFAULT_RETARGET: dict[str, object] = {
     "apply_feet_stabilizer": True,
     "feet_stabilizer": {
         "ground_contact_z": 0.0,
-        "min_foot_clearance": 0.0,
+        # Small mesh-aware lateral clearance, enabled by default: the post-IK
+        # clamp only nudges hip abduction on frames where the solved foot
+        # *meshes* actually interpenetrate (a no-op otherwise, incl. normal
+        # gait and wide stances), so this is safe for every robot and only
+        # helps narrow-hip / wide-foot robots whose feet would otherwise clip.
+        "min_foot_clearance": 0.02,
     },
 }
 

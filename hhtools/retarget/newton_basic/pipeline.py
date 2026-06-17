@@ -1426,12 +1426,22 @@ class NewtonBasicPipeline:
             )
         return out
 
+    #: Default inner foot-mesh clearance (m) applied to every robot when its
+    #: config does not specify one.  The post-IK clamp this drives is purely
+    #: mesh-gated (a no-op unless the solved foot meshes actually
+    #: interpenetrate), so a small positive default is safe universally and
+    #: protects narrow-hip / wide-foot robots out of the box.
+    _DEFAULT_FOOT_LATERAL_CLEARANCE_M: float = 0.02
+
     def _resolved_foot_lateral_clearance_m(self) -> float:
         """Target inner foot-mesh clearance from feet stabilizer / robot geometry."""
         feet_cfg = self.feet_stabilizer_config
-        if feet_cfg is not None and float(feet_cfg.min_foot_clearance) > 0.0:
-            return float(feet_cfg.min_foot_clearance)
-        return 0.0
+        if feet_cfg is None:
+            # No feet config at all → fall back to the universal default so
+            # the mesh-aware clamp still protects every robot.
+            return float(self._DEFAULT_FOOT_LATERAL_CLEARANCE_M)
+        # An explicit value (including 0.0 to disable) is always respected.
+        return float(feet_cfg.min_foot_clearance)
 
     def _build_scaler(self, motion: Motion) -> HumanToRobotScaler:
         key = id(motion.hierarchy)
