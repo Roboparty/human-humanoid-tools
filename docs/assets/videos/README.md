@@ -1,12 +1,20 @@
 # Demo videos for the project page
 
-Place MP4 files in this directory. The site checks each path with a HEAD request; if the file is missing, a placeholder is shown instead.
+Place MP4 files in this directory. The site hides the placeholder once the `<video>` element loads metadata.
+
+**Web playback requires `-movflags +faststart`** (moov atom at file start). Without it, browsers must download the entire file before play starts.
 
 **Recommended encoding** (keep each file under ~50 MB for GitHub):
 
 ```bash
-ffmpeg -i raw.mp4 -c:v libx264 -crf 23 -preset slow -pix_fmt yuv420p \
+ffmpeg -i raw.mp4 -an -c:v libx264 -crf 23 -preset slow -pix_fmt yuv420p \
   -movflags +faststart highlight-01-fast-retarget.mp4
+```
+
+To strip audio from an existing file without re-encoding video:
+
+```bash
+ffmpeg -i raw.mp4 -an -c:v copy -movflags +faststart output.mp4
 ```
 
 Optional posters (JPEG) go in `../posters/` with matching names.
