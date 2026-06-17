@@ -159,7 +159,7 @@ _DEFAULT_RETARGET: dict[str, object] = {
     "apply_feet_stabilizer": True,
     "feet_stabilizer": {
         "ground_contact_z": 0.0,
-        "min_foot_clearance": 0.01,
+        "min_foot_clearance": 0.0,
     },
 }
 
@@ -472,7 +472,7 @@ def _auto_ik_map(urdf_path: Path) -> dict[str, str]:
     any remaining canonical slots.  The result is repaired and stripped of
     invalid optional slots before return.
     """
-    from hhtools.robot.kinematics import infer_ik_map_from_kinematics, infer_smooth_joint_filter_masks, prepare_ik_map
+    from hhtools.robot.kinematics import infer_ik_map_from_kinematics, prepare_ik_map
 
     keyword = _auto_ik_map_keywords(urdf_path)
     kinematic = infer_ik_map_from_kinematics(urdf_path)
@@ -654,6 +654,8 @@ def scaffold_preset(
     # Drop empty sub-dicts so the yaml stays clean.
     weights = {k: v for k, v in weights.items() if v}
 
+    from hhtools.robot.kinematics import infer_smooth_joint_filter_masks
+
     smooth_masks = infer_smooth_joint_filter_masks(urdf_path, ordered_ik_map)
     if not smooth_masks:
         import xml.etree.ElementTree as ET
@@ -691,36 +693,6 @@ def scaffold_preset(
     payload["rest_offsets"] = {}
 
     retarget_cfg: dict[str, object] = dict(_DEFAULT_RETARGET)
-    try:
-        from hhtools.robot.base import RobotPreset
-        from hhtools.robot.foot_geometry import estimate_min_lateral_foot_separation
-        from hhtools.robot.loader import load_robot
-
-        _pre = RobotPreset(
-            name=preset_name,
-            display_name=display_name,
-            root_dir=root_dir,
-            urdf_path=urdf_path,
-            mesh_search_paths=tuple(mesh_paths),
-            ik_map=dict(ordered_ik_map),
-            weights={k: dict(v) for k, v in weights.items()} if weights else {},
-            smooth_joint_filter_masks=dict(smooth_masks),
-            rest_offsets={},
-            feet=dict(feet),
-            length_scale=1.0,
-            up_axis="Z",
-            forward_axis="X",
-            dof_order=tuple(dof_order),
-        )
-        _lat = estimate_min_lateral_foot_separation(
-            load_robot(_pre, compile_mjcf=False),
-        )
-        if _lat is not None:
-            _fs = dict(retarget_cfg["feet_stabilizer"])  # type: ignore[arg-type]
-            _fs["min_lateral_separation"] = round(float(_lat), 4)
-            retarget_cfg["feet_stabilizer"] = _fs
-    except Exception:
-        pass
     payload["retarget"] = retarget_cfg
 
     header = _yaml_header(preset_name, urdf_rel)

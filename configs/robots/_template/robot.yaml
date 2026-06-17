@@ -144,7 +144,7 @@ retarget:
   apply_feet_stabilizer: true
   feet_stabilizer:
     ground_contact_z: 0.0
-    min_foot_clearance: 0.01
+    min_foot_clearance: 0.0
   # references:
   #   soma_bvh:
   #     scaler_config: soma_scaler_config.yaml

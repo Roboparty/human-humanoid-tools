@@ -38,7 +38,7 @@ _REFERENCE_FEET_DEFAULTS: dict[str, dict[str, Any]] = {
             "ground_contact_z": 0.045,
             "foot_planting_velocity_threshold": 0.005,
             "foot_planting_height_margin": 0.02,
-            "min_lateral_separation": 0.1,
+            "min_lateral_separation": 0.0,
             "left_foot_name": "LeftFoot",
             "right_foot_name": "RightFoot",
             "left_toe_name": "LeftToe",
@@ -266,31 +266,12 @@ def _resolve_min_lateral_separation(
     *,
     model: "URDFRobotModel | None" = None,
 ) -> float:
-    """Pick ``min_lateral_separation`` from yaml and/or foot mesh geometry."""
+    """Pick ``min_lateral_separation`` from robot yaml only (no mesh auto-infer)."""
     merged = float(feet_raw.get("min_lateral_separation", 0.0))
     explicit = _feet_stabilizer_key_explicit(preset, reference, "min_lateral_separation")
-
-    inferred: float | None = None
-    if model is not None:
-        from hhtools.robot.foot_geometry import estimate_min_lateral_foot_separation
-
-        inferred = estimate_min_lateral_foot_separation(model)
-    elif preset.urdf_path is not None and preset.urdf_path.is_file():
-        try:
-            from hhtools.robot.foot_geometry import estimate_min_lateral_foot_separation
-            from hhtools.robot.loader import load_robot
-
-            inferred = estimate_min_lateral_foot_separation(
-                load_robot(preset, compile_mjcf=False),
-            )
-        except Exception:
-            inferred = None
-
-    if inferred is not None and inferred > 0.0:
-        if explicit is not None:
-            return max(explicit, inferred)
-        return max(merged, inferred)
-    return merged if explicit is None else float(explicit)
+    if explicit is not None:
+        return float(explicit)
+    return merged
 
 
 def _arm_chain_max_reach_explicit(

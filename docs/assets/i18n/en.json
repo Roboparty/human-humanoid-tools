@@ -1,0 +1,148 @@
+{
+  "meta": {
+    "title": "human-humanoid-tools (hhtools)",
+    "description": "Retarget parkour, dance, and interaction clips onto any humanoid in ~30 seconds"
+  },
+  "nav": {
+    "intro": "Intro",
+    "highlights": "Highlights",
+    "workflow": "Workflow",
+    "method": "Method",
+    "datasets": "Datasets",
+    "citation": "Citation",
+    "github": "GitHub"
+  },
+  "hero": {
+    "title": "human-humanoid-tools",
+    "subtitle": "Retarget parkour, dance, and interaction clips onto any humanoid in ~30 seconds",
+    "tagline": "Human-to-Humanoid Tools · Local Web Studio",
+    "ctaGithub": "View on GitHub",
+    "ctaQuickStart": "Quick Start",
+    "requirements": "Linux · Python 3.12+ · Preview on CPU · Retarget needs NVIDIA GPU (CUDA 12)"
+  },
+  "quickStart": {
+    "title": "Quick Start",
+    "note": "Open http://127.0.0.1:8009 after launch."
+  },
+  "highlights": {
+    "sectionTitle": "Highlights",
+    "fastRetarget": {
+      "title": "Fast Retarget",
+      "desc": "Drag a human clip, pick a robot, export CSV/ZIP in about 30 seconds. Dual backends: <strong>Newton IK</strong> for pure skeleton mimic (dance, walk) and <strong>MPC-SQP Interaction-Mesh</strong> for object/terrain interaction.",
+      "bullets": [
+        "Auto backend recommendation by motion type",
+        "GPU-accelerated Newton IK via Warp",
+        "Real-time 3D preview before export"
+      ]
+    },
+    "anyMotion": {
+      "title": "Any Motion",
+      "desc": "BVH / GLB / SMPL family and NPZ — plus interaction clips. Adapters for AMASS, GVHMR, LAFAN, OMOMO, PHUMA, intermimic, meshmimic, and more.",
+      "bullets": [
+        "Unified NPZ schema for pipeline interchange",
+        "mimic · intermimic · meshmimic modes",
+        "Demo clips in <code>assets/motions/</code>"
+      ]
+    },
+    "anyUrdf": {
+      "title": "Any URDF",
+      "desc": "Upload any robot in the Web UI: drag in the URDF, drag in meshes. The system auto-scaffolds <code>robot.yaml</code> — no manual IK tuning required.",
+      "bullets": [
+        "One-time calibration aligns robot to reference skeleton",
+        "Presets for Unitree G1 and more",
+        "Validate with <code>hhtools robot validate</code>"
+      ]
+    },
+    "batchRetarget": {
+      "title": "Batch Retarget",
+      "desc": "Queue multiple clips from the motion library or uploads, run retarget in one pass, and download a ZIP of robot trajectories.",
+      "bullets": [
+        "Multi-select from library or folder import",
+        "Progress bar per clip",
+        "Batch CSV / ZIP export"
+      ]
+    },
+    "r2r": {
+      "title": "Robot → Robot (R2R)",
+      "desc": "Retarget existing robot CSV/PKL exports onto a new URDF. Single-clip and batch ZIP workflows with dual-view comparison.",
+      "bullets": [
+        "Source robot trajectory → target URDF",
+        "Reuse calibration across similar robots",
+        "Batch R2R export"
+      ]
+    },
+    "datasetViz": {
+      "title": "Dataset Analysis & Visualize",
+      "desc": "Scan, tag, embed, cluster, and subset human or robot motion libraries in the Web UI. Explore quality/dynamics tags and scatter plots; export recommended subsets.",
+      "bullets": [
+        "Drop a folder → analyze → explore",
+        "Unified canonical feature space",
+        "Brush-select and export subsets"
+      ]
+    }
+  },
+  "video": {
+    "placeholder": "Video coming soon",
+    "placeholderHint": "Place MP4 at the path shown in docs/assets/videos/README.md"
+  },
+  "workflow": {
+    "title": "Recommended Workflow",
+    "subtitle": "Seven steps from clip import to export",
+    "steps": [
+      { "num": "1", "title": "Import Motion", "desc": "Load BVH, SMPL, OMOMO PKL, meshmimic terrain, or pick from the built-in library." },
+      { "num": "2", "title": "Motion Library", "desc": "Browse assets/motions by folder; search and one-click load demo clips." },
+      { "num": "3", "title": "Load Robot", "desc": "Drag URDF + meshes or select a registered robot preset." },
+      { "num": "4", "title": "Calibrate", "desc": "Align the gray robot to the blue reference skeleton; save once per robot." },
+      { "num": "5", "title": "Retarget", "desc": "Choose Newton IK or Interaction-Mesh; run retarget in ~30 seconds." },
+      { "num": "6", "title": "3D Visualization", "desc": "Toggle skeleton, body, objects/terrain, scaled scene, and robot layers." },
+      { "num": "7", "title": "Export", "desc": "Download CSV or ZIP with robot and interaction object trajectories." }
+    ]
+  },
+  "method": {
+    "title": "Method",
+    "subtitle": "Two retarget backends under one pipeline",
+    "newton": {
+      "title": "Newton IK (mimic)",
+      "desc": "GPU-accelerated inverse kinematics for pure skeleton motions — dance, locomotion, and general mimic clips without interaction geometry."
+    },
+    "mesh": {
+      "title": "Interaction-Mesh (intermimic / meshmimic)",
+      "desc": "Laplacian deformation on an interaction mesh, solved with MPC/SQP. Preserves spatial relationships between body and objects/terrain while respecting non-penetration."
+    },
+    "pipeline": {
+      "title": "Unified Pipeline",
+      "desc": "All inputs convert to a canonical Motion representation, pass through calibration, then export robot CSV/PKL with optional object and terrain assets."
+    }
+  },
+  "datasets": {
+    "title": "Supported Datasets",
+    "subtitle": "Demo paths only — download full datasets from upstream",
+    "cols": {
+      "mode": "Mode",
+      "dataset": "Dataset",
+      "paper": "Paper",
+      "download": "Download"
+    },
+    "rows": [
+      { "mode": "mimic", "dataset": "AMASS", "paper": "arXiv:1904.03278", "paperUrl": "https://arxiv.org/abs/1904.03278", "download": "Site", "downloadUrl": "https://amass.is.tue.mpg.de/" },
+      { "mode": "mimic", "dataset": "GVHMR", "paper": "arXiv:2409.06662", "paperUrl": "https://arxiv.org/abs/2409.06662", "download": "GitHub", "downloadUrl": "https://github.com/zju3dv/GVHMR" },
+      { "mode": "mimic", "dataset": "LAFAN1", "paper": "arXiv:2102.04942", "paperUrl": "https://arxiv.org/abs/2102.04942", "download": "GitHub", "downloadUrl": "https://github.com/ubisoft/ubisoft-laforge-animation-dataset" },
+      { "mode": "mimic", "dataset": "Motion-X", "paper": "NeurIPS", "paperUrl": "https://proceedings.neurips.cc/paper_files/paper/2023/file/4f8e27f6036c1d8b4a66b5b3a947dd7b-Paper-Datasets_and_Benchmarks.pdf", "download": "GitHub", "downloadUrl": "https://github.com/IDEA-Research/Motion-X" },
+      { "mode": "mimic", "dataset": "PHUMA", "paper": "arXiv:2510.26236", "paperUrl": "https://arxiv.org/abs/2510.26236", "download": "GitHub", "downloadUrl": "https://github.com/DAVIAN-Robotics/PHUMA" },
+      { "mode": "mimic", "dataset": "SOMA", "paper": "arXiv:2603.16858", "paperUrl": "https://arxiv.org/abs/2603.16858", "download": "Hugging Face", "downloadUrl": "https://huggingface.co/datasets/bones-studio/seed" },
+      { "mode": "intermimic", "dataset": "OMOMO", "paper": "arXiv:2309.16237", "paperUrl": "https://arxiv.org/abs/2309.16237", "download": "Hugging Face", "downloadUrl": "https://huggingface.co/datasets/YaojieShen/hhtools_omomo" },
+      { "mode": "meshmimic", "dataset": "holosoma", "paper": "arXiv:2509.26633", "paperUrl": "https://arxiv.org/abs/2509.26633", "download": "GitHub", "downloadUrl": "https://github.com/amazon-far/holosoma" },
+      { "mode": "meshmimic", "dataset": "PARC MS", "paper": "arXiv:2505.04002", "paperUrl": "https://arxiv.org/abs/2505.04002", "download": "Hugging Face", "downloadUrl": "https://huggingface.co/datasets/YaojieShen/hhtools_parc_ms" }
+    ]
+  },
+  "citation": {
+    "title": "Citation & License",
+    "citeTitle": "BibTeX",
+    "licenseTitle": "License",
+    "licenseText": "Code: Apache-2.0. SMPL weights not included — register at MPI. When publishing, also cite upstream datasets and solvers (see NOTICE).",
+    "links": "GitHub · Issues · framework.md · CONTRIBUTING.md"
+  },
+  "footer": {
+    "text": "human-humanoid-tools (hhtools) · Apache-2.0"
+  }
+}

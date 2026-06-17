@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Retarget parkour, dance, and interaction clips onto any humanoid in ~30 seconds">
+  <title>human-humanoid-tools (hhtools)</title>
+  <link rel="stylesheet" href="assets/css/site.css">
+</head>
+<body>
+
+  <header class="topbar">
+    <a class="topbar-brand" href="#hero">
+      <span class="logo-dot" aria-hidden="true"></span>
+      <span>hhtools</span>
+    </a>
+    <nav class="topbar-nav" aria-label="Main">
+      <a href="#hero" data-i18n="nav.intro">Intro</a>
+      <a href="#highlights" data-i18n="nav.highlights">Highlights</a>
+      <a href="#workflow" data-i18n="nav.workflow">Workflow</a>
+      <a href="#method" data-i18n="nav.method">Method</a>
+      <a href="#datasets" data-i18n="nav.datasets">Datasets</a>
+      <a href="#citation" data-i18n="nav.citation">Citation</a>
+    </nav>
+    <div class="topbar-actions">
+      <div class="lang-toggle" role="group" aria-label="Language">
+        <button type="button" data-lang="en" class="active">EN</button>
+        <button type="button" data-lang="zh">中文</button>
+      </div>
+      <a class="btn btn-primary" href="https://github.com/jaggerShen/human-humanoid-tools" target="_blank" rel="noopener" data-i18n="nav.github">GitHub</a>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- Hero -->
+    <section id="hero" class="section hero">
+      <div class="section-inner">
+        <p class="hero-tagline" data-i18n="hero.tagline">Human-to-Humanoid Tools · Local Web Studio</p>
+        <h1 class="hero-title" data-i18n="hero.title">human-humanoid-tools</h1>
+        <p class="hero-subtitle" data-i18n="hero.subtitle">Retarget parkour, dance, and interaction clips onto any humanoid in ~30 seconds</p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="https://github.com/jaggerShen/human-humanoid-tools" target="_blank" rel="noopener" data-i18n="hero.ctaGithub">View on GitHub</a>
+          <a class="btn btn-ghost" href="#quickstart" data-i18n="hero.ctaQuickStart">Quick Start</a>
+        </div>
+        <p class="hero-requirements" data-i18n="hero.requirements">Linux · Python 3.12+ · Preview on CPU · Retarget needs NVIDIA GPU (CUDA 12)</p>
+
+        <div class="hero-grid" aria-label="Demo previews">
+          <img src="assets/img/demo-01.gif" alt="Demo: retarget preview 1" loading="lazy" width="400" height="300">
+          <img src="assets/img/demo-02.gif" alt="Demo: retarget preview 2" loading="lazy" width="400" height="300">
+          <img src="assets/img/demo-03.gif" alt="Demo: retarget preview 3" loading="lazy" width="400" height="300">
+          <img src="assets/img/demo-04.gif" alt="Demo: retarget preview 4" loading="lazy" width="400" height="300">
+        </div>
+
+        <div id="quickstart" class="quickstart-block">
+          <h3 data-i18n="quickStart.title">Quick Start</h3>
+          <pre><code id="quickstart-code"></code></pre>
+          <p class="quickstart-note" data-i18n="quickStart.note">Open http://127.0.0.1:8009 after launch.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Highlights header -->
+    <section id="highlights" class="section">
+      <div class="section-inner highlights-header">
+        <p class="section-label" data-i18n="nav.highlights">Highlights</p>
+        <h2 class="section-title" data-i18n="highlights.sectionTitle">Highlights</h2>
+      </div>
+    </section>
+
+    <!-- Highlight 1: Fast Retarget -->
+    <section id="fast-retarget" class="highlight-section">
+      <div class="highlight-row">
+        <div class="highlight-text">
+          <h3 data-i18n="highlights.fastRetarget.title">Fast Retarget</h3>
+          <p data-i18n="highlights.fastRetarget.desc" data-i18n-html="true">…</p>
+          <ul id="bullets-fast-retarget"></ul>
+        </div>
+        <div class="highlight-media">
+          <div class="video-slot" data-video="assets/videos/highlight-01-fast-retarget.mp4">
+            <video controls muted playsinline preload="metadata" poster="assets/posters/highlight-01.jpg">
+              <source src="assets/videos/highlight-01-fast-retarget.mp4" type="video/mp4">
+            </video>
+            <div class="video-placeholder">
+              <div class="video-placeholder-icon" aria-hidden="true">▶</div>
+              <p class="ph-title">Video coming soon</p>
+              <small class="ph-hint">assets/videos/highlight-01-fast-retarget.mp4</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Highlight 2: Any Motion -->
+    <section id="any-motion" class="highlight-section">
+      <div class="highlight-row reverse">
+        <div class="highlight-text">
+          <h3 data-i18n="highlights.anyMotion.title">Any Motion</h3>
+          <p data-i18n="highlights.anyMotion.desc" data-i18n-html="true">…</p>
+          <ul id="bullets-any-motion"></ul>
+        </div>
+        <div class="highlight-media">
+          <div class="video-slot" data-video="assets/videos/highlight-02-any-motion-1.mp4">
+            <video controls muted playsinline preload="metadata" poster="assets/posters/highlight-02a.jpg">
+              <source src="assets/videos/highlight-02-any-motion-1.mp4" type="video/mp4">
+            </video>
+            <div class="video-placeholder">
+              <div class="video-placeholder-icon" aria-hidden="true">▶</div>
+              <p class="ph-title">Video coming soon</p>
+              <small class="ph-hint">assets/videos/highlight-02-any-motion-1.mp4</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Highlight 3: Any URDF -->
+    <section id="any-urdf" class="highlight-section">
+      <div class="highlight-row">
+        <div class="highlight-text">
+          <h3 data-i18n="highlights.anyUrdf.title">Any URDF</h3>
+          <p data-i18n="highlights.anyUrdf.desc" data-i18n-html="true">…</p>
+          <ul id="bullets-any-urdf"></ul>
+        </div>
+        <div class="highlight-media">
+          <div class="video-grid video-grid-2">
+            <div class="video-slot" data-video="assets/videos/highlight-03-any-urdf-1.mp4">
+              <video controls muted playsinline preload="metadata" poster="assets/posters/highlight-03a.jpg">
+                <source src="assets/videos/highlight-03-any-urdf-1.mp4" type="video/mp4">
+              </video>
+              <div class="video-placeholder">
+                <div class="video-placeholder-icon" aria-hidden="true">▶</div>
+                <p class="ph-title">Video coming soon</p>
+                <small class="ph-hint">assets/videos/highlight-03-any-urdf-1.mp4</small>
+              </div>
+            </div>
+            <div class="video-slot" data-video="assets/videos/highlight-03-any-urdf-2.mp4">
+              <video controls muted playsinline preload="metadata" poster="assets/posters/highlight-03b.jpg">
+                <source src="assets/videos/highlight-03-any-urdf-2.mp4" type="video/mp4">
+              </video>
+              <div class="video-placeholder">
+                <div class="video-placeholder-icon" aria-hidden="true">▶</div>
+                <p class="ph-title">Video coming soon</p>
+                <small class="ph-hint">assets/videos/highlight-03-any-urdf-2.mp4</small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Highlight 4: Batch Retarget -->
+    <section id="batch-retarget" class="highlight-section">
+      <div class="highlight-row reverse">
+        <div class="highlight-text">
+          <h3 data-i18n="highlights.batchRetarget.title">Batch Retarget</h3>
+          <p data-i18n="highlights.batchRetarget.desc" data-i18n-html="true">…</p>
+          <ul id="bullets-batch-retarget"></ul>
+        </div>
+        <div class="highlight-media">
+          <div class="video-slot" data-video="assets/videos/highlight-04-batch-retarget.mp4">
+            <video controls muted playsinline preload="metadata" poster="assets/posters/highlight-04.jpg">
+              <source src="assets/videos/highlight-04-batch-retarget.mp4" type="video/mp4">
+            </video>
+            <div class="video-placeholder">
+              <div class="video-placeholder-icon" aria-hidden="true">▶</div>
+              <p class="ph-title">Video coming soon</p>
+              <small class="ph-hint">assets/videos/highlight-04-batch-retarget.mp4</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Highlight 5: R2R -->
+    <section id="r2r" class="highlight-section">
+      <div class="highlight-row">
+        <div class="highlight-text">
+          <h3 data-i18n="highlights.r2r.title">Robot → Robot (R2R)</h3>
+          <p data-i18n="highlights.r2r.desc" data-i18n-html="true">…</p>
+          <ul id="bullets-r2r"></ul>
+        </div>
+        <div class="highlight-media">
+          <div class="video-slot" data-video="assets/videos/highlight-05-r2r.mp4">
+            <video controls muted playsinline preload="metadata" poster="assets/posters/highlight-05.jpg">
+              <source src="assets/videos/highlight-05-r2r.mp4" type="video/mp4">
+            </video>
+            <div class="video-placeholder">
+              <div class="video-placeholder-icon" aria-hidden="true">▶</div>
+              <p class="ph-title">Video coming soon</p>
+              <small class="ph-hint">assets/videos/highlight-05-r2r.mp4</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Highlight 6: Dataset Analysis & Visualize -->
+    <section id="dataset-viz" class="highlight-section">
+      <div class="highlight-row reverse">
+        <div class="highlight-text">
+          <h3 data-i18n="highlights.datasetViz.title">Dataset Analysis &amp; Visualize</h3>
+          <p data-i18n="highlights.datasetViz.desc" data-i18n-html="true">…</p>
+          <ul id="bullets-dataset-viz"></ul>
+        </div>
+        <div class="highlight-media">
+          <div class="video-slot" data-video="assets/videos/highlight-06-dataset-viz.mp4">
+            <video controls muted playsinline preload="metadata" poster="assets/posters/highlight-06.jpg">
+              <source src="assets/videos/highlight-06-dataset-viz.mp4" type="video/mp4">
+            </video>
+            <div class="video-placeholder">
+              <div class="video-placeholder-icon" aria-hidden="true">▶</div>
+              <p class="ph-title">Video coming soon</p>
+              <small class="ph-hint">assets/videos/highlight-06-dataset-viz.mp4</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Workflow -->
+    <section id="workflow" class="section">
+      <div class="section-inner">
+        <p class="section-label" data-i18n="nav.workflow">Workflow</p>
+        <h2 class="section-title" data-i18n="workflow.title">Recommended Workflow</h2>
+        <p class="section-subtitle" data-i18n="workflow.subtitle">Seven steps from clip import to export</p>
+        <div id="workflow-grid" class="workflow-grid"></div>
+      </div>
+    </section>
+
+    <!-- Method -->
+    <section id="method" class="section highlight-section">
+      <div class="section-inner">
+        <p class="section-label" data-i18n="nav.method">Method</p>
+        <h2 class="section-title" data-i18n="method.title">Method</h2>
+        <p class="section-subtitle" data-i18n="method.subtitle">Two retarget backends under one pipeline</p>
+        <div class="method-grid">
+          <div class="method-card">
+            <h4 data-i18n="method.newton.title">Newton IK (mimic)</h4>
+            <p data-i18n="method.newton.desc">…</p>
+          </div>
+          <div class="method-card">
+            <h4 data-i18n="method.mesh.title">Interaction-Mesh</h4>
+            <p data-i18n="method.mesh.desc">…</p>
+          </div>
+          <div class="method-card">
+            <h4 data-i18n="method.pipeline.title">Unified Pipeline</h4>
+            <p data-i18n="method.pipeline.desc">…</p>
+          </div>
+        </div>
+        <div style="margin-top: 32px; max-width: 720px; margin-left: auto; margin-right: auto;">
+          <div class="video-slot" data-video="assets/videos/highlight-08-method.mp4" style="aspect-ratio: 16/9;">
+            <video controls muted playsinline preload="metadata" poster="assets/posters/highlight-08.jpg">
+              <source src="assets/videos/highlight-08-method.mp4" type="video/mp4">
+            </video>
+            <div class="video-placeholder">
+              <div class="video-placeholder-icon" aria-hidden="true">▶</div>
+              <p class="ph-title">Video coming soon</p>
+              <small class="ph-hint">assets/videos/highlight-08-method.mp4</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Datasets -->
+    <section id="datasets" class="section">
+      <div class="section-inner">
+        <p class="section-label" data-i18n="nav.datasets">Datasets</p>
+        <h2 class="section-title" data-i18n="datasets.title">Supported Datasets</h2>
+        <p class="section-subtitle" data-i18n="datasets.subtitle">Demo paths only — download full datasets from upstream</p>
+        <div class="table-wrap">
+          <table class="datasets">
+            <thead>
+              <tr>
+                <th data-i18n="datasets.cols.mode">Mode</th>
+                <th data-i18n="datasets.cols.dataset">Dataset</th>
+                <th data-i18n="datasets.cols.paper">Paper</th>
+                <th data-i18n="datasets.cols.download">Download</th>
+              </tr>
+            </thead>
+            <tbody id="datasets-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Citation -->
+    <section id="citation" class="section">
+      <div class="section-inner">
+        <p class="section-label" data-i18n="nav.citation">Citation</p>
+        <h2 class="section-title" data-i18n="citation.title">Citation &amp; License</h2>
+        <div class="citation-block">
+          <h4 data-i18n="citation.citeTitle">BibTeX</h4>
+          <pre><code id="bibtex-code"></code></pre>
+        </div>
+        <div class="citation-block">
+          <h4 data-i18n="citation.licenseTitle">License</h4>
+          <p data-i18n="citation.licenseText">…</p>
+        </div>
+        <p class="citation-links">
+          <a href="https://github.com/jaggerShen/human-humanoid-tools" target="_blank" rel="noopener">GitHub</a>
+          ·
+          <a href="https://github.com/jaggerShen/human-humanoid-tools/issues" target="_blank" rel="noopener">Issues</a>
+          ·
+          <a href="https://github.com/jaggerShen/human-humanoid-tools/blob/main/framework.md" target="_blank" rel="noopener">framework.md</a>
+          ·
+          <a href="https://github.com/jaggerShen/human-humanoid-tools/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">CONTRIBUTING.md</a>
+        </p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer">
+    <p data-i18n="footer.text">human-humanoid-tools (hhtools) · Apache-2.0</p>
+  </footer>
+
+  <script src="assets/js/site.js"></script>
+</body>
+</html>

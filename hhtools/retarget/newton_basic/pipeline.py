@@ -1431,8 +1431,6 @@ class NewtonBasicPipeline:
         feet_cfg = self.feet_stabilizer_config
         if feet_cfg is not None and float(feet_cfg.min_foot_clearance) > 0.0:
             return float(feet_cfg.min_foot_clearance)
-        if feet_cfg is not None and float(feet_cfg.min_lateral_separation) > 0.0:
-            return 0.01
         return 0.0
 
     def _build_scaler(self, motion: Motion) -> HumanToRobotScaler:
