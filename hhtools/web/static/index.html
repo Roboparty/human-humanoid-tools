@@ -296,6 +296,9 @@
           <p class="hint" id="rt-first-hint" style="margin-top:6px">
             <b>首次 Retarget 较慢：</b>新机器人第一次求解会编译 GPU/Warp IK 内核并捕获 CUDA 图（约 10–60 秒）。进度条可能短暂不动，属正常现象，请耐心等待；加载机器人后会在后台预热，同一机器人后续会快很多。
           </p>
+          <p class="hint" id="rt-tuning-hint" style="margin-top:6px">
+            默认机器人构型比例接近 SMPL。若手臂、肩宽或腿宽与预期不符，可手动编辑 <code>~/.config/hhtools/robots/&lt;name&gt;/robot.yaml</code> 中的 scale（<code>retarget.joint_scale_multipliers</code>）与权重（<code>weights</code>）针对自己的机器人微调；改 yaml 后下次 Retarget 即生效。
+          </p>
           <div style="height:8px"></div>
           <button class="btn" id="retarget-btn" disabled>开始 Retarget</button>
           <div style="height:10px"></div>
