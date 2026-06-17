@@ -287,11 +287,11 @@
           <div class="row" style="margin-top:8px; align-items:center; gap:8px">
             <label class="k" style="display:flex; align-items:center; gap:6px; cursor:pointer">
               <input type="checkbox" id="rt-ground-follow" />
-              <span title="可视化时让机器人脚底跟随地形高度贴地">脚底贴地修正（攀爬/地形）</span>
+              <span title="可视化时让机器人脚底逐帧跟随地形高度">脚底贴地修正</span>
             </label>
           </div>
           <p class="hint" id="rt-ground-follow-hint" style="margin-top:4px">
-            勾选后机器人脚底会逐帧跟随<b>地形高度</b>贴地，适合<b>攀爬/上下台阶</b>。<b>翻滚/后空翻</b>等腾空动作请<b>关闭</b>，否则脚翻到头顶时 Z 会突然窜起；平地动作（含倒地爬起）默认关闭即可。
+            勾选后机器人脚底会逐帧跟随<b>地形高度</b>贴地，一般情况下不用开启，有些机器人由于构型问题可能需要。
           </p>
           <p class="hint" id="rt-first-hint" style="margin-top:6px">
             <b>首次 Retarget 较慢：</b>新机器人第一次求解会编译 GPU/Warp IK 内核并捕获 CUDA 图（约 10–60 秒）。进度条可能短暂不动，属正常现象，请耐心等待；加载机器人后会在后台预热，同一机器人后续会快很多。

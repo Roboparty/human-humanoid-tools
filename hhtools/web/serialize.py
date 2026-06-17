@@ -716,31 +716,47 @@ def serialize_robot_trajectory(
     sole_depth_ref = _sole_depth_reference(model, ik_map)
 
     # When foot-follow is off, compute the grounding lift ONCE at the first
-    # played frame (scheme A, no overlay tracking) and reuse it for all frames.
+    # played frame and reuse it for all frames.  When a yellow scaled overlay
+    # is available (parc_ms / OMOMO / holosoma), align the mesh sole to that
+    # overlay foot — the IK root already tracks the same scaled targets, so
+    # snapping the mesh to z=0 would sink the robot below the yellow skeleton
+    # whenever the actor stands on terrain above the clip foot-floor (boxes,
+    # stairs, vaults).  Flat clips without overlay data keep scheme A (sole on
+    # z=0 at frame 0).
     const_lift = 0.0
     if not ground_follow and len(idx) > 0:
         f0 = int(idx[0])
         cfg0 = {ret_dof_names[i]: float(dof[f0, i]) for i in range(len(ret_dof_names))}
         root0 = root[f0]
+        yellow_foot_f0 = (
+            _scaled_overlay_foot_z(scaled_preview, 0)
+            if scaled_preview is not None
+            else None
+        )
         lift0 = _mesh_playback_z_lift(
             model,
             cfg0,
             root0,
             sole_depth_ref=sole_depth_ref,
             ik_map=ik_map,
-            yellow_foot_z=None,
+            yellow_foot_z=yellow_foot_f0,
         )
-        # Exported robot trajectories carry an absolute floating-base root z.
-        # Shift the constant group lift so the lowest mesh vertex rests on z=0
-        # at the first played frame (scheme A + root-height correction).
-        model.apply_configuration(cfg0)
-        root_rot0 = _quat_xyzw_to_rotmat(root0[3:7])
-        min_mesh_z0 = _scene_min_mesh_z(model.trimesh_scene(), root_rot0)
-        if min_mesh_z0 is not None:
-            world_min = float(root0[2]) + lift0 + min_mesh_z0
-            const_lift = float(lift0 - world_min)
+        if yellow_foot_f0 is not None:
+            # ``_mesh_playback_z_lift`` already places the mesh sole on the
+            # overlay foot; do not re-normalise to z=0.
+            const_lift = float(lift0)
         else:
-            const_lift = lift0
+            # Exported robot trajectories carry an absolute floating-base root z.
+            # Shift the constant group lift so the lowest mesh vertex rests on z=0
+            # at the first played frame (scheme A + root-height correction).
+            model.apply_configuration(cfg0)
+            root_rot0 = _quat_xyzw_to_rotmat(root0[3:7])
+            min_mesh_z0 = _scene_min_mesh_z(model.trimesh_scene(), root_rot0)
+            if min_mesh_z0 is not None:
+                world_min = float(root0[2]) + lift0 + min_mesh_z0
+                const_lift = float(lift0 - world_min)
+            else:
+                const_lift = lift0
 
     frames: list[dict[str, Any]] = []
     for pi, f in enumerate(idx):
