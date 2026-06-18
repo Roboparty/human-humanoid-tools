@@ -77,11 +77,18 @@ def _find_meshmimic_primaries(drop_dir: Path) -> list[tuple[str, Path]]:
 
 
 def _find_mimic_primaries(drop_dir: Path) -> list[Path]:
+    from hhtools.io.datasets.amass import is_amass_motion_file
+
     found: list[Path] = []
     for ext in _MIMIC_PRIORITY:
         for p in sorted(drop_dir.rglob(f"*{ext}")):
-            if p.is_file() and not (ext == ".pkl" and _is_sidecar_pkl(p)):
-                found.append(p)
+            if not p.is_file():
+                continue
+            if ext == ".pkl" and _is_sidecar_pkl(p):
+                continue
+            if ext == ".npz" and not is_amass_motion_file(p):
+                continue
+            found.append(p)
     # Prefer shallowest paths (clip at drop root) then alphabetical.
     found.sort(key=lambda p: (len(p.parts), str(p)))
     return found
@@ -285,7 +292,10 @@ def _infer_dataset_from_path(path: Path, profile: str, *, clip_kind: str = "") -
 
     from hhtools.io.mimic_detect import infer_mimic_dataset
 
-    return infer_mimic_dataset(path)
+    try:
+        return infer_mimic_dataset(path)
+    except Exception:
+        return "amass"
 
 
 def detect_upload_profile(drop_dir: Path) -> str:

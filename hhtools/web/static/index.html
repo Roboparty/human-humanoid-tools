@@ -142,7 +142,7 @@
       <!-- MOTION -->
       <section class="panel active" data-panel="motion">
         <h2>动作 Motion</h2>
-        <p class="lead">可视化原始人体动作；也可直接把 clip 放进 <code>assets/motions/</code> 对应目录后在下方资源库打开。</p>
+        <p class="lead">可视化原始人体动作；也可直接把 clip 放进 <code>assets/motions/</code> 对应目录后在下方资源库打开。点「链接目录」或拖入文件夹可链接到资源库（不复制）。</p>
 
         <div class="motion-import-grid" id="tour-motion-import">
           <div class="dropzone dropzone-compact" id="motion-drop-intermimic" data-profile="intermimic">
@@ -181,9 +181,11 @@
 
         <div class="card" id="tour-motion-library">
           <h3>资源库 <span id="lib-count" style="color:var(--ink-tertiary);font-weight:500"></span></h3>
+          <p class="hint" id="lib-motions-hint" style="margin:0 0 8px"></p>
           <div class="row" style="margin-bottom:8px">
-            <select class="search" id="lib-folder" style="flex:0 0 40%"><option value="">全部目录</option></select>
+            <select class="search" id="lib-folder" style="flex:0 0 36%"><option value="">全部目录</option></select>
             <input class="search" id="lib-search" placeholder="搜索（如 kick kungfu）" style="flex:1" />
+            <button type="button" class="btn secondary small" id="lib-link-path" title="链接服务器上的数据集目录">链接目录</button>
           </div>
           <div class="lib-list" id="lib-list"></div>
         </div>
@@ -593,7 +595,7 @@
           <label class="dv-field dv-user-root" id="dv-user-root-wrap" hidden>
             <span>本地数据目录 <b>*</b></span>
             <input type="text" id="dv-user-source-root" class="dv-input"
-              placeholder="/home/amdin/下载 或 /home/amdin/下载/sub10_largebox_000_export" />
+              placeholder="/home/motions 或 /home/motions/sub10_largebox_000_export" />
             <span class="hint">拖入上传后必填：JSON manifest 会映射到此目录下的真实路径（非 /tmp）</span>
           </label>
           <details class="dv-support-compact" open>

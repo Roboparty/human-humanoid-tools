@@ -9,6 +9,9 @@ distribution-relative tags, and a histogram / tag-count summary for the UI.
 
 from __future__ import annotations
 
+import multiprocessing as mp
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Any, Callable
 
 import numpy as np
@@ -41,33 +44,126 @@ _NUMERIC_METRIC_KEYS: tuple[str, ...] = (
     "s_phy",
 )
 
+_AUTO = frozenset({None, 0, "0", "auto"})
+_BLAS_THREAD_VARS = (
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "OMP_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+)
+
+
+def _resolve_workers(
+    workers: int | None, n_entries: int, cfg: dict[str, Any]
+) -> int:
+    if n_entries <= 1:
+        return 1
+    parallel = cfg.get("parallel") or {}
+    cap_raw = parallel.get("max_workers")
+    cap = (
+        min(8, os.cpu_count() or 4)
+        if cap_raw in _AUTO
+        else max(1, int(cap_raw))
+    )
+    if workers is None:
+        raw = parallel.get("workers")
+        workers = cap if raw in _AUTO else int(raw)
+    workers = min(int(workers), cap)
+    return max(1, min(workers, n_entries))
+
+
+def _pin_parallel_thread_env() -> None:
+    """Set before spawning workers so numpy/OpenBLAS import with one thread."""
+    for key in _BLAS_THREAD_VARS:
+        os.environ[key] = "1"
+
+
+def _parallel_worker_init() -> None:
+    try:
+        import torch
+
+        torch.set_num_threads(1)
+        if hasattr(torch, "set_num_interop_threads"):
+            torch.set_num_interop_threads(1)
+    except Exception:
+        pass
+
+
+def _analyze_one(index: int, entry: dict[str, Any], cfg: dict[str, Any]) -> AnalyzableClip:
+    return analyze_clip(
+        entry["source_path"],
+        clip_id=entry.get("clip_id") or str(index),
+        source_path=entry["source_path"],
+        dataset=entry.get("dataset", ""),
+        folder_label=entry.get("folder_label", ""),
+        cfg=cfg,
+    )
+
+
+def _analyze_entry_task(
+    args: tuple[int, dict[str, Any], dict[str, Any]],
+) -> tuple[int, AnalyzableClip]:
+    index, entry, cfg = args
+    return index, _analyze_one(index, entry, cfg)
+
+
+def _analyze_entries(
+    entries: list[dict[str, Any]],
+    cfg: dict[str, Any],
+    workers: int,
+    progress: ProgressCb | None,
+) -> list[AnalyzableClip]:
+    total = len(entries)
+    if workers <= 1:
+        clips: list[AnalyzableClip] = []
+        for i, e in enumerate(entries):
+            if progress is not None:
+                progress(0.05 + 0.7 * (i / max(total, 1)), f"分析 {e.get('clip_id', '')}")
+            clips.append(_analyze_one(i, e, cfg))
+        return clips
+
+    _pin_parallel_thread_env()
+    slots: list[AnalyzableClip | None] = [None] * total
+    done = 0
+    ctx = mp.get_context("spawn")
+    with ProcessPoolExecutor(
+        max_workers=workers,
+        mp_context=ctx,
+        initializer=_parallel_worker_init,
+    ) as pool:
+        futures = [
+            pool.submit(_analyze_entry_task, (i, e, cfg))
+            for i, e in enumerate(entries)
+        ]
+        for fut in as_completed(futures):
+            index, clip = fut.result()
+            slots[index] = clip
+            done += 1
+            if progress is not None:
+                progress(0.05 + 0.7 * (done / total), f"分析 {done}/{total}")
+    assert all(c is not None for c in slots)
+    return slots  # type: ignore[return-value]
+
 
 def analyze_entries(
     entries: list[dict[str, Any]],
     *,
     cfg: dict[str, Any] | None = None,
     embedding_name: str | None = None,
+    workers: int | None = None,
     progress: ProgressCb | None = None,
 ) -> list[AnalyzableClip]:
-    """Analyze a list of ``{clip_id, source_path, dataset, folder_label}`` dicts."""
+    """Analyze a list of ``{clip_id, source_path, dataset, folder_label}`` dicts.
+
+    Per-clip loading runs in parallel when ``workers > 1`` (default: auto, capped
+    by ``parallel.max_workers`` in the analysis YAML).  ``workers=1`` forces
+    sequential execution.
+    """
     cfg = cfg or load_config()
     embedding_name = embedding_name or cfg.get("embedding", {}).get("backend", "handcrafted")
-
-    clips: list[AnalyzableClip] = []
-    total = max(len(entries), 1)
-    for i, e in enumerate(entries):
-        if progress is not None:
-            progress(0.05 + 0.7 * (i / total), f"分析 {e.get('clip_id', '')}")
-        clips.append(
-            analyze_clip(
-                e["source_path"],
-                clip_id=e.get("clip_id") or str(i),
-                source_path=e["source_path"],
-                dataset=e.get("dataset", ""),
-                folder_label=e.get("folder_label", ""),
-                cfg=cfg,
-            )
-        )
+    n_workers = _resolve_workers(workers, len(entries), cfg)
+    clips = _analyze_entries(entries, cfg, n_workers, progress)
 
     ok = [c for c in clips if c.error is None and c.metrics]
     if progress is not None:

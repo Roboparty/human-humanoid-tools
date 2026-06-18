@@ -57,3 +57,12 @@ embedding:
 subset:
   alpha: 0.99                    # LIMMT Global Weighted FPS: distance vs complexity
   default_ratio: 0.1             # default fraction selected (10%)
+
+# ---------------------------------------------------------------- parallel
+# Per-clip analysis runs in separate processes (all formats).  Each worker loads
+# its own SMPL engine when needed, so large values increase peak RAM.
+# ``max_workers`` caps auto mode — without it, 32-core hosts spawn 32 SMPL copies
+# and each child also spins up 32 OpenBLAS threads (nested oversubscription).
+parallel:
+  workers: 0                     # 0 = auto; 1 = sequential; N = use exactly N
+  max_workers: 8                 # auto cap (ignored when workers > 0 is explicit)

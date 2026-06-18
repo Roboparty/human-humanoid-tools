@@ -88,6 +88,8 @@ _BUILTIN_DEFAULTS: dict[str, Any] = {
     },
     "embedding": {"backend": "handcrafted", "pae": {"window_s": 4.0, "k": 8}},
     "subset": {"alpha": 0.99, "default_ratio": 0.1},
+    # ``workers: 0`` (or omitted) = auto, capped by ``max_workers``; ``1`` = sequential.
+    "parallel": {"workers": 0, "max_workers": 8},
 }
 
 

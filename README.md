@@ -16,6 +16,10 @@
 
 ---
 
+We welcome suggestions and ideas — please open an issue or discussion anytime. New feature requests will be considered once the core functionality is stable.
+
+---
+
 ## Highlights
 
 - **Fast retarget** — drag a human clip, pick a robot, export CSV/ZIP; **Newton IK** + **MPC-SQP** interaction mesh.

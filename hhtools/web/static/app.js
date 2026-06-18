@@ -252,14 +252,14 @@ async function uploadWithProgress(url, files, { profile } = {}, onProgress) {
 }
 
 /** Upload files with real byte progress, then return the JSON body (``{job_id}``). */
-function uploadFilesXHR(url, files, { profile, appendTo, userSourceRoot } = {}, onUploadProgress) {
+function uploadFilesXHR(url, files, { profile, appendTo, libraryFolderLabel } = {}, onUploadProgress) {
   return new Promise((resolve, reject) => {
     const fd = new FormData();
     for (const f of files) fd.append("files", f, f._relpath || f.name);
     const qs = new URLSearchParams();
     if (profile) qs.set("profile", profile);
     if (appendTo) qs.set("append_to", appendTo);
-    if (userSourceRoot) qs.set("user_source_root", userSourceRoot);
+    if (libraryFolderLabel) qs.set("library_folder_label", libraryFolderLabel);
     const q = qs.toString() ? `?${qs.toString()}` : "";
     const xhr = new XMLHttpRequest();
     xhr.upload.onprogress = (e) => {
@@ -2136,6 +2136,41 @@ async function loadLibraryEntry(entry) {
 }
 
 // library navigator
+let libMotionsRoot = "";
+
+async function linkLibraryPath() {
+  const hint = libMotionsRoot
+    ? `链接到资源库目录（${libMotionsRoot}）`
+    : "链接到资源库（~/.config/hhtools/motions）";
+  const path = window.prompt(hint, "");
+  if (!path?.trim()) return;
+  try {
+    const data = await API.post("/api/library/link", { path: path.trim() });
+    if (data.motions_library_root) libMotionsRoot = data.motions_library_root;
+    updateMotionsLibraryHint();
+    await refreshLibrary();
+    const sel = document.getElementById("lib-folder");
+    if (sel && data.folder_label) sel.value = data.folder_label;
+    renderLibrary();
+    toast(`已链接：${data.folder_label}（${data.clip_count} clip）`);
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+function updateMotionsLibraryHint() {
+  const el = document.getElementById("lib-motions-hint");
+  if (!el) return;
+  if (!libMotionsRoot) {
+    el.textContent = "";
+    return;
+  }
+  el.innerHTML =
+    `拖入数据集会自动软链接到 <code>${libMotionsRoot}</code>；`
+    + "建议将常用数据集中放到该目录。";
+}
+
+// library navigator
 let libEntries = [];
 let libSourceRoot = "";
 async function refreshLibrary() {
@@ -2144,6 +2179,8 @@ async function refreshLibrary() {
     const data = await API.get("/api/library");
     libEntries = data.entries || [];
     libSourceRoot = data.source_root || "";
+    if (data.motions_library_root) libMotionsRoot = data.motions_library_root;
+    updateMotionsLibraryHint();
     // populate folder dropdown
     const sel = document.getElementById("lib-folder");
     sel.innerHTML = `<option value="">全部目录 (${(data.folders || []).length})</option>`;
@@ -2173,7 +2210,7 @@ function renderLibrary() {
     libEntries.length ? `${filtered.length} / ${libEntries.length} clip` : "";
 
   if (!libEntries.length) {
-    list.innerHTML = `<div class="hint" style="padding:12px">在 <b>${libSourceRoot || "assets/motions"}</b> 未找到可识别的 clip。<br>用 <code>hhtools web --source &lt;目录&gt;</code> 指向你的数据目录，或直接拖入文件。</div>`;
+    list.innerHTML = `<div class="hint" style="padding:12px">在 <b>${libSourceRoot || "assets/motions"}</b> 未找到可识别的 clip。<br>直接拖入文件夹，会自动软链接到 <code>${libMotionsRoot || "~/.config/hhtools/motions"}</code>。</div>`;
     return;
   }
   if (!filtered.length) {
@@ -2257,30 +2294,45 @@ function walkEntry(entry, out, prefix = "") {
   });
 }
 
+function inferLibraryFolderLabel(files) {
+  if (!files?.length) return undefined;
+  const rels = files.map((f) => f._relpath || f.name);
+  if (rels.some((r) => r.includes("/"))) return rels[0].split("/")[0];
+  return undefined;
+}
+
 async function ingestMotionFiles(files, profile = "mimic") {
   if (!files || !files.length) return;
-  showLoading(`上传并解析中… (${files.length} 个文件)`);
+  const libraryFolderLabel = inferLibraryFolderLabel(files);
+  showLoading(`链接并解析中… (${files.length} 个文件)`);
   try {
-    const { job_id } = await uploadFilesXHR(
+    const uploadResp = await uploadFilesXHR(
       "/api/motion/upload",
       files,
-      { profile },
-      (frac, recv, total) => {
-        setLoadingProgress(frac * 0.18, `上传 ${fmtBytes(recv)} / ${fmtBytes(total)}`);
-      },
+      { profile, libraryFolderLabel },
+      () => {},
     );
+    const { job_id, linked, folder_label, materialize_mode } = uploadResp;
     const payload = await waitMotionJob(job_id, (frac, sub) => {
-      setLoadingProgress(0.18 + frac * 0.82, sub);
-    }, { uploadFrac: 0.18 });
+      setLoadingProgress(frac, sub);
+    }, { uploadFrac: 0 });
     setLoadingProgress(1, "构建场景…");
     await loadMotionPayload(payload);
+    if (linked || folder_label || payload.linked_folder) {
+      await refreshLibrary();
+      const label = folder_label || payload.linked_folder;
+      if (label) {
+        const sel = document.getElementById("lib-folder");
+        if (sel) sel.value = label;
+        renderLibrary();
+      }
+    }
+    const modeHint = materialize_mode === "symlink" ? "软链接" : "已复制";
     if (payload.library_entry) {
       addToBasket([payload.library_entry]);
-      toast(`已加载并加入批量篮子：${payload.name}`);
-    }
-    const info = payload.upload_info;
-    if (!payload.library_entry && info?.skipped_clips > 0) {
-      toast(`已加载 1 个 clip（另有 ${info.skipped_clips} 个未加载，请用资源库或单独拖入）`);
+      toast(`已${modeHint}并加载：${payload.name}（资源库 · ${folder_label || payload.linked_folder}）`);
+    } else if (linked || payload.linked_folder) {
+      toast(`已${modeHint}到资源库：${payload.linked_folder || folder_label}，已加载首条 clip`);
     }
   } catch (e) {
     toast(e.message, true);
@@ -4990,6 +5042,8 @@ async function verifyUiBuild() {
     const h = await API.get("/api/health");
     const el = document.getElementById("ui-build");
     if (el) el.textContent = `UI·${h.ui_build || "?"}`;
+    if (h.motions_library_root) libMotionsRoot = h.motions_library_root;
+    updateMotionsLibraryHint();
     const assetsHint = document.getElementById("motion-assets-hint");
     if (assetsHint && h.source_root) assetsHint.textContent = h.source_root;
     const missingFeatures =
@@ -5010,6 +5064,7 @@ async function verifyUiBuild() {
 (async function init() {
   wrapSelectDropdowns();
   initPanelLayout();
+  document.getElementById("lib-link-path")?.addEventListener("click", () => linkLibraryPath());
   await verifyUiBuild();
   await Promise.all([loadReferenceCatalog(), refreshLibrary(), refreshRobotList()]);
   r2rInit();

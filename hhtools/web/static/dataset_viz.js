@@ -80,9 +80,9 @@ function applyCatalogTexts() {
   const grid = $("dv-format-grid");
   if (grid) {
     grid.innerHTML =
-      `<div class="dv-format-item"><b>人体</b><span>BVH / NPZ / PKL / NPY / GLB …（AMASS、LAFAN、OMOMO、parc_ms、holosoma 等）</span></div>`
-      + `<div class="dv-format-item"><b>机器人</b><span>G1 等 retarget 导出的轨迹 CSV（含 <code>*_export</code> 文件夹：主 CSV + 可选 terrain/object 侧车）</span></div>`
-      + `<div class="dv-format-warn">请勿混合拖入；一次分析只支持人体/机器人数据。</div>`;
+      `<div class="dv-format-item"><b>人体</b><span>拖入含 BVH / NPZ / PKL / NPY / GLB 的文件夹即可（AMASS、ACCAD、CMU、LAFAN、OMOMO、parc_ms、holosoma 等；支持 mimic / intermimic / meshmimic 多级目录）</span></div>`
+      + `<div class="dv-format-item"><b>机器人</b><span>拖入 retarget 导出的轨迹 CSV / PKL / NPZ 文件夹（含 <code>*_export</code>、terrain / object 侧车）</span></div>`
+      + `<div class="dv-format-warn">请勿混合拖入人体与机器人数据；一次分析只支持一种。</div>`;
   }
 }
 
@@ -414,10 +414,25 @@ function renderUploadBasket(info) {
       for (const [folder, names] of [...byFolder.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
         const row = document.createElement("li");
         row.className = "dv-basket-item";
-        row.innerHTML =
-          `<span class="dv-basket-folder">${folder}</span>`
-          + `<span class="dv-basket-meta">${names.length} clip</span>`
-          + `<span class="dv-basket-names">${names.slice(0, 3).join(" · ")}${names.length > 3 ? " …" : ""}</span>`;
+        const folderEl = document.createElement("span");
+        folderEl.className = "dv-basket-folder";
+        folderEl.textContent = folder;
+        const metaEl = document.createElement("span");
+        metaEl.className = "dv-basket-meta";
+        metaEl.textContent = `${names.length} clip`;
+        const namesEl = document.createElement("span");
+        namesEl.className = "dv-basket-names";
+        namesEl.textContent = `${names.slice(0, 3).join(" · ")}${names.length > 3 ? " …" : ""}`;
+        const rmBtn = document.createElement("button");
+        rmBtn.type = "button";
+        rmBtn.className = "dv-basket-remove btn-link";
+        rmBtn.title = "移除此文件夹";
+        rmBtn.textContent = "×";
+        rmBtn.onclick = (ev) => {
+          ev.stopPropagation();
+          removeBasketFolder(folder);
+        };
+        row.append(folderEl, metaEl, namesEl, rmBtn);
         list.appendChild(row);
       }
     }
@@ -437,6 +452,49 @@ function clearUploadBasket() {
   $("dv-source-display").textContent = "未指定目录";
   $("dv-status").textContent = "";
   updateKindBadge();
+}
+
+async function removeBasketFolder(folderLabel) {
+  const { API, toast } = bridge();
+  if (!state.analyzeSource) {
+    toast("当前无上传批次", true);
+    return;
+  }
+  try {
+    const info = await API.post("/api/dataset/upload/remove", {
+      source: state.analyzeSource,
+      folder_label: folderLabel,
+    });
+    if (!info.clip_count) {
+      clearUploadBasket();
+      if (state.clips.length) {
+        state.clips = [];
+        state.summary = null;
+        state.selected.clear();
+        state.subsetIds.clear();
+        if ($("dv-results")) $("dv-results").hidden = true;
+      }
+      toast(`已移除「${folderLabel}」，批次已空`);
+      return;
+    }
+    state.analyzeSource = info.source || state.analyzeSource;
+    $("dv-source").value = state.analyzeSource;
+    renderUploadBasket(info);
+    if (state.clips.length) {
+      state.clips = state.clips.filter((c) => c.folder_label !== folderLabel);
+      for (const id of [...state.selected]) {
+        if (!state.clips.some((c) => c.clip_id === id)) state.selected.delete(id);
+      }
+      for (const id of [...state.subsetIds]) {
+        if (!state.clips.some((c) => c.clip_id === id)) state.subsetIds.delete(id);
+      }
+      recomputeSubset();
+      renderAll();
+    }
+    toast(`已移除「${folderLabel}」`);
+  } catch (e) {
+    toast(e.message, true);
+  }
 }
 
 async function ingestDroppedFiles(files) {
@@ -471,7 +529,7 @@ async function ingestDroppedFiles(files) {
     if (!n) {
       dropzone?.classList.remove("busy");
       dropzone?.classList.add("err");
-      toast("未识别到可分析 clip：人体请拖入 BVH/NPZ 等；机器人请拖入 G1 导出的轨迹 CSV 文件夹", true);
+      toast("未识别到可分析 clip：人体请拖入含 BVH/NPZ/PKL 等的文件夹；机器人请拖入轨迹 CSV/PKL/NPZ 文件夹", true);
       $("dv-source-display").textContent = appendTo ? "追加后仍无 clip" : "未识别到 clip";
       $("dv-status").textContent = "";
       return;
@@ -1257,7 +1315,7 @@ async function exportManifest(ids, filename) {
   const needsRoot = needsUserSourceRoot(ids);
   const userRoot = getUserSourceRoot();
   if (needsRoot && !userRoot) {
-    toast("请先填写「本地数据目录」（如 /home/amdin/下载），manifest 才能写入真实路径", true);
+    toast("请先填写「本地数据目录」（如 /home/motions），manifest 才能写入真实路径", true);
     $("dv-user-source-root")?.focus();
     return false;
   }

@@ -37,7 +37,7 @@ _log = logging.getLogger(__name__)
 
 # Bump when static/ front-end behaviour changes.  Injected into ``index.html``
 # at serve time so collaborators only need to pull + restart (no triple-sync).
-UI_BUILD_ID = "20260617-v73"
+UI_BUILD_ID = "20260617-v82"
 
 # Datasets whose adapters accept ``with_mesh=True`` (SMPL forward → baked vertices).
 # The web UI always requests mesh so AMASS / Motion-X etc. show a real body surface,
@@ -187,6 +187,10 @@ def create_app(
     state = SessionState(source_root=Path(source_root), save_dir=Path(save_dir))
     state.cache = EphemeralCache.create(cache_dir=cache_dir, save_dir=save_dir)
 
+    from hhtools.web.motion_library_links import ensure_motions_library, motions_library_root
+
+    ensure_motions_library()
+
     def _render_index_html() -> str:
         raw = (static_dir / "index.html").read_text(encoding="utf-8")
         return raw.replace("{{UI_BUILD}}", UI_BUILD_ID)
@@ -226,6 +230,7 @@ def create_app(
             },
             "source_root": str(state.source_root),
             "save_dir": str(state.save_dir),
+            "motions_library_root": str(motions_library_root()),
         }
 
     @app.get("/api/formats")
@@ -254,25 +259,74 @@ def create_app(
 
     @app.get("/api/library")
     def library(source: str | None = None) -> dict:
-        from hhtools.viewer.library import list_folders, scan_library
+        from hhtools.viewer.library import scan_library
+        from hhtools.web.motion_library_links import scan_motions_library
 
         root = Path(source) if source else state.source_root
-        entries = scan_library(root)
+        lib_root = motions_library_root()
+        merged: list[dict] = []
+        seen: set[str] = set()
+        for e in scan_library(root):
+            row = _enrich_basket_entry({
+                "dataset": e.dataset,
+                "folder_label": e.folder_label,
+                "sequence_id": e.sequence_id,
+                "stem": e.stem,
+                "source_path": str(e.source_path),
+                "label": e.display_label,
+                "origin": "assets",
+            })
+            seen.add(row["source_path"])
+            merged.append(row)
+        for raw in scan_motions_library():
+            sp = str(raw.get("source_path") or "")
+            if not sp or sp in seen:
+                continue
+            seen.add(sp)
+            merged.append(_enrich_basket_entry(raw))
+        merged.sort(
+            key=lambda row: (
+                str(row.get("folder_label") or "").lower(),
+                str(row.get("stem") or "").lower(),
+            ),
+        )
+        folders: list[str] = []
+        for row in merged:
+            label = str(row.get("folder_label") or "")
+            if label and label not in folders:
+                folders.append(label)
         return {
             "source_root": str(root),
-            "folders": list_folders(entries),
-            "entries": [
-                _enrich_basket_entry({
-                    "dataset": e.dataset,
-                    "folder_label": e.folder_label,
-                    "sequence_id": e.sequence_id,
-                    "stem": e.stem,
-                    "source_path": str(e.source_path),
-                    "label": e.display_label,
-                })
-                for e in entries
-            ],
+            "motions_library_root": str(lib_root),
+            "folders": folders,
+            "entries": merged,
         }
+
+    @app.post("/api/library/link")
+    async def library_link(body: dict) -> dict:
+        from hhtools.web.motion_library_links import link_to_library, scan_motions_library
+
+        path = str(body.get("path") or "").strip()
+        folder_label = str(body.get("folder_label") or "").strip() or None
+        if not path:
+            raise HTTPException(status_code=400, detail="需要 path")
+        dest = link_to_library(path, folder_label=folder_label)
+        entries = [e for e in scan_motions_library() if e.get("folder_label") == dest.name]
+        return {
+            "folder_label": dest.name,
+            "kind": "directory",
+            "clip_count": len(entries),
+            "path": str(dest),
+            "motions_library_root": str(motions_library_root()),
+        }
+
+    @app.delete("/api/library/link/{folder_label}")
+    def library_unlink(folder_label: str) -> dict:
+        from hhtools.web.motion_library_links import remove_library_folder
+
+        if not remove_library_folder(folder_label):
+            raise HTTPException(status_code=404, detail="link not found")
+        return {"removed": folder_label}
 
     # --------------------------------------------------- dataset analysis (viz)
 
@@ -381,6 +435,29 @@ def create_app(
             _da.save_upload_source_hint(drop, hint_root)
         summary = _da.scan_upload_summary(drop)
         return summary
+
+    @app.post("/api/dataset/upload/remove")
+    async def dataset_upload_remove(body: dict) -> dict:
+        from hhtools.web import dataset_analysis as _da
+
+        source = str(body.get("source") or "").strip()
+        folder_label = str(body.get("folder_label") or "").strip()
+        if not source:
+            raise HTTPException(status_code=400, detail="missing source")
+        if not folder_label:
+            raise HTTPException(status_code=400, detail="missing folder_label")
+        drop = Path(source).resolve()
+        dataset_root = (state.upload_root / "dataset").resolve()
+        try:
+            drop.relative_to(dataset_root)
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail="invalid source") from err
+        try:
+            return _da.remove_upload_folder(drop, folder_label)
+        except FileNotFoundError as err:
+            raise HTTPException(status_code=404, detail=str(err)) from err
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail=str(err)) from err
 
     @app.post("/api/dataset/export_manifest")
     def dataset_export_manifest(body: dict):
@@ -673,33 +750,40 @@ def create_app(
             job.status = "error"
             job.error = str(err)
 
-    def _run_motion_upload_job(job: Job, drop: Path, profile: str) -> None:
+    def _run_motion_library_dir_job(
+        job: Job, lib_dir: Path, folder_label: str, profile: str,
+    ) -> None:
         from hhtools.web.motion_progress import MotionLoadProgress
         from hhtools.web.upload_resolve import resolve_upload_drop
 
         try:
             load_prog = MotionLoadProgress(job, base=0.08, span=0.34)
             motion, dataset, info = resolve_upload_drop(
-                drop,
+                lib_dir,
                 profile,
                 load_motion_file=_load_motion_file,
                 load_via_adapter=_load_via_adapter,
                 progress=load_prog,
             )
-            picked = Path(info.get("picked", drop))
-            library_entry = _library_entry_from_upload(drop, picked, dataset, profile)
+            picked = Path(info.get("picked", lib_dir))
+            library_entry = _library_entry_from_link(
+                folder_label, lib_dir, picked, dataset,
+            )
             payload = _register_motion(
                 motion,
                 dataset,
-                "upload",
+                "link",
                 library_entry=library_entry,
                 job=job,
-                extra={"upload_info": info},
+                extra={
+                    "upload_info": info,
+                    "linked_folder": folder_label,
+                },
             )
             job.result = payload
             job.status = "done"
         except Exception as err:  # noqa: BLE001
-            _log.exception("motion upload job failed")
+            _log.exception("motion library dir job failed")
             job.status = "error"
             job.error = str(err)
 
@@ -741,28 +825,52 @@ def create_app(
     async def upload_motion(
         files: list[UploadFile] = File(...),
         profile: str = "mimic",
+        library_folder_label: str | None = None,
     ) -> dict:
-        # Persist uploads preserving relative paths (folder drops) so sidecar
-        # meshes stay next to the motion file, matching assets/motions layout.
-        drop = state.upload_root / uuid.uuid4().hex[:8]
-        drop.mkdir(parents=True, exist_ok=True)
-        wrote = False
-        for uf in files:
-            rel = Path(uf.filename or "upload.bin")
-            # Browser folder uploads use "clip/file.ext"; flat drops use bare names.
-            dst = drop / rel
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            with dst.open("wb") as fp:
-                fp.write(await uf.read())
-            wrote = True
-        if not wrote:
+        """Upload motion clips; auto-symlink or copy into ``~/.config/hhtools/motions``."""
+
+        from hhtools.web.motion_library_links import materialize_drop, motions_library_root
+
+        if not files:
             raise HTTPException(status_code=400, detail="empty upload")
-        job = Job(id=uuid.uuid4().hex[:12], kind="motion_upload")
+
+        rel_paths = [str(Path(uf.filename or "")) for uf in files]
+        folder_label = str(library_folder_label or "").strip() or None
+
+        try:
+            lib_dir, label, materialize_mode = materialize_drop(
+                rel_paths,
+                folder_label=folder_label,
+            )
+        except FileNotFoundError:
+            drop = state.upload_root / uuid.uuid4().hex[:8]
+            drop.mkdir(parents=True, exist_ok=True)
+            for uf in files:
+                rel = Path(uf.filename or "upload.bin")
+                dst = drop / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                with dst.open("wb") as fp:
+                    fp.write(await uf.read())
+            lib_dir, label, materialize_mode = materialize_drop(
+                rel_paths,
+                folder_label=folder_label,
+                upload_drop=drop,
+            )
+
+        job = Job(id=uuid.uuid4().hex[:12], kind="motion_link")
         state.jobs[job.id] = job
         threading.Thread(
-            target=_run_motion_upload_job, args=(job, drop, profile), daemon=True,
+            target=_run_motion_library_dir_job,
+            args=(job, lib_dir, label, profile),
+            daemon=True,
         ).start()
-        return {"job_id": job.id}
+        return {
+            "job_id": job.id,
+            "linked": True,
+            "folder_label": label,
+            "materialize_mode": materialize_mode,
+            "motions_library_root": str(motions_library_root()),
+        }
 
     @app.get("/api/object_glb")
     def object_glb(token: str, index: int, scale: float | None = None) -> Response:
@@ -1891,6 +1999,41 @@ def _enrich_basket_entry(entry: dict, fallback: str = "smpl") -> dict:
     if not (out.get("reference") or "").strip():
         out["reference"] = _entry_reference(out, fallback)
     return out
+
+
+def _library_entry_from_link(
+    folder_label: str,
+    lib_dir: Path,
+    picked: Path,
+    dataset: str | None,
+) -> dict:
+    """Build a library-shaped entry for a clip under ``~/.config/hhtools/motions``."""
+    from hhtools.web.motion_library_links import scan_motions_library
+
+    picked = Path(picked).resolve()
+    sp = str(picked)
+    for raw in scan_motions_library():
+        if raw.get("source_path") == sp:
+            return _enrich_basket_entry(raw)
+
+    lib_dir = Path(lib_dir).resolve()
+    stem = picked.stem
+    sequence_id = picked.name
+    try:
+        rel = picked.relative_to(lib_dir)
+        sequence_id = rel.as_posix()
+        stem = rel.with_suffix("").as_posix() if rel.parts else picked.stem
+    except ValueError:
+        pass
+    return _enrich_basket_entry({
+        "dataset": dataset or "unknown",
+        "folder_label": folder_label,
+        "sequence_id": sequence_id,
+        "source_path": sp,
+        "stem": stem,
+        "label": f"{folder_label} · {stem}",
+        "origin": "link",
+    })
 
 
 def _library_entry_from_upload(

@@ -9,9 +9,10 @@ is instant; the cache key includes the embedding backend and per-file mtimes.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 
 ProgressCb = Callable[[float, str], None]
@@ -47,54 +48,100 @@ def read_upload_source_hint(source_root: str | Path | None) -> str | None:
 def build_entries(source_root: Path) -> list[dict[str, Any]]:
     """Scan ``source_root`` into analyze-ready entry dicts (one per clip).
 
-    Human clips come from :func:`hhtools.viewer.library.scan_library` (dataset
-    folders with ``.npz`` / ``.bvh`` / …).  Robot retarget exports (``.csv`` /
-    ``.pkl`` / ``.npz`` with ``root_x`` / ``dof_*`` columns, including
-    ``*_export`` folders with terrain / object sidecars) are discovered via the
-    same resolver used by robot-to-robot upload.
+    Discovery merges three strategies (deduped by ``source_path``):
+
+    1. :func:`hhtools.web.upload_resolve.enumerate_upload_clips` — arbitrary
+       human motion folder layouts (``ACCAD/…/*.npz``, nested ``mimic/`` trees,
+       intermimic clip folders with ``*_cleaned_simplified.obj``, meshmimic
+       with ``*_terrain.obj``, …) using the same rules as the retarget basket.
+    2. :func:`hhtools.viewer.library.scan_library` — ``assets/motions`` style
+       trees whose *dataset directory names* match :data:`_DIR_TO_ADAPTER`
+       (``AMASS``, ``OMOMO``, ``LAFAN``, …); fills gaps the upload scanner
+       might label differently.
+    3. :func:`hhtools.web.r2r_upload_resolve.enumerate_r2r_clips` — robot
+       retarget exports (``.csv`` / ``.pkl`` / ``.npz`` with joint trajectories,
+       including ``*_export`` folders with terrain / object sidecars).
     """
     from hhtools.viewer.library import scan_library
     from hhtools.web.r2r_upload_resolve import enumerate_r2r_clips
+    from hhtools.web.upload_resolve import enumerate_upload_clips
 
     root = source_root.resolve()
     entries: list[dict[str, Any]] = []
     seen: set[str] = set()
 
-    for e in scan_library(root):
-        sp = str(e.source_path.resolve())
+    def _append(
+        *,
+        source_path: Path,
+        clip_id: str,
+        dataset: str,
+        folder_label: str,
+    ) -> None:
+        sp = str(source_path.resolve())
         if sp in seen:
-            continue
+            return
         seen.add(sp)
         entries.append({
-            "clip_id": f"{e.folder_label}/{e.stem}",
+            "clip_id": clip_id,
             "source_path": sp,
-            "dataset": e.dataset,
-            "folder_label": e.folder_label,
-        })
-
-    for ref in enumerate_r2r_clips(root):
-        path = ref.path.resolve()
-        sp = str(path)
-        if sp in seen:
-            continue
-        seen.add(sp)
-        try:
-            rel = path.relative_to(root)
-            folder_label = (
-                rel.parent.as_posix() if rel.parent != Path(".") else "robot"
-            )
-        except ValueError:
-            folder_label = path.parent.name or "robot"
-        stem = path.stem
-        entries.append({
-            "clip_id": f"{folder_label}/{stem}",
-            "source_path": sp,
-            "dataset": "robot",
+            "dataset": dataset,
             "folder_label": folder_label,
         })
 
+    for ref in enumerate_upload_clips(root, profile="auto"):
+        folder_label = _clip_folder_label(root, ref.path)
+        stem = _clip_stem(root, ref.path)
+        clip_id = f"{folder_label}/{stem}" if folder_label else stem
+        _append(
+            source_path=ref.path,
+            clip_id=clip_id,
+            dataset=str(ref.dataset or "unknown"),
+            folder_label=folder_label or "uploads",
+        )
+
+    for e in scan_library(root):
+        _append(
+            source_path=e.source_path,
+            clip_id=f"{e.folder_label}/{e.stem}",
+            dataset=e.dataset,
+            folder_label=e.folder_label,
+        )
+
+    for ref in enumerate_r2r_clips(root, profile="auto"):
+        path = ref.path.resolve()
+        folder_label = _clip_folder_label(root, path) or "robot"
+        stem = _clip_stem(root, path)
+        clip_id = f"{folder_label}/{stem}" if folder_label else stem
+        _append(
+            source_path=path,
+            clip_id=clip_id,
+            dataset="robot",
+            folder_label=folder_label,
+        )
+
     entries.sort(key=lambda x: (x["folder_label"].lower(), x["clip_id"].lower()))
     return entries
+
+
+def _clip_folder_label(root: Path, clip_path: Path) -> str:
+    """Relative parent path under ``root`` for UI grouping."""
+    try:
+        rel = clip_path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return clip_path.parent.name or "uploads"
+    if rel.parent == Path("."):
+        return "uploads"
+    return rel.parent.as_posix()
+
+
+def _clip_stem(root: Path, clip_path: Path) -> str:
+    """Display stem; prefer clip-folder name when it matches the primary file."""
+    if clip_path.parent.name == clip_path.stem:
+        return clip_path.stem
+    try:
+        return clip_path.relative_to(root).stem
+    except ValueError:
+        return clip_path.stem
 
 
 def _cache_dir(source_root: Path, fallback: Path) -> Path:
@@ -573,6 +620,62 @@ def scan_upload_summary(source_root: Path) -> dict[str, Any]:
     }
 
 
+def _prune_empty_dirs(root: Path) -> None:
+    """Remove empty directories under ``root`` (bottom-up)."""
+    if not root.is_dir():
+        return
+    for dirpath, dirnames, filenames in os.walk(root, topdown=False):
+        p = Path(dirpath)
+        if p == root:
+            continue
+        if not any(p.iterdir()):
+            p.rmdir()
+
+
+def remove_upload_folder(source_root: Path, folder_label: str) -> dict[str, Any]:
+    """Delete one folder group from an upload-analysis batch on disk."""
+
+    root = Path(source_root).resolve()
+    if not root.is_dir():
+        raise FileNotFoundError(f"上传批次不存在: {root}")
+
+    label = str(folder_label or "").strip()
+    if not label:
+        raise ValueError("folder_label 不能为空")
+
+    entries = build_entries(root)
+    matching = [e for e in entries if e["folder_label"] == label]
+    if not matching:
+        raise FileNotFoundError(f"批次中无此目录: {label}")
+
+    target = root.joinpath(*PurePosixPath(label).parts)
+    if target.is_dir():
+        shutil.rmtree(target)
+    else:
+        for entry in matching:
+            Path(entry["source_path"]).unlink(missing_ok=True)
+
+    _prune_empty_dirs(root)
+
+    remaining = build_entries(root)
+    if not remaining:
+        shutil.rmtree(root, ignore_errors=True)
+        return {
+            "source": "",
+            "user_source_root": read_upload_source_hint(root),
+            "clip_count": 0,
+            "robot_count": 0,
+            "human_count": 0,
+            "folders": {},
+            "clips": [],
+            "entries_preview": [],
+            "removed_folder": label,
+        }
+    summary = scan_upload_summary(root)
+    summary["removed_folder"] = label
+    return summary
+
+
 __all__ = [
     "build_entries",
     "compute_subset",
@@ -584,5 +687,6 @@ __all__ = [
     "read_upload_source_hint",
     "run_analysis",
     "save_upload_source_hint",
+    "remove_upload_folder",
     "scan_upload_summary",
 ]

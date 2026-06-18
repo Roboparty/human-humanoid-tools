@@ -45,7 +45,7 @@ class AmassAdapter(DatasetAdapter):
         if not self.root.exists():
             return
         for npz in sorted(self.root.rglob("*.npz")):
-            if not npz.is_file():
+            if not npz.is_file() or not is_amass_motion_file(npz):
                 continue
             yield str(npz.relative_to(self.root))
 
@@ -84,6 +84,11 @@ def _amass_npz_to_params(data: dict[str, Any], sequence_id: str) -> SmplMotionPa
     constrained to ``{male, female, neutral}``.
     """
     is_stageii = "pose_body" in data or "surface_model_type" in data
+    if "trans" not in data and "poses" not in data:
+        raise ValueError(
+            f"AMASS 文件 {sequence_id!r} 是 stage-i 标定数据（无 trans/poses），"
+            "不能作为动作 clip 加载；请选用 *_stageii.npz"
+        )
     trans = np.asarray(data["trans"], dtype=np.float32)
     T = trans.shape[0]
     betas = np.asarray(data["betas"], dtype=np.float32).reshape(-1)
@@ -195,4 +200,16 @@ def _normalise_gender(raw: str) -> str:
     return "neutral"
 
 
-__all__ = ["AmassAdapter"]
+def is_amass_motion_file(path: Path | str) -> bool:
+    """Return False for AMASS stage-i calibration NPZ (no pose / translation tracks)."""
+
+    p = Path(path)
+    if p.suffix.lower() != ".npz":
+        return True
+    stem = p.stem.lower()
+    if stem.endswith("_stagei"):
+        return False
+    return True
+
+
+__all__ = ["AmassAdapter", "is_amass_motion_file"]

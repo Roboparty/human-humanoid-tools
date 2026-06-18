@@ -39,6 +39,8 @@ from pathlib import Path
 # ephemeral cache — add new datasets here and they light up everywhere.
 _DIR_TO_ADAPTER: dict[str, str] = {
     "amass": "amass",
+    "accad": "amass",
+    "cmu": "amass",
     "motionx": "motion_x",
     "phuma": "phuma",
     "lafan": "lafan",

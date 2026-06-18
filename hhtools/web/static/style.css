@@ -934,7 +934,7 @@ body.tour-active { overflow: hidden; }
   display: flex; flex-direction: column; gap: 6px;
 }
 .dv-basket-item {
-  display: grid; grid-template-columns: 1fr auto;
+  display: grid; grid-template-columns: 1fr auto auto;
   grid-template-rows: auto auto;
   gap: 2px 8px; padding: 6px 8px;
   border-radius: 6px; background: var(--panel-solid);
@@ -942,6 +942,12 @@ body.tour-active { overflow: hidden; }
 }
 .dv-basket-folder { font-weight: 600; color: var(--ink); grid-column: 1; }
 .dv-basket-meta { color: var(--accent); font-weight: 500; grid-column: 2; grid-row: 1; }
+.dv-basket-remove {
+  grid-column: 3; grid-row: 1;
+  padding: 0 4px; font-size: 16px; line-height: 1;
+  color: var(--ink-tertiary); align-self: start;
+}
+.dv-basket-remove:hover { color: #c93400; }
 .dv-basket-names {
   grid-column: 1 / -1; color: var(--ink-tertiary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
