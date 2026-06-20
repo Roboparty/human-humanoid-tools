@@ -19,12 +19,14 @@ Supported rig families (auto-detected in priority order):
 1. **SMPL / SMPL-H / SMPL-X** — lowercase ``pelvis``, ``spine1`` … plus OMOMO-style
    abbreviations (``l_hip``, ``l_shoulder``, …) on 24-joint windows.
 2. **SOMA BVH** — TitleCase ``Hips`` + ``LeftLeg``/``LeftShin`` …
-3. **meshmimic / holosoma** — Mixamo-style names with ``LeftFootMod`` /
+3. **Xsens mocap BVH** — ``Hips`` + ``LeftHip``/``LeftKnee``/``LeftAnkle`` +
+   multi-segment ``Chest`` …
+4. **meshmimic / holosoma** — Mixamo-style names with ``LeftFootMod`` /
    ``RightFootMod`` sole markers (same joint rename table as Mixamo/CMU).
-4. **Mixamo / CMU / LAFAN BVH** — TitleCase ``Hips`` + ``LeftUpLeg``/``LeftLeg`` …
-5. **Prefix-stripped fuzzy match** — e.g. ``b_l_arm`` → ``left_shoulder``
-6. **User-defined YAML overrides** in ``configs/skeleton_presets/alias_maps/``
-7. **Identity** — names forwarded as-is (unknown rigs surface a clear ``KeyError``)
+5. **Mixamo / CMU / LAFAN BVH** — TitleCase ``Hips`` + ``LeftUpLeg``/``LeftLeg`` …
+6. **Prefix-stripped fuzzy match** — e.g. ``b_l_arm`` → ``left_shoulder``
+7. **User-defined YAML overrides** in ``configs/skeleton_presets/alias_maps/``
+8. **Identity** — names forwarded as-is (unknown rigs surface a clear ``KeyError``)
 """
 
 from __future__ import annotations
@@ -129,7 +131,40 @@ SOMA_BVH_TO_CANONICAL: Mapping[str, str] = {
 
 
 # ---------------------------------------------------------------------------
-# 3. Mixamo / CMU / LAFAN BVH convention
+# 3. Xsens MVN / biomechanics BVH (Hip/Knee/Ankle leg chain)
+# ---------------------------------------------------------------------------
+# Common in Xsens MVN exports and clinical gait pipelines.  Leg joints use
+# ``LeftHip``/``LeftKnee``/``LeftAnkle`` (not Mixamo ``LeftUpLeg``/``LeftLeg``
+# nor SOMA ``LeftLeg``/``LeftShin``).  The spine is a multi-segment ``Chest``
+# chain; ``Chest4`` parents the shoulders and is mapped to canonical ``chest``.
+
+XSENS_MOCAP_TO_CANONICAL: Mapping[str, str] = {
+    "Hips": "hips",
+    "Chest": "spine",
+    "Chest4": "chest",
+    "Neck": "neck",
+    "Head": "head",
+    "LeftCollar": "left_collar",
+    "LeftShoulder": "left_shoulder",
+    "LeftElbow": "left_elbow",
+    "LeftWrist": "left_wrist",
+    "RightCollar": "right_collar",
+    "RightShoulder": "right_shoulder",
+    "RightElbow": "right_elbow",
+    "RightWrist": "right_wrist",
+    "LeftHip": "left_hip",
+    "LeftKnee": "left_knee",
+    "LeftAnkle": "left_ankle",
+    "LeftToe": "left_foot",
+    "RightHip": "right_hip",
+    "RightKnee": "right_knee",
+    "RightAnkle": "right_ankle",
+    "RightToe": "right_foot",
+}
+
+
+# ---------------------------------------------------------------------------
+# 4. Mixamo / CMU / LAFAN BVH convention
 # ---------------------------------------------------------------------------
 # Very common in motion capture databases and Mixamo auto-rigged characters.
 # Key anatomical difference from SOMA:
@@ -449,6 +484,21 @@ def is_soma_bvh_like(joint_names: Iterable[str]) -> bool:
     )
 
 
+def is_xsens_mocap_like(joint_names: Iterable[str]) -> bool:
+    """Heuristic: Xsens MVN ``Hips`` + ``LeftHip``/``LeftKnee``/``LeftAnkle``."""
+    names = set(joint_names)
+    return (
+        "Hips" in names
+        and "LeftHip" in names
+        and "RightHip" in names
+        and "LeftKnee" in names
+        and "LeftAnkle" in names
+        and "LeftUpLeg" not in names
+        and "LeftLeg" not in names
+        and ("Chest" in names or "Chest2" in names)
+    )
+
+
 def is_mixamo_cmu_like(joint_names: Iterable[str]) -> bool:
     """Heuristic: ``Hips`` + ``LeftUpLeg`` (Mixamo / CMU / LAFAN convention).
 
@@ -506,11 +556,12 @@ def auto_source_to_canonical(
     1. Explicit ``override_map`` (caller-supplied or from YAML config).
     2. SMPL-family (``pelvis`` root, including OMOMO abbreviations).
     3. SOMA BVH (``Hips`` + ``LeftLeg``/``LeftShin``).
-    4. meshmimic holosoma (``LeftFootMod`` + ``RightFootMod`` + ``Hips``).
-    5. Mixamo / CMU / LAFAN (``Hips`` + ``LeftUpLeg``).
-    6. User YAML alias maps (``configs/skeleton_presets/alias_maps/*.yaml``).
-    7. Fuzzy prefix-stripped matching (``b_l_arm`` → ``left_shoulder``).
-    8. Identity (unknown rig — surfaces ``KeyError`` downstream).
+    4. Xsens mocap BVH (``Hips`` + ``LeftHip``/``LeftKnee``/``LeftAnkle``).
+    5. meshmimic holosoma (``LeftFootMod`` + ``RightFootMod`` + ``Hips``).
+    6. Mixamo / CMU / LAFAN (``Hips`` + ``LeftUpLeg``).
+    7. User YAML alias maps (``configs/skeleton_presets/alias_maps/*.yaml``).
+    8. Fuzzy prefix-stripped matching (``b_l_arm`` → ``left_shoulder``).
+    9. Identity (unknown rig — surfaces ``KeyError`` downstream).
     """
     names = tuple(joint_names)
 
@@ -541,6 +592,9 @@ def auto_source_to_canonical(
 
     if is_soma_bvh_like(names):
         return {n: SOMA_BVH_TO_CANONICAL.get(n, n) for n in names}
+
+    if is_xsens_mocap_like(names):
+        return {n: XSENS_MOCAP_TO_CANONICAL.get(n, n) for n in names}
 
     if is_meshmimic_holosoma_like(names):
         result = {n: MIXAMO_CMU_TO_CANONICAL.get(n, n) for n in names}
@@ -663,6 +717,8 @@ def list_detected_rig_type(joint_names: Iterable[str]) -> str:
         return "SMPL/SMPL-H/SMPL-X"
     if is_soma_bvh_like(names):
         return "SOMA BVH"
+    if is_xsens_mocap_like(names):
+        return "Xsens mocap BVH"
     if is_meshmimic_holosoma_like(names):
         return "Holosoma / SMPL-H mocap"
     if is_mixamo_cmu_like(names):
@@ -687,6 +743,7 @@ __all__ = [
     "SMPL_BODY_TO_CANONICAL",
     "SMPL_H_ABBR_TO_CANONICAL",
     "SOMA_BVH_TO_CANONICAL",
+    "XSENS_MOCAP_TO_CANONICAL",
     "auto_source_to_canonical",
     "effectors_to_canonical_table",
     "pack_scaler_rows_to_canonical_targets",
@@ -695,5 +752,6 @@ __all__ = [
     "is_mixamo_cmu_like",
     "is_smpl_like",
     "is_soma_bvh_like",
+    "is_xsens_mocap_like",
     "list_detected_rig_type",
 ]

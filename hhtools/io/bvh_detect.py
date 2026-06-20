@@ -9,10 +9,11 @@ from pathlib import Path
 from hhtools.retarget.newton_basic.human_aliases import (
     is_mixamo_cmu_like,
     is_soma_bvh_like,
+    is_xsens_mocap_like,
 )
 from hhtools.viewer.library import _DIR_TO_ADAPTER, _normalise_dirname
 
-_BVH_DATASET_HINTS = frozenset({"soma", "lafan"})
+_BVH_DATASET_HINTS = frozenset({"soma", "lafan", "xsens_mocap"})
 
 
 def read_bvh_joint_names(path: str | Path) -> tuple[str, ...]:
@@ -49,10 +50,13 @@ def infer_bvh_dataset_from_joints(
     *,
     path_hint: str | None = None,
 ) -> str | None:
-    """Return ``'soma'`` or ``'lafan'`` from bone names; ``None`` if ambiguous."""
+    """Return ``'soma'``, ``'lafan'``, or ``'xsens_mocap'`` from bone names."""
     names = tuple(joint_names)
     soma = is_soma_bvh_like(names)
     lafan = is_mixamo_cmu_like(names)
+    xsens = is_xsens_mocap_like(names)
+    if xsens and not soma and not lafan:
+        return "xsens_mocap"
     if soma and not lafan:
         return "soma"
     if lafan and not soma:
@@ -69,7 +73,7 @@ def infer_bvh_dataset(
     *,
     bone_names: tuple[str, ...] | list[str] | None = None,
 ) -> str:
-    """Best-effort adapter name for a ``.bvh`` clip (``'soma'`` or ``'lafan'``)."""
+    """Best-effort adapter name for a ``.bvh`` clip."""
     path = Path(path)
     hint = _path_dataset_hint(path)
     if bone_names is None:

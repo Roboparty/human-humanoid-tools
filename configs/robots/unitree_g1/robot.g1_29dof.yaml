@@ -16,65 +16,64 @@ name: unitree_g1__g1_29dof
 display_name: Unitree G1 (g1 29dof)
 urdf: g1_29dof.urdf
 mesh_search_paths:
-- meshes
+  - meshes
 length_scale: 1.0
 up_axis: Z
 forward_axis: X
 dof_order:
-- left_hip_pitch_joint
-- left_hip_roll_joint
-- left_hip_yaw_joint
-- left_knee_joint
-- left_ankle_pitch_joint
-- left_ankle_roll_joint
-- right_hip_pitch_joint
-- right_hip_roll_joint
-- right_hip_yaw_joint
-- right_knee_joint
-- right_ankle_pitch_joint
-- right_ankle_roll_joint
-- waist_yaw_joint
-- waist_roll_joint
-- waist_pitch_joint
-- left_shoulder_pitch_joint
-- left_shoulder_roll_joint
-- left_shoulder_yaw_joint
-- left_elbow_joint
-- left_wrist_roll_joint
-- left_wrist_pitch_joint
-- left_wrist_yaw_joint
-- right_shoulder_pitch_joint
-- right_shoulder_roll_joint
-- right_shoulder_yaw_joint
-- right_elbow_joint
-- right_wrist_roll_joint
-- right_wrist_pitch_joint
-- right_wrist_yaw_joint
+  - left_hip_pitch_joint
+  - left_hip_roll_joint
+  - left_hip_yaw_joint
+  - left_knee_joint
+  - left_ankle_pitch_joint
+  - left_ankle_roll_joint
+  - right_hip_pitch_joint
+  - right_hip_roll_joint
+  - right_hip_yaw_joint
+  - right_knee_joint
+  - right_ankle_pitch_joint
+  - right_ankle_roll_joint
+  - waist_yaw_joint
+  - waist_roll_joint
+  - waist_pitch_joint
+  - left_shoulder_pitch_joint
+  - left_shoulder_roll_joint
+  - left_shoulder_yaw_joint
+  - left_elbow_joint
+  - left_wrist_roll_joint
+  - left_wrist_pitch_joint
+  - left_wrist_yaw_joint
+  - right_shoulder_pitch_joint
+  - right_shoulder_roll_joint
+  - right_shoulder_yaw_joint
+  - right_elbow_joint
+  - right_wrist_roll_joint
+  - right_wrist_pitch_joint
+  - right_wrist_yaw_joint
 
-# Gimbal-aware mapping.  Shoulders / hips target the middle link of
-# their 3-DOF gimbal (``*_roll_link``) rather than the end (``*_yaw_link``
-# or ``*_pitch_link``) — this leaves a single DOF in the null space
-# that the smoother can regularise, instead of the fully redundant
-# problem you get when a quaternion target over-constrains three joint
-# axes.  ``Spine`` is intentionally absent — G1's torso is driven by
+# Gimbal-aware mapping.  Hips target the middle link of their 3-DOF gimbal
+# (``*_roll_link``).  Shoulders use ``*_pitch_link`` (same as RP1) so
+# lateral shoulder width tracks the scaled mocap target instead of
+# sitting at the roll-link offset; roll/yaw stay in the smoother null
+# space.  ``Spine`` is intentionally absent — G1's torso is driven by
 # the ``Chest`` → ``torso_link`` target alone; adding a waist-roll
 # target fights the chest target because they share the same 3-DOF
 # trunk chain.
 ik_map:
-  hips:           pelvis
-  chest:          torso_link
-  left_shoulder:  left_shoulder_roll_link
-  left_elbow:     left_elbow_link
-  left_wrist:     left_wrist_yaw_link
-  right_shoulder: right_shoulder_roll_link
-  right_elbow:    right_elbow_link
-  right_wrist:    right_wrist_yaw_link
-  left_hip:       left_hip_roll_link
-  left_knee:      left_knee_link
-  left_ankle:     left_ankle_roll_link
-  right_hip:      right_hip_roll_link
-  right_knee:     right_knee_link
-  right_ankle:    right_ankle_roll_link
+  hips: pelvis
+  chest: torso_link
+  left_shoulder: left_shoulder_pitch_link
+  left_elbow: left_elbow_link
+  left_wrist: left_wrist_yaw_link
+  right_shoulder: right_shoulder_pitch_link
+  right_elbow: right_elbow_link
+  right_wrist: right_wrist_yaw_link
+  left_hip: left_hip_roll_link
+  left_knee: left_knee_link
+  left_ankle: left_ankle_roll_link
+  right_hip: right_hip_roll_link
+  right_knee: right_knee_link
+  right_ankle: right_ankle_roll_link
 
 # Per-joint IK weights transcribed from upstream soma-retargeter
 # ``soma_to_g1_retargeter_config.json``.  Philosophy (same as RP1):
@@ -137,3 +136,19 @@ feet:
   ground_z: 0.0
   foot_height: 0.02
 rest_offsets: {}
+retarget:
+  joint_scale_multipliers:
+    hips: 1.0
+    chest: 0.1262
+    left_shoulder: 0.5932
+    left_elbow: 0.7666
+    left_wrist: 0.9092
+    right_shoulder: 0.5972
+    right_elbow: 0.7957
+    right_wrist: 0.9574
+    left_hip: 1.0103
+    left_knee: 1.0103
+    left_ankle: 0.8743
+    right_hip: 1.011
+    right_knee: 1.011
+    right_ankle: 0.8743

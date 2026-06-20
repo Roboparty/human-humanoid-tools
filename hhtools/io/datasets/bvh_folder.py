@@ -1,4 +1,4 @@
-"""Generic adapter for BVH-based datasets (LAFAN, SOMA, etc.)."""
+"""Generic adapter for BVH-based datasets (LAFAN, SOMA, Xsens mocap, etc.)."""
 
 from __future__ import annotations
 
@@ -48,4 +48,10 @@ class SomaAdapter(_BvhFolderAdapter):
     display_name = "SOMA Retargeter test clips"
 
 
-__all__ = ["LafanAdapter", "SomaAdapter"]
+@register_dataset
+class XsensMocapAdapter(_BvhFolderAdapter):
+    name = "xsens_mocap"
+    display_name = "Xsens MVN / biomechanics BVH"
+
+
+__all__ = ["LafanAdapter", "SomaAdapter", "XsensMocapAdapter"]

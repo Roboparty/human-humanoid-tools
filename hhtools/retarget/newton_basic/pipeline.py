@@ -408,6 +408,12 @@ class PipelineConfig:
     ground_collision_z: float = 0.0
     ground_collision_bodies: tuple[dict, ...] = ()
     ground_collision_dynamic_boost: bool = True
+    # Post-IK ``_clamp_solved_foot_heights`` anti-float: when ``False``, only
+    # lift the root if solved ankles penetrate the ground plane (soma-style
+    # ``_clamp_foot_positions`` lift path).  Xsens mocap clips at high fps
+    # oscillate solved ankle height during gait; the rate-limited anti-float
+    # correction then pumps root Z and looks like vertical bobbing.
+    foot_clamp_anti_float: bool = True
     ik_use_cuda_graph: bool = field(default_factory=_default_ik_use_cuda_graph)
 
 
@@ -1416,13 +1422,16 @@ class NewtonBasicPipeline:
                 continue
 
             target = 0.0
-            if world_ankle_z > rest_foot_z + _FLOAT_TOL:
+            if (
+                self.config.foot_clamp_anti_float
+                and float(ankle_z) > rest_foot_z + _FLOAT_TOL
+            ):
                 uprightness = max(
                     0.0,
                     min(1.0, (root_z - world_ankle_z) / _UPRIGHT_BLEND_RANGE),
                 )
                 target = min(
-                    (world_ankle_z - rest_foot_z - _FLOAT_TOL) * uprightness,
+                    (float(ankle_z) - rest_foot_z - _FLOAT_TOL) * uprightness,
                     _MAX_FLOAT_CORRECTION,
                 )
             delta = target - prev_float_correction

@@ -10,7 +10,7 @@ even when the parent directory name is missing.
 Registered mimic datasets (see :data:`hhtools.viewer.library._DIR_TO_ADAPTER`):
 
 * ``amass``, ``motion_x``, ``phuma`` — SMPL-family parameter files
-* ``soma``, ``lafan`` — BVH dialects
+* ``soma``, ``lafan``, ``xsens_mocap`` — BVH dialects
 * ``gvhmr``, ``kungfu_athlete`` — HMR4D ``.pt`` results
 * ``meshmimic_holosoma`` — holosoma ``.npy`` + ``source.yaml``
 * ``unified_npz`` — hhtools internal NPZ schema

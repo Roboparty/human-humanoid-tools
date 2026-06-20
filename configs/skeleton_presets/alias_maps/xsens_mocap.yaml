@@ -1,0 +1,24 @@
+# Xsens MVN / biomechanics-style BVH (Hip/Knee/Ankle + multi-segment Chest).
+# Example: ``LeftHip`` → ``LeftUpLeg`` in Mixamo, ``LeftLeg`` in SOMA.
+
+Hips: hips
+Chest: spine
+Chest4: chest
+Neck: neck
+Head: head
+LeftCollar: left_collar
+LeftShoulder: left_shoulder
+LeftElbow: left_elbow
+LeftWrist: left_wrist
+RightCollar: right_collar
+RightShoulder: right_shoulder
+RightElbow: right_elbow
+RightWrist: right_wrist
+LeftHip: left_hip
+LeftKnee: left_knee
+LeftAnkle: left_ankle
+LeftToe: left_foot
+RightHip: right_hip
+RightKnee: right_knee
+RightAnkle: right_ankle
+RightToe: right_foot

@@ -67,6 +67,7 @@ _DATASET_TO_REFERENCE: dict[str, str] = {
     "phuma": "smpl",
     "lafan": "lafan_bvh",
     "soma": "soma_bvh",
+    "xsens_mocap": "xsens_mocap",
     "gvhmr": "gvhmr",
     "omomo": "smplx",
     "meshmimic_holosoma": "smplx",
@@ -752,6 +753,7 @@ def create_app(
 
     def _run_motion_library_dir_job(
         job: Job, lib_dir: Path, folder_label: str, profile: str,
+        prefer_paths: list[str] | None = None,
     ) -> None:
         from hhtools.web.motion_progress import MotionLoadProgress
         from hhtools.web.upload_resolve import resolve_upload_drop
@@ -764,6 +766,7 @@ def create_app(
                 load_motion_file=_load_motion_file,
                 load_via_adapter=_load_via_adapter,
                 progress=load_prog,
+                prefer_paths=prefer_paths,
             )
             picked = Path(info.get("picked", lib_dir))
             library_entry = _library_entry_from_link(
@@ -862,6 +865,7 @@ def create_app(
         threading.Thread(
             target=_run_motion_library_dir_job,
             args=(job, lib_dir, label, profile),
+            kwargs={"prefer_paths": rel_paths},
             daemon=True,
         ).start()
         return {

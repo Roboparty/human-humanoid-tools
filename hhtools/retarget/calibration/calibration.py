@@ -82,7 +82,7 @@ _CALIBRATION_REFERENCE_LEGACY: dict[str, str] = {
 }
 
 _VALID_CALIBRATION_REFERENCES: frozenset[str] = frozenset(
-    {"smplx", "smpl", "gvhmr", "soma_bvh", "lafan_bvh", "glb"}
+    {"smplx", "smpl", "gvhmr", "soma_bvh", "lafan_bvh", "xsens_mocap", "glb"}
 )
 
 # Canonical adult-human stature (metres) used by
@@ -618,6 +618,17 @@ def derive_calibration_params(
     if _root_ref_idx is None:
         _root_ref_idx = 0
 
+    from hhtools.retarget.newton_basic.human_aliases import is_xsens_mocap_like
+
+    _xsens_ref = (
+        str(calibration.reference).lower() == "xsens_mocap"
+        or is_xsens_mocap_like(tuple(reference.joint_names))
+    )
+    _xsens_hip_knee: dict[str, str] = {
+        "left_hip": "left_knee",
+        "right_hip": "right_knee",
+    }
+
     for canonical, link_name in pairs:
         cidx = _ref_idx(canonical)
         if cidx is None:
@@ -652,8 +663,24 @@ def derive_calibration_params(
             # different subject heights.
             scale = 1.0
         else:
-            h_norm = float(np.linalg.norm(human_disp))
-            r_norm = float(np.linalg.norm(robot_disp))
+            if _xsens_ref and canonical in _xsens_hip_knee:
+                knee_canon = _xsens_hip_knee[canonical]
+                knee_idx = _ref_idx(knee_canon)
+                knee_link = link_for_canonical.get(knee_canon)
+                knee_T = link_transforms.get(knee_link) if knee_link else None
+                if knee_idx is not None and knee_T is not None:
+                    human_for_scale = (
+                        ref_positions[knee_idx] - ref_positions[_root_ref_idx]
+                    )
+                    robot_for_scale = knee_T[:3, 3] - robot_root_pos
+                    h_norm = float(np.linalg.norm(human_for_scale))
+                    r_norm = float(np.linalg.norm(robot_for_scale))
+                else:
+                    h_norm = float(np.linalg.norm(human_disp))
+                    r_norm = float(np.linalg.norm(robot_disp))
+            else:
+                h_norm = float(np.linalg.norm(human_disp))
+                r_norm = float(np.linalg.norm(robot_disp))
             if h_norm > 1e-4 and r_norm > 1e-6:
                 scale = r_norm / h_norm
             else:
@@ -761,6 +788,7 @@ def build_scaler_config_from_calibration(
         is_meshmimic_holosoma_like,
         is_smpl_like,
         is_smpl_pruned_ankle_terminated,
+        is_xsens_mocap_like,
     )
     from hhtools.retarget.newton_basic.rest_pose import (
         bundled_reference_bvh_path,
@@ -775,6 +803,8 @@ def build_scaler_config_from_calibration(
     # not the loaded clip's frame 0.
     if _ref == "soma_bvh" and bundled_reference_bvh_path(_ref) is not None:
         rest_pose = rest_pose_from_bundled_reference("soma_bvh")
+    elif _ref == "xsens_mocap" and bundled_reference_bvh_path(_ref) is not None:
+        rest_pose = rest_pose_from_bundled_reference("xsens_mocap")
     elif is_smpl_like(clip.hierarchy.bone_names) or is_meshmimic_holosoma_like(
         clip.hierarchy.bone_names
     ):
@@ -811,7 +841,9 @@ def build_scaler_config_from_calibration(
     # 1.65m is the user-chosen canonical adult Asian-male stature; tweak
     # via :data:`_CANONICAL_HUMAN_HEIGHT_M` if a future preset (children,
     # very tall reference humans) needs a different normalisation.
-    if _ref in ("smpl", "smplx", "gvhmr", "soma_bvh", "lafan_bvh", "glb"):
+    if _ref in (
+        "smpl", "smplx", "gvhmr", "soma_bvh", "lafan_bvh", "xsens_mocap", "glb",
+    ):
         rest_pose = _dc_replace(
             rest_pose,
             height_m=_CANONICAL_HUMAN_HEIGHT_M,
@@ -1076,6 +1108,7 @@ def build_scaler_config_soma_style(
     """
 
     from hhtools.retarget.newton_basic.config import ScalerConfig
+    from hhtools.retarget.newton_basic.human_aliases import is_xsens_mocap_like
     from hhtools.retarget.newton_basic.rest_pose import SourceRestPose
 
     if not isinstance(rest_pose, SourceRestPose):
@@ -1287,6 +1320,18 @@ def build_scaler_config_soma_style(
         str, tuple[tuple[float, float, float], tuple[float, float, float, float]]
     ] = {}
 
+    # Xsens ``LeftHip`` / ``RightHip`` sit ~8 cm lateral to ``Hips`` (hip
+    # joint marker), not at the thigh root like Mixamo ``LeftUpLeg`` or SOMA
+    # ``LeftLeg``.  Root-relative Hips→LeftHip scaling (~2×) mismatches the
+    # knee row (~1×) and distorts the scaled thigh vector — robots squat at
+    # rest even when the yellow overlay looks fine.
+    _xsens_like = is_xsens_mocap_like(bone_names)
+    _xsens_hip_knee: dict[str, str] = {
+        "left_hip": "left_knee",
+        "right_hip": "right_knee",
+    }
+    _link_for_canonical: dict[str, str] = {canon: link for canon, link in pairs}
+
     resolved_canonicals: list[str] = []
     skipped_canonicals: list[str] = []
     for canonical, link_name in pairs:
@@ -1309,6 +1354,34 @@ def build_scaler_config_soma_style(
         # ---------- scale[j] ----------
         if canonical == src_root_canonical or src_name == src_root_name:
             scale_base = scale_root
+        elif _xsens_like and canonical in _xsens_hip_knee:
+            knee_canon = _xsens_hip_knee[canonical]
+            knee_src = can2src.get(knee_canon)
+            knee_link = _link_for_canonical.get(knee_canon)
+            knee_T = link_transforms.get(knee_link) if knee_link else None
+            if (
+                knee_src
+                and knee_src in rest_pose.bone_names
+                and knee_T is not None
+            ):
+                knee_idx = rest_pose.index(knee_src)
+                src_disp = p_src_aligned[knee_idx] - p_src_root
+                rbt_disp = knee_T[:3, 3].astype(np.float32) - p_rbt_root
+                s_norm = float(np.linalg.norm(src_disp))
+                r_norm = float(np.linalg.norm(rbt_disp))
+                if s_norm < 1e-4 or r_norm < 1e-6:
+                    scale_base = 1.0
+                else:
+                    scale_base = r_norm / s_norm
+            else:
+                src_disp = p_src_j - p_src_root
+                rbt_disp = p_rbt_j - p_rbt_root
+                s_norm = float(np.linalg.norm(src_disp))
+                r_norm = float(np.linalg.norm(rbt_disp))
+                if s_norm < 1e-4 or r_norm < 1e-6:
+                    scale_base = 1.0
+                else:
+                    scale_base = r_norm / s_norm
         else:
             src_disp = p_src_j - p_src_root
             rbt_disp = p_rbt_j - p_rbt_root
@@ -1498,13 +1571,22 @@ def build_scaler_config_soma_style(
 
     # ---- Ground-alignment shift -------------------------------------------
     # After body alignment, p_src_root[2] is unchanged (yaw preserves Z).
-    # root_z_offset = h_robot_pelvis − p_src_root_Z · scale_root
+    # ``NewtonBasicPipeline`` floor-normalises clips (feet to z=0) before
+    # scaling, so the vertical reference for the pelvis must be measured
+    # from the foot plane, not the raw BVH root height (Xsens / SOMA /
+    # LAFAN rest poses often float ~10 cm above the lowest foot contact).
+    from hhtools.core.grounding import foot_floor_z_in_positions
+
+    z_floor = float(
+        foot_floor_z_in_positions(p_src_rest, tuple(bone_names))
+    )
+    p_src_root_z = float(p_src_root[2]) - z_floor
     robot_pelvis_height: float | None = None
     try:
         h_robot_pelvis_rest = _estimate_robot_pelvis_height_at_q(
             model, calibration.calibrated_joint_q, robot_root_link
         )
-        root_z_offset = float(h_robot_pelvis_rest) - float(p_src_root[2]) * scale_root
+        root_z_offset = float(h_robot_pelvis_rest) - p_src_root_z * scale_root
         robot_pelvis_height = float(h_robot_pelvis_rest)
     except Exception:  # noqa: BLE001 — URDF without visual meshes etc.
         root_z_offset = 0.0

@@ -26,7 +26,7 @@ __all__ = [
 _SCALE_MATCH_EPS: float = 1e-3
 
 _CALIBRATION_REF_ORDER: tuple[str, ...] = (
-    "smplx", "smpl", "lafan_bvh", "soma_bvh", "gvhmr",
+    "smplx", "smpl", "lafan_bvh", "soma_bvh", "xsens_mocap", "gvhmr",
 )
 
 # Per-preset scale context — avoids reloading URDF on every IK objective weight.

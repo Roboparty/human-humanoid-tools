@@ -1,0 +1,182 @@
+robot: unitree_g1__g1_29dof
+reference: xsens_mocap
+calibrated_joint_q:
+  left_ankle_pitch_joint: 0.0
+  left_ankle_roll_joint: 0.0
+  left_elbow_joint: 1.57
+  left_hip_pitch_joint: 0.0
+  left_hip_roll_joint: 0.0
+  left_hip_yaw_joint: 0.0
+  left_knee_joint: 0.0
+  left_shoulder_pitch_joint: 0.0
+  left_shoulder_roll_joint: 0.1
+  left_shoulder_yaw_joint: 0.0
+  left_wrist_pitch_joint: 0.0
+  left_wrist_roll_joint: 0.0
+  left_wrist_yaw_joint: 0.0
+  right_ankle_pitch_joint: 0.0
+  right_ankle_roll_joint: 0.0
+  right_elbow_joint: 1.57
+  right_hip_pitch_joint: 0.0
+  right_hip_roll_joint: 0.0
+  right_hip_yaw_joint: 0.0
+  right_knee_joint: 0.0
+  right_shoulder_pitch_joint: 0.0
+  right_shoulder_roll_joint: -0.1
+  right_shoulder_yaw_joint: 0.0
+  right_wrist_pitch_joint: 0.0
+  right_wrist_roll_joint: 0.0
+  right_wrist_yaw_joint: 0.0
+  waist_pitch_joint: 0.0
+  waist_roll_joint: 0.0
+  waist_yaw_joint: 0.0
+notes: saved from web UI
+derived:
+  robot_root_link: pelvis
+  reference_root: Hips
+  scales:
+    chest: 0.12618318371691709
+    hips: 1.0
+    left_ankle: 0.8743358164318887
+    left_elbow: 0.7666399266142814
+    left_hip: 1.0102956093893023
+    left_knee: 1.0102956093893023
+    left_shoulder: 0.5931819964372117
+    left_wrist: 0.9092292912776561
+    right_ankle: 0.8742949566525914
+    right_elbow: 0.795656736833543
+    right_hip: 1.0110381420584016
+    right_knee: 1.0110381420584016
+    right_shoulder: 0.5972201988627721
+    right_wrist: 0.9574294469232572
+  link_quaternions:
+    chest:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    hips:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    left_ankle:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    left_elbow:
+    - 0.0354444719851017
+    - 0.7059568166732788
+    - 0.03527906537055969
+    - 0.7064871191978455
+    left_hip:
+    - 0.0
+    - -0.08733858168125153
+    - 0.0
+    - 0.9961786866188049
+    left_knee:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    left_shoulder:
+    - 0.13920147716999054
+    - 1.3872204362996854e-05
+    - -9.86868399195373e-05
+    - 0.9902640581130981
+    left_wrist:
+    - 0.0354444719851017
+    - 0.7059568166732788
+    - 0.03527906537055969
+    - 0.7064871191978455
+    right_ankle:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    right_elbow:
+    - -0.0354444719851017
+    - 0.7059568166732788
+    - -0.03527906537055969
+    - 0.7064871191978455
+    right_hip:
+    - 0.0
+    - -0.08733858168125153
+    - 0.0
+    - 0.9961786866188049
+    right_knee:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    right_shoulder:
+    - -0.13920147716999054
+    - 1.3872204362996854e-05
+    - 9.86868399195373e-05
+    - 0.9902640581130981
+    right_wrist:
+    - -0.0354444719851017
+    - 0.7059568166732788
+    - -0.03527906537055969
+    - 0.7064871191978455
+  translation_offsets:
+    chest:
+    - -0.004239608533680439
+    - -0.0032729599624872208
+    - -4.554679981083609e-05
+    hips:
+    - 0.0
+    - 0.0
+    - 0.0
+    left_ankle:
+    - -0.09139151871204376
+    - 0.055995747447013855
+    - 0.0011778082698583603
+    left_elbow:
+    - 0.04075323045253754
+    - 0.17659129202365875
+    - -0.13211946189403534
+    left_hip:
+    - -0.10762739926576614
+    - 0.12428568303585052
+    - -0.11612065881490707
+    left_knee:
+    - -0.09431985765695572
+    - 0.10674784332513809
+    - 0.005688117351382971
+    left_shoulder:
+    - -0.1076265275478363
+    - 0.089924655854702
+    - -0.022950677201151848
+    left_wrist:
+    - 0.020740851759910583
+    - 0.2451910376548767
+    - -0.1677366942167282
+    right_ankle:
+    - 0.07745843380689621
+    - -0.19907689094543457
+    - 0.001024564728140831
+    right_elbow:
+    - 0.042300641536712646
+    - -0.17266225814819336
+    - 0.16234292089939117
+    right_hip:
+    - 0.06133652478456497
+    - -0.1242944672703743
+    - -0.14620594680309296
+    right_knee:
+    - 0.08954891562461853
+    - -0.15303677320480347
+    - 0.005498246755450964
+    right_shoulder:
+    - 0.10534626990556717
+    - -0.12076238542795181
+    - -0.03164418786764145
+    right_wrist:
+    - 0.00279979407787323
+    - -0.17310212552547455
+    - 0.18417221307754517
+  _comment: Informational cache of the closed-form scale + offset derivation at save
+    time.  Loader ignores this block and re-derives from calibrated_joint_q so stale
+    caches cannot silently misalign retarget.

@@ -166,6 +166,8 @@ def _suggested_calibration_reference(
             return "soma_bvh"
         if ds in ("lafan", "lafan1"):
             return "lafan_bvh"
+        if ds == "xsens_mocap":
+            return "xsens_mocap"
     from hhtools.retarget.newton_basic.human_aliases import (
         list_detected_rig_type,
     )
@@ -176,6 +178,7 @@ def _suggested_calibration_reference(
         "SOMA BVH": "soma_bvh",
         "Holosoma / SMPL-H mocap": "smpl",
         "Mixamo/CMU/LAFAN": "lafan_bvh",
+        "Xsens mocap BVH": "xsens_mocap",
     }.get(rig)
 
 

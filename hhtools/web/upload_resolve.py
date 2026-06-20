@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 _log = logging.getLogger(__name__)
 
@@ -92,6 +92,34 @@ def _find_mimic_primaries(drop_dir: Path) -> list[Path]:
     # Prefer shallowest paths (clip at drop root) then alphabetical.
     found.sort(key=lambda p: (len(p.parts), str(p)))
     return found
+
+
+def _pick_primary_clip(
+    primaries: list[Path],
+    prefer_paths: list[str] | None,
+) -> Path:
+    """Pick the clip the user explicitly dropped, not an arbitrary sibling."""
+
+    if not primaries:
+        raise ValueError("no primary clips")
+    if not prefer_paths:
+        return primaries[0]
+
+    rels = [
+        str(r).replace("\\", "/").lstrip("/")
+        for r in prefer_paths
+        if str(r or "").strip()
+    ]
+    for rel in rels:
+        name = PurePosixPath(rel).name
+        for p in primaries:
+            if p.name == name:
+                return p
+        for p in primaries:
+            pos = p.as_posix()
+            if pos.endswith(f"/{rel}") or pos.endswith(rel):
+                return p
+    return primaries[0]
 
 
 def _load_intermimic(pkl: Path):
@@ -397,11 +425,15 @@ def resolve_upload_drop(
     load_motion_file,
     load_via_adapter,
     progress=None,
+    prefer_paths: list[str] | None = None,
 ) -> tuple[object, str | None, dict]:
     """Pick a primary clip under ``drop_dir`` and load it.
 
     Returns ``(motion, dataset, info)`` where ``info`` may contain
     ``skipped_clips`` / ``picked`` for UI toasts.
+
+    When ``prefer_paths`` is set (browser upload relative paths), load the
+    matching clip instead of the first file in alphabetical order.
     """
     profile = (profile or "mimic").strip().lower()
     info: dict = {"profile": profile}
@@ -413,9 +445,10 @@ def resolve_upload_drop(
                 "未找到 intermimic/OMOMO 风格 clip（需要 <clip>/<clip>.pkl，"
                 "可连同 *_cleaned_simplified.obj 一起拖入）"
             )
-        info["picked"] = str(pkls[0])
+        picked = _pick_primary_clip(pkls, prefer_paths)
+        info["picked"] = str(picked)
         info["skipped_clips"] = max(0, len(pkls) - 1)
-        motion, dataset = _load_intermimic(pkls[0])
+        motion, dataset = _load_intermimic(picked)
         return motion, dataset, info
 
     if profile == "meshmimic":
@@ -425,10 +458,12 @@ def resolve_upload_drop(
                 "未找到 meshmimic/parc_ms 风格 clip（需要 <clip>/<clip>.pkl 或 .npz，"
                 "可连同 *_terrain.obj 一起拖入）"
             )
-        kind, path = clips[0]
-        info["picked"] = str(path)
+        paths = [p for _, p in clips]
+        picked_path = _pick_primary_clip(paths, prefer_paths)
+        kind = next(k for k, p in clips if p == picked_path)
+        info["picked"] = str(picked_path)
         info["skipped_clips"] = max(0, len(clips) - 1)
-        motion, dataset = _load_meshmimic(kind, path)
+        motion, dataset = _load_meshmimic(kind, picked_path)
         return motion, dataset, info
 
     # mimic — any supported motion file
@@ -437,7 +472,7 @@ def resolve_upload_drop(
         raise ValueError(
             "未找到可识别的动作文件（.npz / .bvh / .glb / .pkl …）"
         )
-    path = primaries[0]
+    path = _pick_primary_clip(primaries, prefer_paths)
     info["picked"] = str(path)
     info["skipped_clips"] = max(0, len(primaries) - 1)
     motion, dataset = _load_mimic(

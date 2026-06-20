@@ -125,7 +125,7 @@ def retarget(
         "--calibration-reference",
         help=(
             "Which saved calibration to load (matches the viewer's Reference "
-            "pose): smpl, smplx, soma_bvh, lafan_bvh, glb. "
+            "pose): smpl, smplx, soma_bvh, lafan_bvh, xsens_mocap, glb. "
             "Looks for retarget_calibration_<ref>.yaml beside the URDF, then "
             "legacy retarget_calibration.yaml if its embedded reference matches."
         ),

@@ -30,13 +30,16 @@ from hhtools.retarget.newton_basic.human_aliases import (
     MIXAMO_CMU_TO_CANONICAL,
     SMPL_BODY_TO_CANONICAL,
     SOMA_BVH_TO_CANONICAL,
+    XSENS_MOCAP_TO_CANONICAL,
     auto_source_to_canonical,
 )
 
 if TYPE_CHECKING:
     from hhtools.core.motion import Motion
 
-ReferenceName = Literal["smplx", "smpl", "gvhmr", "soma_bvh", "lafan_bvh", "glb"]
+ReferenceName = Literal[
+    "smplx", "smpl", "gvhmr", "soma_bvh", "lafan_bvh", "xsens_mocap", "glb",
+]
 
 
 _LEGACY_REFERENCE_ALIASES: dict[str, str] = {
@@ -417,6 +420,46 @@ _LAFAN_REF_PARENT: dict[str, str | None] = {
     "RightHand": "RightForeArm",
 }
 
+_XSENS_REF_JOINTS: tuple[str, ...] = (
+    "Hips",
+    "LeftHip",
+    "RightHip",
+    "Chest",
+    "LeftKnee",
+    "RightKnee",
+    "Chest4",
+    "LeftAnkle",
+    "RightAnkle",
+    "Neck",
+    "LeftShoulder",
+    "RightShoulder",
+    "Head",
+    "LeftElbow",
+    "RightElbow",
+    "LeftWrist",
+    "RightWrist",
+)
+
+_XSENS_REF_PARENT: dict[str, str | None] = {
+    "Hips": None,
+    "LeftHip": "Hips",
+    "RightHip": "Hips",
+    "Chest": "Hips",
+    "LeftKnee": "LeftHip",
+    "RightKnee": "RightHip",
+    "Chest4": "Chest",
+    "LeftAnkle": "LeftKnee",
+    "RightAnkle": "RightKnee",
+    "Neck": "Chest4",
+    "LeftShoulder": "Chest4",
+    "RightShoulder": "Chest4",
+    "Head": "Neck",
+    "LeftElbow": "LeftShoulder",
+    "RightElbow": "RightShoulder",
+    "LeftWrist": "LeftElbow",
+    "RightWrist": "RightElbow",
+}
+
 
 def _identity_quats(n: int) -> NDArray[np.float32]:
     q = np.zeros((n, 4), dtype=np.float32)
@@ -585,6 +628,90 @@ def _build_static_lafan() -> HumanReferencePose:
     )
 
 
+def _build_static_xsens_mocap() -> HumanReferencePose:
+    """Xsens calibration reference — extracted from bundled stand-pose BVH."""
+    from_bvh = _xsens17_from_zero_bvh()
+    if from_bvh is not None:
+        return from_bvh
+
+    names = _XSENS_REF_JOINTS
+    parents = tuple(_XSENS_REF_PARENT[n] for n in names)
+    pos = _canonical_lafan17_positions()
+    q = _identity_quats(len(names))
+    src2can = {k: v for k, v in XSENS_MOCAP_TO_CANONICAL.items() if k in names}
+    pi = np.array(
+        [-1 if p is None else names.index(p) for p in parents],
+        dtype=np.int64,
+    )
+    h = _measure_height(pos, pi)
+    return HumanReferencePose(
+        name="xsens_mocap",
+        root_joint="Hips",
+        joint_names=names,
+        parent_names=parents,
+        positions=pos,
+        quaternions=q,
+        source_to_canonical=src2can,
+        height_m=float(h),
+        fallback=True,
+    )
+
+
+@lru_cache(maxsize=1)
+def _xsens17_from_zero_bvh() -> HumanReferencePose | None:
+    """17-joint subset of ``assets/reference_poses/xsens_mocap_zero_frame0.bvh``."""
+
+    try:
+        from hhtools.io.bvh import load_bvh
+        from hhtools.retarget.newton_basic.rest_pose import bundled_reference_bvh_path
+    except ImportError:
+        return None
+
+    path = bundled_reference_bvh_path("xsens_mocap")
+    if path is None:
+        return None
+
+    motion = load_bvh(path)
+    if motion.num_frames < 1:
+        return None
+
+    bone_names = tuple(motion.hierarchy.bone_names)
+    name2i = {n: i for i, n in enumerate(bone_names)}
+    if "Hips" not in name2i:
+        return None
+
+    names = _XSENS_REF_JOINTS
+    missing = [n for n in names if n not in name2i]
+    if missing:
+        return None
+
+    hips_i = name2i["Hips"]
+    frame_pos = np.asarray(motion.positions[0], dtype=np.float32)
+    frame_quat = Q.normalize(np.asarray(motion.quaternions[0], dtype=np.float32))
+    anchor = frame_pos[hips_i].copy()
+
+    pos = np.stack([frame_pos[name2i[n]] - anchor for n in names], axis=0)
+    quat = np.stack([frame_quat[name2i[n]] for n in names], axis=0)
+    parents = tuple(_XSENS_REF_PARENT[n] for n in names)
+    src2can = {k: v for k, v in XSENS_MOCAP_TO_CANONICAL.items() if k in names}
+    pi = np.array(
+        [-1 if p is None else names.index(p) for p in parents],
+        dtype=np.int64,
+    )
+    h = _measure_height(pos, pi)
+    return HumanReferencePose(
+        name="xsens_mocap",
+        root_joint="Hips",
+        joint_names=names,
+        parent_names=parents,
+        positions=pos.astype(np.float32),
+        quaternions=quat.astype(np.float32),
+        source_to_canonical=src2can,
+        height_m=float(h),
+        fallback=False,
+    )
+
+
 def _load_smpl(*, allow_engine: bool) -> HumanReferencePose:
     if allow_engine:
         got = _try_smpl_forward("smpl")
@@ -663,7 +790,9 @@ def _load_gvhmr() -> HumanReferencePose:
 
 
 def list_reference_names() -> tuple[str, ...]:
-    return ("smplx", "smpl", "gvhmr", "soma_bvh", "lafan_bvh", "glb")
+    return (
+        "smplx", "smpl", "gvhmr", "soma_bvh", "lafan_bvh", "xsens_mocap", "glb",
+    )
 
 
 def load_reference_pose(name: str) -> HumanReferencePose:
@@ -688,6 +817,8 @@ def load_reference_pose(name: str) -> HumanReferencePose:
         return _build_static_soma()
     if key == "lafan_bvh":
         return _build_static_lafan()
+    if key == "xsens_mocap":
+        return _build_static_xsens_mocap()
     raise ValueError(f"Unknown reference name: {name!r}")
 
 

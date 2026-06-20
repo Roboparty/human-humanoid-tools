@@ -140,8 +140,8 @@ def _source_dir_from_resolved(
     return resolved_files[0].parent.resolve()
 
 
-def auto_resolve_source_dir(relative_paths: list[str]) -> Path:
-    """Find the on-disk directory for a browser folder drop (no user input)."""
+def _resolve_source_files(relative_paths: list[str]) -> tuple[Path, list[Path]]:
+    """Locate on-disk files for a browser drop; return ``(root, resolved)``."""
 
     rels = _normalize_relpaths(relative_paths)
     if not rels:
@@ -162,9 +162,41 @@ def auto_resolve_source_dir(relative_paths: list[str]) -> Path:
                 resolved.append(candidate)
         except (FileNotFoundError, ValueError):
             continue
-        return _source_dir_from_resolved(root, rels, resolved)
+        return root, resolved
 
     raise FileNotFoundError("在服务器常用目录中未找到与拖入文件匹配的数据集")
+
+
+def auto_resolve_source_files(relative_paths: list[str]) -> list[Path]:
+    """Resolve browser drop paths to on-disk files under a common root."""
+
+    return _resolve_source_files(relative_paths)[1]
+
+
+def auto_resolve_source_dir(relative_paths: list[str]) -> Path:
+    """Find the on-disk directory for a browser folder drop (no user input)."""
+
+    rels = _normalize_relpaths(relative_paths)
+    root, resolved = _resolve_source_files(rels)
+    return _source_dir_from_resolved(root, rels, resolved)
+
+
+def _existing_library_link_for_dir(source_dir: Path) -> Path | None:
+    """Return an existing ``motions/<label>`` symlink that already points at ``source_dir``."""
+
+    source_dir = source_dir.resolve()
+    root = motions_library_root()
+    if not root.is_dir():
+        return None
+    for child in sorted(root.iterdir()):
+        if not child.is_symlink():
+            continue
+        try:
+            if child.resolve() == source_dir:
+                return child
+        except OSError:
+            continue
+    return None
 
 
 def _remove_path(path: Path) -> None:
@@ -224,6 +256,23 @@ def materialize_drop(
     """
 
     label = _infer_folder_label(_normalize_relpaths(relative_paths), folder_label)
+    rels = _normalize_relpaths(relative_paths)
+
+    # Single loose file: reuse an existing folder symlink when present; otherwise
+    # link only that clip (not the whole parent directory).
+    if len(rels) == 1 and "/" not in rels[0]:
+        try:
+            source_file = auto_resolve_source_files(rels)[0]
+            parent = source_file.parent.resolve()
+            existing = _existing_library_link_for_dir(parent)
+            if existing is not None:
+                return existing, existing.name, "symlink"
+            clip_label = _safe_folder_name(folder_label or parent.name)
+            dest_root = link_to_library(source_file, folder_label=clip_label)
+            return dest_root, dest_root.name, "symlink"
+        except FileNotFoundError:
+            pass
+
     try:
         source_dir = auto_resolve_source_dir(relative_paths)
         dest = materialize_symlink_dir(source_dir, label)
@@ -320,6 +369,7 @@ def _entry_with_link_label(
 
 __all__ = [
     "auto_resolve_source_dir",
+    "auto_resolve_source_files",
     "candidate_search_roots",
     "ensure_motions_library",
     "link_to_library",

@@ -1746,6 +1746,7 @@ const REFERENCE_LABELS = {
   gvhmr: "GVHMR",
   soma_bvh: "SOMA BVH",
   lafan_bvh: "LAFAN / Mixamo BVH",
+  xsens_mocap: "Xsens mocap BVH",
   glb: "GLB / GLTF",
 };
 
@@ -1756,6 +1757,7 @@ const DATASET_TO_REFERENCE = {
   phuma: "smpl",
   lafan: "lafan_bvh",
   soma: "soma_bvh",
+  xsens_mocap: "xsens_mocap",
   gvhmr: "gvhmr",
   omomo: "smplx",
   meshmimic_holosoma: "smplx",
@@ -1778,6 +1780,7 @@ function referenceLabel(ref) {
 const DATASET_LABELS = {
   soma: "SOMA BVH",
   lafan: "LAFAN / Mixamo BVH",
+  xsens_mocap: "Xsens mocap BVH",
   amass: "AMASS (SMPL 参数)",
   motion_x: "Motion-X (SMPL-X)",
   phuma: "PHUMA (SMPL)",
@@ -1804,6 +1807,11 @@ const REFERENCE_HELP = {
     input: "LAFAN / Mixamo 风格 .bvh（如 Hips、LeftLeg）",
     calib: "标定参考「LAFAN / Mixamo BVH」— 对齐<b>蓝色 LAFAN 参考骨架</b>",
     file: "retarget_calibration_lafan_bvh.yaml",
+  },
+  xsens_mocap: {
+    input: "Xsens MVN / 生物力学 .bvh（如 Hips、LeftHip、LeftKnee、Chest）",
+    calib: "标定参考「Xsens mocap BVH」— 对齐<b>蓝色 Xsens 参考骨架</b>",
+    file: "retarget_calibration_xsens_mocap.yaml",
   },
   smpl: {
     input: "AMASS / SMPL 参数 .npz（poses + trans，需 SMPL 体模）",

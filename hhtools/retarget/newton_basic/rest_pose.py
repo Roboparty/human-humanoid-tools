@@ -71,6 +71,7 @@ __all__ = [
 # clip's frame 0 (which may be mid-stride, crouched, etc.).
 _BUNDLED_REFERENCE_BVH: dict[str, str] = {
     "soma_bvh": "soma_zero_frame0.bvh",
+    "xsens_mocap": "xsens_mocap_zero_frame0.bvh",
 }
 
 
@@ -84,7 +85,7 @@ def _reference_poses_dir() -> Path | None:
 
 
 def bundled_reference_bvh_path(reference: str) -> Path | None:
-    """Return the bundled zero-frame BVH for ``soma_bvh``."""
+    """Return the bundled zero-frame BVH for ``soma_bvh`` / ``xsens_mocap``."""
 
     rel = _BUNDLED_REFERENCE_BVH.get(reference)
     if rel is None:
@@ -98,13 +99,9 @@ def bundled_reference_bvh_path(reference: str) -> Path | None:
 
 @lru_cache(maxsize=2)
 def rest_pose_from_bundled_reference(
-    reference: Literal["soma_bvh"],
+    reference: Literal["soma_bvh", "xsens_mocap"],
 ) -> SourceRestPose:
-    """Load soma-retargeter's ``soma_zero_frame0.bvh`` as the source rest pose.
-
-    Every SOMA clip retargets against this canonical rest skeleton, independent
-    of the clip's starting pose.
-    """
+    """Load a bundled zero-frame BVH as the source rest pose."""
 
     path = bundled_reference_bvh_path(reference)
     if path is None:

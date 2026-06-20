@@ -31,6 +31,7 @@ _DEFAULT_HUMAN_HEIGHT_BY_REFERENCE: dict[str, float] = {
     "gvhmr": 1.65,
     "soma_bvh": 1.65,
     "lafan_bvh": 1.65,
+    "xsens_mocap": 1.65,
     "glb": 1.65,
 }
 
@@ -82,6 +83,45 @@ _REFERENCE_FEET_DEFAULTS: dict[str, dict[str, Any]] = {
             "right_foot_name": "RightFoot",
             "hips_name": "Hips",
         },
+    },
+    "xsens_mocap": {
+        "apply_feet_stabilizer": True,
+        "feet_stabilizer": {
+            "ground_contact_z": 0.045,
+            "foot_planting_velocity_threshold": 0.005,
+            "foot_planting_height_margin": 0.02,
+            "min_lateral_separation": 0.0,
+            "left_foot_name": "LeftAnkle",
+            "right_foot_name": "RightAnkle",
+            "left_toe_name": "LeftToe",
+            "right_toe_name": "RightToe",
+            "hips_name": "Hips",
+            "enable_body_ground_clearance": True,
+            "body_ground_clearance": 0.025,
+            "body_ground_probe_joints": [
+                "Head", "Neck", "Chest4",
+                "LeftKnee", "RightKnee",
+                "LeftElbow", "RightElbow",
+                "LeftWrist", "RightWrist",
+            ],
+            "body_ground_lift_max_rate": 0.015,
+            "body_ground_snap_on_penetration": True,
+            "chest_name": "Chest4",
+            "arm_chains": [
+                {
+                    "shoulder": "LeftShoulder",
+                    "chain": ["LeftElbow", "LeftWrist"],
+                },
+                {
+                    "shoulder": "RightShoulder",
+                    "chain": ["RightElbow", "RightWrist"],
+                },
+            ],
+        },
+        "ground_collision_weight": 10.0,
+        # High-fps Xsens gait oscillates solved ankle height; anti-float root
+        # pumping reads as vertical bobbing.  Keep the ground-penetration lift.
+        "foot_clamp_anti_float": False,
     },
 }
 
@@ -155,6 +195,8 @@ def joint_scale_overrides_from_preset(
 def _yaml_active_scale_edits(
     preset: "RobotPreset",
     robot_model: "URDFRobotModel | None" = None,
+    *,
+    calibration: "RobotRetargetCalibration | None" = None,
 ) -> tuple[dict[str, float], dict[str, float]]:
     """Return ``(active yaml edits, calibration / URDF baselines)``."""
 
@@ -167,7 +209,18 @@ def _yaml_active_scale_edits(
         scale_context_for_preset,
     )
 
-    baselines, zero_pose = scale_context_for_preset(preset, robot_model)
+    if calibration is not None and robot_model is not None:
+        from hhtools.retarget.calibration.calibration import derive_calibration_params
+
+        baselines = {
+            str(k): float(v)
+            for k, v in derive_calibration_params(calibration, robot_model).scales.items()
+        }
+    else:
+        baselines, _ = scale_context_for_preset(preset, robot_model)
+    zero_pose: dict[str, float] = {}
+    if robot_model is not None:
+        _, zero_pose = scale_context_for_preset(preset, robot_model)
     active = active_joint_scale_overrides(
         yaml_scales, baselines, zero_pose_scales=zero_pose,
     )
@@ -232,10 +285,14 @@ def joint_scale_narrowing_ratios(
 def _active_joint_scale_overrides_for_model(
     preset: "RobotPreset",
     robot_model: "URDFRobotModel | None" = None,
+    *,
+    calibration: "RobotRetargetCalibration | None" = None,
 ) -> dict[str, float]:
     """Yaml scale tweaks that differ from calibration / URDF baseline."""
 
-    active, _ = _yaml_active_scale_edits(preset, robot_model)
+    active, _ = _yaml_active_scale_edits(
+        preset, robot_model, calibration=calibration,
+    )
     return {
         k: v
         for k, v in active.items()
@@ -527,7 +584,9 @@ def build_scaler_config_for_robot(
 
     from hhtools.retarget.calibration import build_scaler_config_from_calibration
 
-    overrides = _active_joint_scale_overrides_for_model(model.preset, robot_model=model)
+    overrides = _active_joint_scale_overrides_for_model(
+        model.preset, robot_model=model, calibration=calibration,
+    )
     return build_scaler_config_from_calibration(
         calibration,
         model,
@@ -850,4 +909,5 @@ def build_pipeline_config_for_preset(
         ground_collision_dynamic_boost=bool(
             _pick("ground_collision_dynamic_boost", True)
         ),
+        foot_clamp_anti_float=bool(_pick("foot_clamp_anti_float", True)),
     )
