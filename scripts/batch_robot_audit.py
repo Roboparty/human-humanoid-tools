@@ -7,8 +7,10 @@ Usage (from repo root, hhtools venv active):
 ``--import`` copies/scaffolds into configs/robots/<name>/ (skip if exists).
 ``--retarget`` runs Newton retarget on a short SOMA BVH clip after zero-pose calib.
 
-Asset roots (override with ``HHTOOLS_ROBOT_AUDIT_ROOTS=path1:path2``):
-  GMR/assets, X2_URDF, booster_assets, fourier_lab
+Asset roots (required — no bundled defaults; set ``HHTOOLS_ROBOT_AUDIT_ROOTS`` or ``--roots``)::
+
+  export HHTOOLS_ROBOT_AUDIT_ROOTS=$HOME/GMR/assets:$HOME/Downloads/X2_URDF-v1.3.0
+  python scripts/batch_robot_audit.py --roots "$HHTOOLS_ROBOT_AUDIT_ROOTS"
 """
 
 from __future__ import annotations
@@ -24,13 +26,6 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-
-DEFAULT_ASSET_ROOTS: tuple[Path, ...] = (
-    Path("/home/amdin/syj/GMR/assets"),
-    Path("/home/amdin/下载/X2_URDF-v1.3.0"),
-    Path("/home/amdin/下载/booster_assets"),
-    Path("/home/amdin/下载/fourier_lab"),
-)
 
 # Partial / lab assemblies — not full humanoids for retarget.
 _SKIP_PATH_RE = re.compile(
@@ -97,7 +92,7 @@ def discover_urdf_candidates(
     roots: tuple[Path, ...] | None = None,
 ) -> list[tuple[str, Path]]:
     """Return ``(preset_name, urdf_path)`` for importable full-body URDFs."""
-    roots = roots or DEFAULT_ASSET_ROOTS
+    roots = roots or ()
     out: list[tuple[str, Path]] = []
     seen_names: dict[str, Path] = {}
 
@@ -303,14 +298,19 @@ def main() -> int:
         "--roots",
         type=str,
         default=os.environ.get("HHTOOLS_ROBOT_AUDIT_ROOTS", ""),
-        help="Colon-separated asset roots (default: bundled GMR/X2/booster/fourier paths)",
+        help="Colon-separated asset roots (or set HHTOOLS_ROBOT_AUDIT_ROOTS)",
     )
     args = parser.parse_args()
 
-    if args.roots.strip():
-        roots = tuple(Path(p) for p in args.roots.split(":") if p.strip())
-    else:
-        roots = DEFAULT_ASSET_ROOTS
+    raw_roots = args.roots.strip() or os.environ.get("HHTOOLS_ROBOT_AUDIT_ROOTS", "").strip()
+    if not raw_roots:
+        print(
+            "No asset roots configured. Set HHTOOLS_ROBOT_AUDIT_ROOTS "
+            "or pass --roots path1:path2",
+            file=sys.stderr,
+        )
+        return 2
+    roots = tuple(Path(p).expanduser() for p in raw_roots.split(":") if p.strip())
 
     candidates = discover_urdf_candidates(roots)
     if not candidates:

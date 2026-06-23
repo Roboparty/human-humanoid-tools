@@ -949,8 +949,13 @@ def build_pipeline_config_for_preset(
     reference: str,
     *,
     ik_iterations: int,
+    foot_clamp_anti_penetration: bool | None = None,
 ):
-    """Merge ``retarget:`` defaults into :class:`PipelineConfig`."""
+    """Merge ``retarget:`` defaults into :class:`PipelineConfig`.
+
+    When ``foot_clamp_anti_penetration`` is set (e.g. from the web UI), it
+    overrides ``robot.yaml`` for that retarget run.
+    """
 
     from hhtools.retarget.newton_basic.pipeline import PipelineConfig
 
@@ -995,6 +1000,10 @@ def build_pipeline_config_for_preset(
             _pick("ground_collision_dynamic_boost", True)
         ),
         foot_clamp_anti_float=bool(_pick("foot_clamp_anti_float", True)),
-        foot_clamp_anti_penetration=bool(_pick("foot_clamp_anti_penetration", True)),
+        foot_clamp_anti_penetration=(
+            bool(foot_clamp_anti_penetration)
+            if foot_clamp_anti_penetration is not None
+            else bool(_pick("foot_clamp_anti_penetration", True))
+        ),
         foot_clamp_max_lift_rate=float(_pick("foot_clamp_max_lift_rate", 0.02)),
     )

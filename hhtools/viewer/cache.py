@@ -149,7 +149,7 @@ class EphemeralCache:
             )
         adapter = adapter_cls(entry.source_path.parent)
         motion = adapter.load_motion(
-            entry.sequence_id,
+            entry.adapter_sequence_id,
             progress_callback=progress_callback,
         )
         _attach_library_folder_label(motion, entry)

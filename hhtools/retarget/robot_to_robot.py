@@ -337,6 +337,29 @@ def _wxyz_to_xyzw(joint_q: NDArray) -> NDArray:
     return out
 
 
+def _align_trajectory_dof_names(
+    n_dof_cols: int,
+    fallback_dof_names: tuple[str, ...] | None,
+) -> tuple[str, ...]:
+    """Map numeric CSV columns to joint names when the header is missing.
+
+    Exports occasionally omit one trailing DOF column (or the header row).
+    When ``fallback_dof_names`` comes from the source robot preset, prefer a
+    prefix of that order over generic ``dof_0`` placeholders so FK / playback
+    can resolve real joint names.
+    """
+    if not fallback_dof_names:
+        return tuple(f"dof_{i}" for i in range(n_dof_cols))
+    if len(fallback_dof_names) == n_dof_cols:
+        return fallback_dof_names
+    if len(fallback_dof_names) > n_dof_cols:
+        return fallback_dof_names[:n_dof_cols]
+    extra = tuple(
+        f"dof_{i}" for i in range(len(fallback_dof_names), n_dof_cols)
+    )
+    return fallback_dof_names + extra
+
+
 def _load_csv_trajectory(
     path: Path, *, fallback_dof_names: tuple[str, ...] | None
 ) -> SourceTrajectory:
@@ -366,10 +389,7 @@ def _load_csv_trajectory(
         times = arr[:, 0]
         joint_q = arr[:, 1:].astype(np.float32)
         n_dof_cols = joint_q.shape[1] - 7
-        if fallback_dof_names and len(fallback_dof_names) == n_dof_cols:
-            dof_names = tuple(fallback_dof_names)
-        else:
-            dof_names = tuple(f"dof_{i}" for i in range(n_dof_cols))
+        dof_names = _align_trajectory_dof_names(n_dof_cols, fallback_dof_names)
         if times.shape[0] > 1:
             fps = float(1.0 / max(times[1] - times[0], 1e-6))
         else:
@@ -423,10 +443,10 @@ def _load_npz_trajectory(
     joint_q = np.asarray(data[jq_key], dtype=np.float32)
     if "dof_names" in keys:
         dof_names = tuple(str(n) for n in data["dof_names"].tolist())
-    elif fallback_dof_names and len(fallback_dof_names) == joint_q.shape[1] - 7:
-        dof_names = tuple(fallback_dof_names)
     else:
-        dof_names = tuple(f"dof_{i}" for i in range(joint_q.shape[1] - 7))
+        dof_names = _align_trajectory_dof_names(
+            joint_q.shape[1] - 7, fallback_dof_names,
+        )
     fps = 30.0
     for k in ("sample_rate", "fps", "framerate"):
         if k in keys:

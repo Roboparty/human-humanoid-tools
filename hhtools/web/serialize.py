@@ -614,9 +614,32 @@ def _sole_depth_reference(model, ik_map: dict[str, Any]) -> float | None:
     return float(ankle_z - min_mesh_z)
 
 
+def _apply_retarget_dof(
+    model,
+    dof_names: list[str] | tuple[str, ...],
+    dof_values: np.ndarray,
+) -> None:
+    """Apply one retarget DOF row, tolerating generic ``dof_N`` placeholders."""
+    names = list(dof_names)
+    values = np.asarray(dof_values, dtype=np.float64).reshape(-1)
+    if names and not any(str(n).startswith("dof_") for n in names):
+        cfg = {
+            str(names[i]): float(values[i])
+            for i in range(min(len(names), len(values)))
+        }
+        model.apply_configuration(cfg)
+        return
+    model_dof = model.dof_names()
+    arr = np.zeros(len(model_dof), dtype=np.float64)
+    n = min(len(values), len(arr))
+    arr[:n] = values[:n]
+    model.apply_configuration(arr)
+
+
 def _mesh_playback_z_lift(
     model,
-    cfg: dict[str, float],
+    dof_names: list[str] | tuple[str, ...],
+    dof_values: np.ndarray,
     root_xyzw: np.ndarray,
     *,
     sole_depth_ref: float | None,
@@ -633,7 +656,7 @@ def _mesh_playback_z_lift(
 
     Without overlay data, fall back to scheme A (ankle→sole at ``cfg`` only).
     """
-    model.apply_configuration(cfg)
+    _apply_retarget_dof(model, dof_names, dof_values)
     scene = model.trimesh_scene()
     root_rot = _quat_xyzw_to_rotmat(root_xyzw[3:7])
     min_mesh_z = _scene_min_mesh_z(scene, root_rot)
@@ -733,7 +756,6 @@ def serialize_robot_trajectory(
     const_lift = 0.0
     if not ground_follow and len(idx) > 0:
         f0 = int(idx[0])
-        cfg0 = {ret_dof_names[i]: float(dof[f0, i]) for i in range(len(ret_dof_names))}
         root0 = root[f0]
         yellow_foot_f0 = (
             _scaled_overlay_foot_z(scaled_preview, 0)
@@ -742,7 +764,8 @@ def serialize_robot_trajectory(
         )
         lift0 = _mesh_playback_z_lift(
             model,
-            cfg0,
+            ret_dof_names,
+            dof[f0],
             root0,
             sole_depth_ref=sole_depth_ref,
             ik_map=ik_map,
@@ -760,7 +783,7 @@ def serialize_robot_trajectory(
         else:
             # Flat robot CSV exports with no terrain: shift the constant group
             # lift so the lowest mesh vertex rests on z=0 at the first frame.
-            model.apply_configuration(cfg0)
+            _apply_retarget_dof(model, ret_dof_names, dof[f0])
             root_rot0 = _quat_xyzw_to_rotmat(root0[3:7])
             min_mesh_z0 = _scene_min_mesh_z(model.trimesh_scene(), root_rot0)
             if min_mesh_z0 is not None:
@@ -771,8 +794,7 @@ def serialize_robot_trajectory(
 
     frames: list[dict[str, Any]] = []
     for pi, f in enumerate(idx):
-        cfg = {ret_dof_names[i]: float(dof[f, i]) for i in range(len(ret_dof_names))}
-        model.apply_configuration(cfg)
+        _apply_retarget_dof(model, ret_dof_names, dof[f])
         link_T: dict[str, list[float]] = {}
         for link in links:
             try:
@@ -788,7 +810,8 @@ def serialize_robot_trajectory(
             )
             mesh_z_lift = _mesh_playback_z_lift(
                 model,
-                cfg,
+                ret_dof_names,
+                dof[f],
                 root[f],
                 sole_depth_ref=sole_depth_ref,
                 ik_map=ik_map,

@@ -10,8 +10,8 @@ Each output clip mirrors the hand-authored demos under
 Example (full dec_release → local parkour library)::
 
     python scripts/batch_dec_release_to_parc_ms.py \\
-        --src /home/amdin/syj/motions/dec_release \\
-        --out /home/amdin/syj/motions/parc_ms \\
+        --src ~/motions/dec_release \\
+        --out ~/motions/parc_ms \\
         --workers 8
 """
 
@@ -115,13 +115,13 @@ def main() -> int:
     parser.add_argument(
         "--src",
         type=Path,
-        default=Path("/home/amdin/syj/motions/dec_release"),
+        required=True,
         help="dec_release root (recursive *.pkl scan).",
     )
     parser.add_argument(
         "--out",
         type=Path,
-        default=Path("/home/amdin/syj/motions/parc_ms"),
+        required=True,
         help="Output parc_ms library root.",
     )
     parser.add_argument(

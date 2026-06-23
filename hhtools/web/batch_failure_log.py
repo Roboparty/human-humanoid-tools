@@ -122,6 +122,9 @@ def stash_failed_clip(entry: dict, log_root: Path) -> Path:
     src = resolve_clip_on_disk(
         entry["source_path"],
         extra_names=[entry.get("sequence_id") or ""],
+        folder_label=entry.get("folder_label"),
+        sequence_id=entry.get("sequence_id"),
+        upload_drop=entry.get("upload_drop"),
     )
     rel = failure_rel_path(entry)
     if not src.is_file():

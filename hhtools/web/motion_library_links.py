@@ -126,6 +126,92 @@ def _discover_source_root(user_root: Path, rels: list[str]) -> Path | None:
     return None
 
 
+def _clip_path_hint_tokens(folder_label: str, sequence_id: str) -> list[str]:
+    """Extract path fragments used to disambiguate duplicate clip basenames."""
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for raw in (folder_label, sequence_id):
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        for part in re.split(r"[/\\·]+", text):
+            part = part.strip().lower()
+            if len(part) >= 5 and part not in seen:
+                tokens.append(part)
+                seen.add(part)
+        for match in re.finditer(r"[A-Za-z]\d{4,}", text):
+            token = match.group(0).lower()
+            if token not in seen:
+                tokens.append(token)
+                seen.add(token)
+    return tokens
+
+
+def _score_clip_candidate(path: Path, hints: list[str], folder_label: str) -> int:
+    resolved = str(path.resolve()).lower()
+    score = 0
+    for hint in hints:
+        if hint in resolved:
+            score += len(hint)
+    label = str(folder_label or "").strip().lower()
+    if label and label in resolved:
+        score += 100
+    return score
+
+
+def _find_all_clips_named(
+    name: str,
+    search_roots: list[Path] | None = None,
+) -> list[Path]:
+    """Return every on-disk clip with ``name`` under known motion trees."""
+    name = PurePosixPath(str(name or "").replace("\\", "/")).name
+    if not name:
+        return []
+    roots = search_roots if search_roots is not None else candidate_search_roots()
+    out: list[Path] = []
+    seen: set[str] = set()
+    for root in roots:
+        try:
+            matches = [p for p in root.rglob(name) if p.is_file()]
+        except OSError:
+            continue
+        for path in matches:
+            key = str(path.resolve())
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(path.resolve())
+    return out
+
+
+def _pick_best_clip_candidate(
+    candidates: list[Path],
+    hints: list[str],
+    folder_label: str,
+) -> Path | None:
+    if not candidates or not hints:
+        return None
+    scored = [
+        (path, _score_clip_candidate(path, hints, folder_label))
+        for path in candidates
+    ]
+    best_score = max(score for _, score in scored)
+    if best_score <= 0:
+        return None
+    best = [path for path, score in scored if score == best_score]
+    return best[0] if len(best) == 1 else None
+
+
+def _recorded_path_matches_hints(
+    path: Path,
+    hints: list[str],
+    folder_label: str,
+) -> bool:
+    if not hints:
+        return True
+    return _score_clip_candidate(path, hints, folder_label) > 0
+
+
 def _resolve_single_clip_under_roots(
     rel: str,
     search_roots: list[Path] | None = None,
@@ -148,7 +234,10 @@ def _resolve_single_clip_under_roots(
             continue
         if not matches:
             continue
-        matches.sort(key=lambda p: (len(p.parts), str(p)))
+        if len(matches) > 1:
+            # Same basename in multiple capture folders (e.g. two ``Take_012_Skeleton0.bvh``
+            # under ``20260429_mocap`` vs ``20260623_mocap``) — never pick arbitrarily.
+            continue
         return matches[0].resolve()
     return None
 
@@ -157,6 +246,9 @@ def resolve_clip_on_disk(
     source_path: str | Path,
     *,
     extra_names: list[str] | None = None,
+    folder_label: str | None = None,
+    sequence_id: str | None = None,
+    upload_drop: str | Path | None = None,
 ) -> Path:
     """Return an existing clip path, searching server motion trees when stale.
 
@@ -164,13 +256,14 @@ def resolve_clip_on_disk(
     even when only one clip was copied during a multi-file browser drop.  When
     the recorded path is missing, locate the same basename under
     :func:`candidate_search_roots` (``~/syj/motions``, ``HHTOOLS_MOTION_SEARCH_PATHS``, …).
+
+    When the recorded path exists but points at the wrong capture folder (stale
+    library symlink for a duplicate basename), ``folder_label`` / ``sequence_id``
+    are used to pick the intended clip instead of trusting the symlink target.
     """
     recorded = Path(source_path).expanduser()
-    try:
-        if recorded.is_file():
-            return recorded.resolve()
-    except OSError:
-        pass
+    folder_label = str(folder_label or "").strip()
+    sequence_id = str(sequence_id or "").strip()
 
     names: list[str] = []
     if recorded.name:
@@ -179,12 +272,96 @@ def resolve_clip_on_disk(
         n = PurePosixPath(str(raw).replace("\\", "/")).name
         if n and n not in names:
             names.append(n)
+    if sequence_id:
+        sid_name = PurePosixPath(sequence_id.replace("\\", "/")).name
+        if sid_name and sid_name not in names:
+            names.append(sid_name)
+
+    if upload_drop is not None:
+        drop = Path(upload_drop).expanduser()
+        if sequence_id:
+            rel_upload = drop / sequence_id.replace("\\", "/")
+            if rel_upload.is_file():
+                return rel_upload.resolve()
+        for name in names:
+            uploaded = _uploaded_path_for_rel(drop, name)
+            if uploaded.is_file():
+                return uploaded.resolve()
+
+    hints = _clip_path_hint_tokens(folder_label, sequence_id)
+    candidates: list[Path] = []
+    seen_candidates: set[str] = set()
+    for name in names:
+        for path in _find_all_clips_named(name):
+            key = str(path)
+            if key in seen_candidates:
+                continue
+            seen_candidates.add(key)
+            candidates.append(path)
+
+    recorded_resolved: Path | None = None
+    try:
+        if recorded.is_file():
+            recorded_resolved = recorded.resolve()
+            key = str(recorded_resolved)
+            if key not in seen_candidates:
+                candidates.append(recorded_resolved)
+                seen_candidates.add(key)
+    except OSError:
+        pass
+
+    if recorded_resolved is not None and len(candidates) <= 1:
+        return recorded_resolved
+
+    if recorded_resolved is not None and _recorded_path_matches_hints(
+        recorded_resolved, hints, folder_label,
+    ):
+        scores = {
+            path: _score_clip_candidate(path, hints, folder_label)
+            for path in candidates
+        }
+        best_score = max(scores.values(), default=0)
+        if best_score > 0 and scores.get(recorded_resolved, 0) == best_score:
+            return recorded_resolved
+
+    picked = _pick_best_clip_candidate(candidates, hints, folder_label)
+    if picked is not None:
+        return picked
+
+    if recorded_resolved is not None:
+        return recorded_resolved
 
     for name in names:
         found = _resolve_single_clip_under_roots(name)
         if found is not None:
             return found
     raise FileNotFoundError(f"BVH sequence not found: {recorded}")
+
+
+def library_entry_for_load(
+    *,
+    dataset: str,
+    folder_label: str,
+    sequence_id: str,
+    source_path: str | Path,
+    upload_drop: str | Path | None = None,
+) -> "LibraryEntry":
+    """Resolve a basket/library row to a load-safe :class:`LibraryEntry`."""
+    from hhtools.viewer.library import LibraryEntry
+
+    resolved = resolve_clip_on_disk(
+        source_path,
+        extra_names=[sequence_id or ""],
+        folder_label=folder_label,
+        sequence_id=sequence_id,
+        upload_drop=upload_drop,
+    )
+    return LibraryEntry(
+        dataset=dataset,
+        folder_label=folder_label,
+        sequence_id=sequence_id,
+        source_path=resolved,
+    )
 
 
 def _source_dir_from_resolved(
@@ -306,21 +483,63 @@ def materialize_symlink_dir(source_dir: Path, folder_label: str | None = None) -
     return dest
 
 
+def _upload_tree_root(drop_dir: Path) -> Path:
+    """Unwrap a single top-level wrapper folder from browser upload drops."""
+    children = sorted(
+        p for p in drop_dir.iterdir()
+        if p.is_dir() and not p.name.startswith(".")
+    )
+    files = [
+        p for p in drop_dir.iterdir()
+        if p.is_file() and not p.name.startswith(".")
+    ]
+    if len(children) == 1 and not files:
+        return children[0]
+    return drop_dir
+
+
 def materialize_upload_tree(drop_dir: Path, folder_label: str | None = None) -> Path:
     """Copy an upload drop into ``~/.config/hhtools/motions/<label>/``."""
 
     ensure_motions_library()
     drop_dir = drop_dir.resolve()
+    tree = _upload_tree_root(drop_dir)
     label = _infer_folder_label([], folder_label)
     if not label or label == _DEFAULT_LOOSE_LABEL:
-        children = [p for p in drop_dir.iterdir() if p.is_dir()]
-        if len(children) == 1 and not any(drop_dir.glob("*.npz")):
-            label = _safe_folder_name(children[0].name)
+        if tree == drop_dir:
+            children = [p for p in drop_dir.iterdir() if p.is_dir()]
+            if len(children) == 1 and not any(drop_dir.glob("*.npz")):
+                label = _safe_folder_name(children[0].name)
+        else:
+            label = _safe_folder_name(tree.name)
     dest = motions_library_root() / label
     if dest.exists() or dest.is_symlink():
         _remove_path(dest)
-    shutil.copytree(drop_dir, dest)
+    # Avoid ``motions/<label>/<label>/…`` when the drop wraps one folder.
+    if _safe_folder_name(tree.name) == label:
+        shutil.copytree(tree, dest)
+    else:
+        shutil.copytree(drop_dir, dest)
     return dest
+
+
+def _uploaded_path_for_rel(upload_drop: Path, rel: str) -> Path:
+    rel = str(rel or "").replace("\\", "/").lstrip("/")
+    direct = upload_drop / rel
+    if direct.is_file():
+        return direct
+    return upload_drop / PurePosixPath(rel).name
+
+
+def _resolved_matches_upload(resolved: Path, upload_drop: Path, rel: str) -> bool:
+    """True when an on-disk auto-resolve hit is the same bytes as the browser upload."""
+    uploaded = _uploaded_path_for_rel(upload_drop, rel)
+    if not uploaded.is_file() or not resolved.is_file():
+        return False
+    try:
+        return uploaded.stat().st_size == resolved.stat().st_size
+    except OSError:
+        return False
 
 
 def materialize_drop(
@@ -364,6 +583,10 @@ def materialize_drop(
     if len(rels) == 1 and "/" not in rels[0]:
         try:
             source_file = auto_resolve_source_files(rels)[0].resolve()
+            if upload_drop is not None and not _resolved_matches_upload(
+                source_file, upload_drop, rels[0],
+            ):
+                raise FileNotFoundError("auto-resolved file does not match upload")
             lib_root = motions_library_root().resolve()
             try:
                 source_file.relative_to(lib_root)
@@ -383,6 +606,11 @@ def materialize_drop(
 
     try:
         source_dir = auto_resolve_source_dir(relative_paths)
+        if upload_drop is not None:
+            resolved_files = auto_resolve_source_files(rels)
+            for rel, src in zip(rels, resolved_files, strict=True):
+                if not _resolved_matches_upload(src, upload_drop, rel):
+                    raise FileNotFoundError("auto-resolved file does not match upload")
         dest = materialize_symlink_dir(source_dir, label)
         return dest, dest.name, "symlink"
     except FileNotFoundError:
@@ -491,6 +719,7 @@ __all__ = [
     "auto_resolve_source_files",
     "candidate_search_roots",
     "ensure_motions_library",
+    "library_entry_for_load",
     "link_to_library",
     "materialize_drop",
     "materialize_symlink_dir",

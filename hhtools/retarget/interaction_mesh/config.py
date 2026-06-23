@@ -11,8 +11,7 @@ from dataclasses import dataclass
 class InteractionMeshPipelineConfig:
     """Knobs for the Laplacian MPC / SQP backend.
 
-    Collision handling models the holosoma retargeter
-    (`/home/amdin/syj/holosoma`) directly.  Terrain travels through the
+    Collision handling models the holosoma retargeter directly.  Terrain travels through the
     pipeline as a :class:`hhtools.core.scene.TerrainHeightfield` and is
     compiled into the SQP's MuJoCo collision model as a native
     ``<hfield>`` asset; ``mj_geomDistance`` provides per-pair signed

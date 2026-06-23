@@ -672,19 +672,20 @@ def create_app(
         return payload
 
     def _run_motion_library_job(job: Job, body: dict) -> None:
-        from hhtools.viewer.library import LibraryEntry
         from hhtools.web.motion_progress import MotionLoadProgress
         from hhtools.web.r2r_upload_resolve import _is_robot_export_trajectory
 
         try:
-            entry = LibraryEntry(
+            from hhtools.web.motion_library_links import library_entry_for_load
+
+            entry = library_entry_for_load(
                 dataset=body["dataset"],
                 folder_label=body["folder_label"],
                 sequence_id=body["sequence_id"],
-                source_path=Path(body["source_path"]),
+                source_path=body["source_path"],
             )
             load_prog = MotionLoadProgress(job, base=0.08, span=0.34)
-            source_path = Path(body["source_path"])
+            source_path = entry.source_path
             if body.get("dataset") == "robot" or _is_robot_export_trajectory(source_path):
                 motion = _load_robot_export_for_web(
                     source_path, state, progress=load_prog,
@@ -853,20 +854,14 @@ def create_app(
             with dst.open("wb") as fp:
                 fp.write(await uf.read())
 
-        try:
-            lib_dir, label, materialize_mode = materialize_drop(
-                rel_paths,
-                folder_label=folder_label,
-            )
-            if not enumerate_upload_clips(lib_dir, profile):
-                raise FileNotFoundError(
-                    "symlinked library folder contains no recognizable clips"
-                )
-        except FileNotFoundError:
-            lib_dir, label, materialize_mode = materialize_drop(
-                rel_paths,
-                folder_label=folder_label,
-                upload_drop=drop,
+        lib_dir, label, materialize_mode = materialize_drop(
+            rel_paths,
+            folder_label=folder_label,
+            upload_drop=drop,
+        )
+        if not enumerate_upload_clips(lib_dir, profile):
+            raise FileNotFoundError(
+                "library folder contains no recognizable clips after materialize"
             )
 
         if not enumerate_upload_clips(lib_dir, profile):
@@ -1237,11 +1232,9 @@ def create_app(
             reference = body.get("reference", "smpl")
             backend = body.get("backend", "newton")
             ik_iters = int(body.get("ik_iterations", 24))
-            # Foot-follow grounding (mesh sole tracks the rising terrain) is an
-            # opt-in: it keeps the robot glued to a climbing surface but snaps the
-            # body upward on tumbles / backflips (feet sweep overhead).  Prone /
-            # crawl grounding is handled in the Newton IK pipeline instead.
-            ground_follow = bool(body.get("ground_follow", False))
+            foot_clamp_anti_penetration = bool(
+                body.get("foot_clamp_anti_penetration", False)
+            )
             from hhtools.robot.registry import get as _get_preset
 
             human_height = _request_human_height(body, _get_preset(robot), reference)
@@ -1259,6 +1252,7 @@ def create_app(
                 model, robot, motion, reference, backend,
                 ik_iters, human_height, limit_frames, job,
                 state=state,
+                foot_clamp_anti_penetration=foot_clamp_anti_penetration,
             )
             from hhtools.web.serialize import serialize_robot_trajectory
 
@@ -1266,7 +1260,7 @@ def create_app(
                 model, robot, motion, reference, human_height,
             )
             traj = serialize_robot_trajectory(
-                model, ret, scaled_preview=scaled, ground_follow=ground_follow,
+                model, ret, scaled_preview=scaled,
             )
             scaled_scene = _compute_scaled_scene(
                 model, robot, motion, reference, human_height,
@@ -1412,6 +1406,9 @@ def create_app(
             export_fps = _parse_optional_fps(body.get("export_fps", body.get("fps")))
             retarget_fps = _parse_optional_fps(body.get("retarget_fps"))
             limit_frames = body.get("limit_frames")
+            foot_clamp_anti_penetration = bool(
+                body.get("foot_clamp_anti_penetration", False)
+            )
             requested_batch = max(1, min(256, int(body.get("batch_size", 16))))
             batch_size = requested_batch
             entries = [
@@ -1459,6 +1456,7 @@ def create_app(
                     job=job, job_id=job.id, out_name=out_name,
                     written=written, errors=errors, failures=failures,
                     failure_log=failure_log, batch_t0=batch_t0,
+                    foot_clamp_anti_penetration=foot_clamp_anti_penetration,
                 )
             else:
                 from collections import defaultdict
@@ -1486,13 +1484,16 @@ def create_app(
                                 clip_progress=0.0,
                             )
                             try:
-                                from hhtools.viewer.library import LibraryEntry
+                                from hhtools.web.motion_library_links import (
+                                    library_entry_for_load,
+                                )
 
-                                entry = LibraryEntry(
+                                entry = library_entry_for_load(
                                     dataset=e["dataset"],
                                     folder_label=e["folder_label"],
                                     sequence_id=e["sequence_id"],
-                                    source_path=Path(e["source_path"]),
+                                    source_path=e["source_path"],
+                                    upload_drop=e.get("upload_drop"),
                                 )
                                 motion = _load_batch_motion(
                                     e, entry, state.cache,
@@ -1555,6 +1556,9 @@ def create_app(
                                 progress_span=span_prog,
                                 batch_t0=batch_t0,
                                 chunk_label=chunk_label,
+                                foot_clamp_anti_penetration=(
+                                    foot_clamp_anti_penetration
+                                ),
                             )
                             for e, motion, entry, ret in exports:
                                 try:
@@ -2040,7 +2044,6 @@ def _library_entry_from_link(
     sequence_id = picked.name
     try:
         rel = picked.relative_to(lib_dir)
-        sequence_id = rel.as_posix()
         stem = rel.with_suffix("").as_posix() if rel.parts else picked.stem
     except ValueError:
         pass
@@ -2100,22 +2103,24 @@ def _library_entry_from_upload(
 
 def _load_clip_for_batch(entry_dict: dict, entry, cache):
     """Load a basket clip — uploaded paths bypass adapter-only cache conversion."""
-    import dataclasses
-
     from hhtools.viewer.cache import _attach_library_folder_label
     from hhtools.web.motion_library_links import resolve_clip_on_disk
     from hhtools.web.upload_resolve import load_clip_at_path
 
+    if entry_dict.get("origin") != "upload":
+        entry_dict = dict(entry_dict)
+        entry_dict["source_path"] = str(entry.source_path)
+        return cache.load_motion(entry)
+
     resolved = resolve_clip_on_disk(
         entry.source_path,
         extra_names=[entry_dict.get("sequence_id") or ""],
+        folder_label=entry_dict.get("folder_label"),
+        sequence_id=entry_dict.get("sequence_id"),
+        upload_drop=entry_dict.get("upload_drop"),
     )
     entry_dict = dict(entry_dict)
     entry_dict["source_path"] = str(resolved)
-
-    if entry_dict.get("origin") != "upload":
-        entry = dataclasses.replace(entry, source_path=resolved)
-        return cache.load_motion(entry)
 
     motion, dataset = load_clip_at_path(
         resolved,
@@ -2842,8 +2847,9 @@ def _run_batch_entries_sequential(
     failures,
     failure_log,
     batch_t0: float,
+    foot_clamp_anti_penetration: bool = False,
 ) -> BatchFailureLog | None:
-    from hhtools.viewer.library import LibraryEntry
+    from hhtools.web.motion_library_links import library_entry_for_load
 
     total = len(entries)
     for i, e in enumerate(entries):
@@ -2855,11 +2861,12 @@ def _run_batch_entries_sequential(
             clip_progress=0.0,
         )
         ref = _entry_reference(e, reference)
-        entry = LibraryEntry(
+        entry = library_entry_for_load(
             dataset=e["dataset"],
             folder_label=e["folder_label"],
             sequence_id=e["sequence_id"],
-            source_path=Path(e["source_path"]),
+            source_path=e["source_path"],
+            upload_drop=e.get("upload_drop"),
         )
         try:
             motion = _load_batch_motion(
@@ -2885,6 +2892,7 @@ def _run_batch_entries_sequential(
                 model, robot_name, motion, ref, backend,
                 ik_iters, human_height, limit_frames, job,
                 state=state,
+                foot_clamp_anti_penetration=foot_clamp_anti_penetration,
             )
         except Exception as err:  # noqa: BLE001
             failure_log = _record_batch_failure(
@@ -2955,6 +2963,7 @@ def _retarget_newton_batch_chunk(
     progress_span: float,
     batch_t0: float,
     chunk_label: str,
+    foot_clamp_anti_penetration: bool = False,
 ) -> tuple[list[tuple[dict, object, object, object]], object]:
     """Retarget pre-loaded clips; multi-env GPU when ``len(loaded) > 1``."""
     from hhtools.retarget.calibration import load_calibration, resolve_calibration_file
@@ -2971,6 +2980,7 @@ def _retarget_newton_batch_chunk(
             model, robot_name, motion, reference, "newton",
             ik_iters, human_height, None, job,
             state=state,
+            foot_clamp_anti_penetration=foot_clamp_anti_penetration,
         )
         return [(e, motion, entry, ret)], failure_log
 
@@ -3008,6 +3018,7 @@ def _retarget_newton_batch_chunk(
                 progress_span=progress_span,
                 batch_t0=batch_t0,
                 chunk_label=chunk_label,
+                foot_clamp_anti_penetration=foot_clamp_anti_penetration,
             )
             merged.extend(sub)
         return merged, failure_log
@@ -3051,6 +3062,7 @@ def _retarget_newton_batch_chunk(
         scaler_config=scaler_cfg,
         pipeline_config=build_pipeline_config_for_preset(
             preset, reference, ik_iterations=ik_iters,
+            foot_clamp_anti_penetration=foot_clamp_anti_penetration,
         ),
         feet_stabilizer_config=feet_cfg,
         human_height=human_height,
@@ -3113,6 +3125,7 @@ def _retarget_newton_batch_chunk(
                     model, robot_name, motion, reference, "newton",
                     ik_iters, human_height, None, job,
                     state=state,
+                    foot_clamp_anti_penetration=foot_clamp_anti_penetration,
                 )
                 out.append((e, motion, entry, ret))
             except Exception as single_err:  # noqa: BLE001
@@ -3343,7 +3356,7 @@ def _load_motion_for_web(entry, cache, *, progress=None):
                 if cb is not None:
                     cb(0.0, f"读取 {entry.stem}…")
                 motion = adapter.load_motion(
-                    entry.sequence_id,
+                    entry.adapter_sequence_id,
                     with_mesh=True,
                     progress_callback=cb,
                 )
@@ -3794,6 +3807,7 @@ def _retarget_single(
     job,
     *,
     state: SessionState | None = None,
+    foot_clamp_anti_penetration: bool | None = None,
 ):
     """Run one clip through the requested backend, returning RetargetedMotion."""
     from hhtools.retarget.calibration import resolve_calibration_file
@@ -3906,6 +3920,7 @@ def _retarget_single(
         scaler_config=scaler_cfg,
         pipeline_config=build_pipeline_config_for_preset(
             preset, reference, ik_iterations=ik_iters,
+            foot_clamp_anti_penetration=foot_clamp_anti_penetration,
         ),
         feet_stabilizer_config=feet_cfg,
         human_height=human_height,

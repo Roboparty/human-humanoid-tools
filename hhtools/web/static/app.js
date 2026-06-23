@@ -9,6 +9,32 @@ function parseOptionalFps(el) {
   return v > 0 && Number.isFinite(v) ? v : null;
 }
 
+function footClampAntiPenetrationEnabled() {
+  return !!document.getElementById("rt-foot-clamp-anti-penetration")?.checked;
+}
+
+function wireSyncedCheckboxes(ids) {
+  const els = ids.map((id) => document.getElementById(id)).filter(Boolean);
+  if (els.length < 2) return;
+  let syncing = false;
+  for (const el of els) {
+    el.addEventListener("change", () => {
+      if (syncing) return;
+      syncing = true;
+      const { checked } = el;
+      for (const other of els) {
+        if (other !== el) other.checked = checked;
+      }
+      syncing = false;
+    });
+  }
+}
+
+wireSyncedCheckboxes([
+  "rt-foot-clamp-anti-penetration",
+  "batch-foot-clamp-anti-penetration",
+]);
+
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -3788,7 +3814,7 @@ document.getElementById("retarget-btn").onclick = async () => {
       motion_token: state.motion.token,
       reference: state.reference,
       backend: document.getElementById("rt-backend").value,
-      ground_follow: !!document.getElementById("rt-ground-follow")?.checked,
+      foot_clamp_anti_penetration: footClampAntiPenetrationEnabled(),
     };
     if (retargetFps) body.retarget_fps = retargetFps;
     const { job_id } = await API.post("/api/retarget", body);
@@ -4089,6 +4115,7 @@ document.getElementById("batch-run").onclick = async () => {
       format: document.getElementById("batch-format").value,
       csv_header: csvHeaderEnabled("batch-csv-header"),
       entries: basket,
+      foot_clamp_anti_penetration: footClampAntiPenetrationEnabled(),
     };
     const batchSizeRaw = parseInt(document.getElementById("batch-size")?.value, 10);
     if (Number.isFinite(batchSizeRaw) && batchSizeRaw >= 1) {

@@ -31,7 +31,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 # Directory-name → registered adapter name. Keys normalise via ``_normalise_dirname``.
 # This is the single source of truth for the folder-name ↔ adapter mapping now that
@@ -76,6 +76,28 @@ _DIR_TO_ADAPTER: dict[str, str] = {
 _SUPPORTED_EXTS = {".npz", ".npy", ".pt", ".pkl", ".bvh", ".glb", ".gltf"}
 
 
+def adapter_sequence_id(source_path: str | Path, sequence_id: str) -> str:
+    """Return ``sequence_id`` relative to ``source_path.parent`` for dataset adapters.
+
+    Library scans may keep a nested ``sequence_id`` (path under a linked batch
+    folder) for UI labels.  Adapters resolve ``root / sequence_id`` with
+    ``root = source_path.parent``, so a nested id duplicates the clip folder
+    (``clip/Take_012.bvh`` looked up as ``clip/clip/Take_012.bvh``).
+    """
+    path = Path(source_path).expanduser()
+    seq = PurePosixPath(str(sequence_id or "").replace("\\", "/"))
+    if not seq.parts:
+        return path.name
+    try:
+        if path.is_file() and (path.parent / seq).resolve() == path.resolve():
+            return path.name
+    except OSError:
+        pass
+    if seq.name == path.name and len(seq.parts) > 1:
+        return path.name
+    return seq.as_posix()
+
+
 @dataclass(frozen=True)
 class LibraryEntry:
     """A single clip discovered on disk."""
@@ -88,6 +110,11 @@ class LibraryEntry:
     @property
     def stem(self) -> str:
         return Path(self.sequence_id).stem
+
+    @property
+    def adapter_sequence_id(self) -> str:
+        """Filename-style id passed to ``adapter.load_motion(root=source_path.parent)``."""
+        return adapter_sequence_id(self.source_path, self.sequence_id)
 
     @property
     def cache_name(self) -> str:
@@ -260,6 +287,7 @@ def list_folders(entries: list[LibraryEntry]) -> list[str]:
 
 __all__ = [
     "LibraryEntry",
+    "adapter_sequence_id",
     "filter_entries",
     "group_by_folder",
     "list_folders",

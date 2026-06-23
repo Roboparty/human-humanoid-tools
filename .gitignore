@@ -68,6 +68,9 @@ logs/
 outputs/
 checkpoints/
 
+# Dataset analysis cache (absolute paths, metrics — machine-local only)
+**/.hhtools_analysis/
+
 # User-supplied body models (never commit MPI-licensed weights)
 /body_models/
 configs/body_models/*

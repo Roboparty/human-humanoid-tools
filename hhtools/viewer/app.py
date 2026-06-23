@@ -1073,7 +1073,9 @@ def run_viewer(
                         )
                     adapter = adapter_cls(entry.source_path.parent)
                     try:
-                        motion = adapter.load_motion(entry.sequence_id, with_mesh=True)
+                        motion = adapter.load_motion(
+                            entry.adapter_sequence_id, with_mesh=True,
+                        )
                     except FileNotFoundError as exc:
                         # Body model weights absent → fall back to cache path which also
                         # would have failed the same way, but at least the error message
