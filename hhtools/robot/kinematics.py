@@ -575,6 +575,21 @@ def _resolve_hips_chest_duplicate(
     return changes
 
 
+def _drop_chest_duplicate_of_hips(ik_map: dict[str, str]) -> str | None:
+    """Drop ``chest`` when it still shares ``hips``' link (single rigid trunk).
+
+    Mini humanoids (e.g. Booster K1) attach legs and arms to one ``Trunk``
+    link; a second chest IK target on that link over-constrains the solver.
+    Keep ``hips`` for root / pelvis tracking.
+    """
+    hips = ik_map.get("hips")
+    chest = ik_map.get("chest")
+    if hips and chest and hips == chest:
+        ik_map.pop("chest")
+        return chest
+    return None
+
+
 def _path_toward(km: KinematicModel, start: str, end: str) -> list[str]:
     """Links on the chain from ``start`` toward ``end`` (inclusive of ``start``)."""
     path: list[str] = []
@@ -739,6 +754,7 @@ def infer_ik_map_from_kinematics(urdf_path: Path) -> dict[str, str]:
             out[f"{side}_hip"] = hip
 
     _resolve_hips_chest_duplicate(km, out)
+    _drop_chest_duplicate_of_hips(out)
     return out
 
 
@@ -889,6 +905,8 @@ def repair_ik_map(
 
     for slot, link in kinematic.items():
         if slot not in out or not out[slot]:
+            if slot == "chest" and out.get("hips") == link:
+                continue
             out[slot] = link
             changes.append(f"{slot}: added {link!r}")
 
@@ -960,6 +978,11 @@ def prepare_ik_map(
     changes.extend(_resolve_hips_chest_duplicate(
         KinematicModel.from_urdf(urdf_path), repaired,
     ))
+    dropped_chest = _drop_chest_duplicate_of_hips(repaired)
+    if dropped_chest is not None:
+        changes.append(
+            f"chest: removed duplicate of hips ({dropped_chest!r})"
+        )
     if (
         repaired.get("spine")
         and repaired.get("hips")

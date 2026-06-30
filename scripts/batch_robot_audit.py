@@ -113,7 +113,7 @@ def discover_urdf_candidates(
     return sorted(out, key=lambda item: item[0])
 
 
-def _import_robot(name: str, urdf: Path, *, link_meshes: bool = True) -> Path:
+def _import_robot(name: str, urdf: Path, *, link_meshes: bool = False) -> Path:
     import shutil
 
     from hhtools.robot.scaffold import scaffold_yaml_file
@@ -124,7 +124,6 @@ def _import_robot(name: str, urdf: Path, *, link_meshes: bool = True) -> Path:
     target_urdf = dest / urdf.name
     if not target_urdf.exists():
         shutil.copy2(urdf, target_urdf)
-    ensure_urdf_meshes_resolvable(target_urdf)
 
     src_root = urdf.parent
     mesh_candidates = [
@@ -133,22 +132,29 @@ def _import_robot(name: str, urdf: Path, *, link_meshes: bool = True) -> Path:
         urdf.parent / "meshes",
         urdf.parent.parent / "meshes",
     ]
+    dest_mesh = dest / "meshes"
     for mesh_dir in mesh_candidates:
         if not mesh_dir.is_dir():
             continue
-        dest_mesh = dest / "meshes"
-        dest_mesh.mkdir(exist_ok=True)
-        for f in mesh_dir.iterdir():
-            if not f.is_file():
-                continue
-            out = dest_mesh / f.name
-            if out.exists():
-                continue
+        if not dest_mesh.exists():
             if link_meshes:
-                out.symlink_to(f.resolve())
+                dest_mesh.symlink_to(mesh_dir.resolve(), target_is_directory=True)
             else:
-                shutil.copy2(f, out)
+                shutil.copytree(mesh_dir, dest_mesh)
+        elif not link_meshes:
+            for f in mesh_dir.iterdir():
+                if not f.is_file():
+                    continue
+                out = dest_mesh / f.name
+                if not out.exists():
+                    shutil.copy2(f, out)
         break
+
+    ensure_urdf_meshes_resolvable(
+        target_urdf,
+        search_dirs=[dest_mesh, dest, urdf.parent, urdf.parent / "meshes"],
+        output_path=target_urdf,
+    )
 
     yaml_path = dest / "robot.yaml"
     if not yaml_path.exists():
