@@ -90,20 +90,21 @@ class InteractionMeshPipelineConfig:
     # (rp1, 80 frames each) at ``laplacian_weight=0`` and
     # ``position_weight=400``:
     #   ``sw=8``  → holosoma 0.87 ° hinge_mean / jerk 11.1
-    #   ``sw=24`` → holosoma 0.42 ° / jerk 3.10
-    #   ``sw=48`` → holosoma 0.31 ° / jerk 2.06   ← chosen
+    #   ``sw=24`` → holosoma 0.42 ° / jerk 3.10   ← default base
+    #   ``sw=48`` → holosoma 0.31 ° / jerk 2.06
     #   ``sw=96`` → holosoma 0.27 ° / jerk 1.65 (lags rapid motion)
-    # alignment penalty at sw=48 is < 1 cm vs sw=24 on holosoma
-    # (max residual 7.6 cm vs 7.5 cm); on parc_ms BOXES_12 (rapid
-    # boxing) sw=48 keeps the same 0.044 m / 0.161 m alignment as
-    # sw=24 since the smoothness term primarily damps tiny per-frame
-    # foot-plant pops, not the legitimate fast arm movements that
-    # dominate the boxing clip's frame-to-frame change.  Past ~96
-    # the trajectory starts visibly lagging behind the source on
-    # rapid actions (boxing punches, parkour leaps).
-    smooth_weight: float = 2.0
+    #
+    # ``sw`` was briefly dropped to 2 with a large ``leg_smooth_weight``
+    # so legs stayed quiet while arms chased source wrist noise — that
+    # shows up as end-of-clip left/right arm tremble once the floating
+    # base orientation is locked and can no longer absorb the residual.
+    # Base ``sw=24`` restores the sweep's "no visible tremble" regime
+    # for arms/waist; legs get an extra multiplier below.
+    smooth_weight: float = 24.0
     # Extra temporal smooth multiplier on leg actuated DOFs (hip/knee/ankle).
-    leg_smooth_weight: float = 4.0
+    # Effective leg weight ≈ ``smooth_weight * leg_smooth_weight`` (= 48
+    # at the defaults — matches the original global ``sw=48`` sweet spot).
+    leg_smooth_weight: float = 2.0
     # Per-iteration trust-region scale on leg hinges (< 1 → smaller |Δq| per SQP step).
     leg_sqp_step_scale: float = 0.75
     object_surface_samples: int = 32
@@ -231,11 +232,72 @@ class InteractionMeshPipelineConfig:
     # the MPC window — only the committed frame needs terrain constraints.
     mpc_collision_commit_only: bool = True
 
-    # One-pole low-pass on leg actuated qpos after MPC (causal, no phase lag on
-    # arms).  ``beta=0.2`` blends 20 % of the previous frame into each leg joint;
+    # One-pole low-pass on leg actuated qpos after MPC (causal).
+    # ``beta=0.2`` blends 20 % of the previous frame into each leg joint;
     # increase toward 0.35 if slight tremble remains, decrease if legs feel mushy.
     post_smooth_leg_joints: bool = True
     post_smooth_leg_beta: float = 0.2
+    # Same causal low-pass on arm / shoulder / elbow / wrist hinges.
+    # Legs already get ``leg_smooth_weight`` inside the QP; arms only had
+    # the base ``smooth_weight``, so clip-end standstill wrist noise was
+    # still visible as arm tremble.  Milder beta than legs to avoid lag.
+    post_smooth_arm_joints: bool = True
+    post_smooth_arm_beta: float = 0.15
+
+    # Post-MPC hip abduction spread when solved foot meshes interpenetrate or
+    # ankles cross (same mesh-gated clamp as NewtonBasic).  Position-only
+    # MPC has a near-zero gradient on ``hip_yaw`` / laterality when left and
+    # right ankle targets nearly coincide, so the QP can settle into an
+    # X-legged basin; this clamp abducts hips until the foot meshes clear.
+    # Set ``≤ 0`` to disable.
+    min_foot_clearance_m: float = 0.03
+    # Per-leg abduction budget for the post-MPC clamp.  Ground-roll recoveries
+    # can leave a deep X-leg that needs more than the Newton default (~0.2 rad).
+    foot_lateral_max_abduction_rad: float = 0.55
+    foot_lateral_max_iterations: int = 28
+    # Pre-MPC: minimum left−right ankle/foot separation along the hip lateral
+    # axis in scaled target space.  Stops roll mid-frames with coincident
+    # ankles from teaching the QP an X-leg basin.  ``≤ 0`` disables.
+    # Only applied on upright frames (see ``laterality_upright_min_m``) so an
+    # inverted roll does not flip the hip lateral axis and yank waist yaw.
+    min_target_foot_separation_m: float = 0.08
+    # Hip−foot height (m, scaled) required before laterality / foot-clamp
+    # corrections run.  Below this the body is treated as rolling / inverted.
+    laterality_upright_min_m: float = 0.35
+
+    # Lock FREE-joint orientation to each frame's continuous source
+    # pelvis quaternion inside the SQP (δq on quat DOFs frozen to 0).
+    # This is the fundamental fix for roll→stand root/leg teleports:
+    # position-only MPC otherwise leaves orientation in a near-nullspace.
+    lock_root_orientation_to_source: bool = True
+
+    # Post-MPC: kill single-frame root / joint teleports after rolls.
+    # Off by default — with ``lock_root_orientation_to_source`` the
+    # solver already tracks source orientation; rate-limiting here only
+    # papers over remaining basin hops.  Re-enable for emergency clips.
+    stabilize_joints_after_mpc: bool = False
+    # Floor angular speed (rad/s) for the floating-base quaternion; the
+    # effective cap is ``max(floor, source_root_speed * multiplier)`` so
+    # genuine flips in the mocap are preserved.
+    max_root_angular_velocity: float = 2.5
+    root_angular_velocity_source_multiplier: float = 1.5
+    # Cap for actuated hinges whose name contains ``yaw`` / ``waist``
+    # (rad/s).  Ground-roll recoveries otherwise dump a π jump into
+    # ``waist_yaw`` while the feet stay planted.
+    max_yaw_joint_velocity: float = 3.5
+    # Cap for hip / knee / ankle hinges (rad/s).  Stand-up after a roll
+    # otherwise teleports leg DOFs by tens of degrees in a single frame;
+    # jumps larger than ``leg_joint_teleport_deg`` are held (not crawled).
+    max_leg_joint_velocity: float = 6.0
+    leg_joint_teleport_deg: float = 40.0
+    # Per-frame abduction step when applying the foot-lateral clamp
+    # (rad/s).  Prevents the upright-gate from dumping the full
+    # ``foot_lateral_max_abduction_rad`` budget in one frame.
+    foot_lateral_max_step_rad_s: float = 2.5
+    # Extra causal low-pass on packed leg DOFs after clamp + rate-limit.
+    # Off by default once root orientation is locked in the solver.
+    post_smooth_leg_joints_after_stabilize: bool = False
+    post_smooth_leg_beta_after: float = 0.35
 
 
 __all__ = ["InteractionMeshPipelineConfig"]

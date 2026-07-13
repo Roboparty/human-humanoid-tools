@@ -239,6 +239,59 @@ class TerrainHeightfield:
             dx=self.dx,
         )
 
+    def expanded_to_xy(
+        self,
+        xy_min: NDArray[np.floating],
+        xy_max: NDArray[np.floating],
+        *,
+        padding: float = 0.0,
+        fill_value: float | None = None,
+    ) -> "TerrainHeightfield":
+        """Pad the grid so it covers ``[xy_min - pad, xy_max + pad]``.
+
+        New cells are filled with ``fill_value`` (default: current ``min(hf)``)
+        so the actor never walks off the triangulated mesh on long parkour runs.
+        """
+        pad = float(padding)
+        want_min = np.asarray(xy_min, dtype=np.float64).reshape(2) - pad
+        want_max = np.asarray(xy_max, dtype=np.float64).reshape(2) + pad
+        dx = float(self.dx)
+        cur_min = self.min_point.astype(np.float64)
+        cur_max = np.array([self.x_max, self.y_max], dtype=np.float64)
+        new_min = np.minimum(cur_min, want_min)
+        new_max = np.maximum(cur_max, want_max)
+        if np.allclose(new_min, cur_min) and np.allclose(new_max, cur_max):
+            return self
+
+        nx = max(int(np.ceil((new_max[0] - new_min[0]) / dx)) + 1, 2)
+        ny = max(int(np.ceil((new_max[1] - new_min[1]) / dx)) + 1, 2)
+        nx = min(nx, 4096)
+        ny = min(ny, 4096)
+        fill = float(np.min(self.hf) if fill_value is None else fill_value)
+        hf = np.full((nx, ny), fill, dtype=np.float32)
+        # Paste original grid at its world-aligned offset.
+        ox = int(round((cur_min[0] - new_min[0]) / dx))
+        oy = int(round((cur_min[1] - new_min[1]) / dx))
+        x1 = min(ox + self.nx, nx)
+        y1 = min(oy + self.ny, ny)
+        sx0 = max(0, -ox)
+        sy0 = max(0, -oy)
+        ox = max(0, ox)
+        oy = max(0, oy)
+        hf[ox:x1, oy:y1] = self.hf[sx0 : sx0 + (x1 - ox), sy0 : sy0 + (y1 - oy)]
+
+        zmax = float(np.max(self.hf_maxmin[..., 0]))
+        zmin = float(np.min(self.hf_maxmin[..., 1]))
+        hf_mm = np.zeros((nx, ny, 2), dtype=np.float32)
+        hf_mm[..., 0] = zmax
+        hf_mm[..., 1] = zmin
+        return TerrainHeightfield(
+            hf=hf,
+            hf_maxmin=hf_mm,
+            min_point=new_min.astype(np.float32),
+            dx=dx,
+        )
+
     # ----------------------------------------------------------------- queries
 
     def height_at(self, x: float, y: float) -> float:

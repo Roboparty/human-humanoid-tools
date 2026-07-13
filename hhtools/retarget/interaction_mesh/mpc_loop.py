@@ -81,11 +81,12 @@ class FrameLaplacianTarget:
     n_human_vertices: int
     # Source pelvis quaternion for this frame, stored as (qx, qy, qz, qw)
     # to match the rest of the codebase's xyzw convention.  Optional —
-    # only populated when the precompute pipeline has access to the
-    # source quaternions (the SMPL/SMPL-X path always does).  Read by
-    # the SQP frame-0 base-orientation warm-start; leaving it ``None``
-    # falls back to keeping whatever quaternion is in the freejoint at
-    # solver entry.
+    # populated for **every** frame when the pipeline has source
+    # quaternions.  When ``lock_root_orientation_to_source`` is on, the
+    # SQP freezes the FREE-joint quat to this value each iteration so
+    # the floating base cannot flip into another orientation basin
+    # during rolls.  ``None`` keeps whatever quaternion is already in
+    # the freejoint (legacy frame-0-only warm-start behaviour).
     source_root_quat_xyzw: tuple[float, float, float, float] | None = None
 
 
@@ -569,6 +570,39 @@ def _leg_actuated_qpos_indices(model) -> NDArray[np.int64]:
     return np.asarray(idx, dtype=np.int64)
 
 
+def _arm_actuated_qpos_indices(model) -> NDArray[np.int64]:
+    """qpos rows for arm hinges (shoulder / elbow / wrist and common aliases)."""
+    import mujoco
+
+    keys = (
+        "shoulder",
+        "elbow",
+        "wrist",
+        "arm",
+        "forearm",
+        "hand",
+        "sleeve",
+    )
+    # Avoid matching ``waist`` / ``warms``-style false positives; require
+    # an arm-ish token that is not purely a leg token.
+    leg_keys = ("hip", "knee", "ankle", "thigh", "calf", "shank")
+    idx: list[int] = []
+    for j in range(model.njnt):
+        jt = int(model.jnt_type[j])
+        if jt not in (
+            int(mujoco.mjtJoint.mjJNT_HINGE),
+            int(mujoco.mjtJoint.mjJNT_SLIDE),
+        ):
+            continue
+        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, j) or ""
+        nl = name.lower()
+        if any(k in nl for k in leg_keys):
+            continue
+        if any(k in nl for k in keys):
+            idx.append(int(model.jnt_qposadr[j]))
+    return np.asarray(idx, dtype=np.int64)
+
+
 def causal_smooth_actuated_qpos(
     traj: NDArray[np.float64],
     actuated_idx: NDArray[np.int64],
@@ -658,6 +692,53 @@ def _build_foot_sticking_rows(
     return j_rows, lbs, ubs
 
 
+def _xyzw_to_mujoco_wxyz(q_xyzw: NDArray[np.floating]) -> NDArray[np.float64]:
+    """Convert codebase xyzw unit quaternion to MuJoCo freejoint ``(w,x,y,z)``."""
+    q = np.asarray(q_xyzw, dtype=np.float64).reshape(4)
+    n = float(np.linalg.norm(q))
+    if n < 1e-12:
+        return np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
+    q = q / n
+    return np.array([q[3], q[0], q[1], q[2]], dtype=np.float64)
+
+
+def _align_quat_hemisphere(
+    q: NDArray[np.floating],
+    ref: NDArray[np.floating],
+) -> NDArray[np.float64]:
+    """Return ``±q`` so ``dot(q, ref) ≥ 0`` (quaternion double-cover)."""
+    q = np.asarray(q, dtype=np.float64).reshape(4)
+    ref = np.asarray(ref, dtype=np.float64).reshape(4)
+    return q if float(np.dot(q, ref)) >= 0.0 else -q
+
+
+def _set_freejoint_quat_from_source(
+    qpos: NDArray[np.float64],
+    model,
+    source_root_quat_xyzw: tuple[float, float, float, float] | NDArray[np.floating] | None,
+    *,
+    hemisphere_ref: NDArray[np.floating] | None = None,
+) -> NDArray[np.float64]:
+    """Write source pelvis orientation into the FREE joint (MuJoCo wxyz)."""
+    import mujoco
+
+    if source_root_quat_xyzw is None:
+        return qpos
+    if int(model.jnt_type[0]) != int(mujoco.mjtJoint.mjJNT_FREE):
+        return qpos
+    qadr = int(model.jnt_qposadr[0])
+    wxyz = _xyzw_to_mujoco_wxyz(source_root_quat_xyzw)
+    ref = (
+        np.asarray(hemisphere_ref, dtype=np.float64).reshape(4)
+        if hemisphere_ref is not None
+        else qpos[qadr + 3 : qadr + 7]
+    )
+    wxyz = _align_quat_hemisphere(wxyz, ref)
+    out = np.asarray(qpos, dtype=np.float64).copy()
+    out[qadr + 3 : qadr + 7] = wxyz
+    return out
+
+
 def sqp_step_laplacian(
     model,
     data,
@@ -698,6 +779,8 @@ def sqp_step_laplacian(
     leg_sqp_step_scale: float = 1.0,
     # --- trust region ---
     base_step_size: float | None = None,
+    # --- lock FREE-joint orientation to source pelvis ---
+    lock_root_orientation_to_source: bool = True,
 ) -> NDArray[np.float64]:
     """One SQP frame solve with Laplacian + smoothness cost.
 
@@ -761,6 +844,31 @@ def sqp_step_laplacian(
     V = int(frame.source_vertices.shape[0])
     obj_pts = frame.source_vertices[nh:].astype(np.float64, copy=False)
     q_work = np.asarray(qpos, dtype=np.float64).copy()
+
+    # Lock FREE-joint orientation to the source pelvis.  Position-only MPC
+    # leaves the floating-base quaternion in a near-nullspace; during ground
+    # rolls it can flip into the opposite hemisphere and force the leg hinges
+    # to teleport into a different IK basin on stand-up.  Freezing quat to the
+    # (continuous) source orientation removes that basin hop at the source.
+    src_quat = getattr(frame, "source_root_quat_xyzw", None)
+    lock_ori = (
+        bool(lock_root_orientation_to_source)
+        and src_quat is not None
+        and int(model.jnt_type[0]) == int(mujoco.mjtJoint.mjJNT_FREE)
+    )
+    free_qadr: int | None = int(model.jnt_qposadr[0]) if lock_ori else None
+    if lock_ori and free_qadr is not None:
+        ref = (
+            np.asarray(q_prev[free_qadr + 3 : free_qadr + 7], dtype=np.float64)
+            if q_prev is not None
+            else q_work[free_qadr + 3 : free_qadr + 7]
+        )
+        q_work = _set_freejoint_quat_from_source(
+            q_work,
+            model,
+            src_quat,
+            hemisphere_ref=ref,
+        )
 
     has_hard_np = collision_model is not None and collision_data is not None
     left_foot_vi = _mpc_point_vertex_index(mpc_points, nh, left_foot_pt)
@@ -896,6 +1004,12 @@ def sqp_step_laplacian(
             for qi in leg_actuated_qpos_idx:
                 lb[int(qi)] = max(lb[int(qi)], -cap)
                 ub[int(qi)] = min(ub[int(qi)], cap)
+        # Freeze FREE-joint quaternion DOFs after all other box edits so
+        # joint-limit / trust-region widening cannot reopen them.
+        if lock_ori and free_qadr is not None:
+            for j in range(free_qadr + 3, free_qadr + 7):
+                lb[j] = 0.0
+                ub[j] = 0.0
 
         # --- Solve QP -----------------------------------------------------
         foot_j: list[NDArray[np.float64]] = []
@@ -958,7 +1072,17 @@ def sqp_step_laplacian(
             dq = solve_qp_box_lbfgsb(qp, lb, ub).astype(np.float64, copy=False)
 
         q_work = q_work + dq.reshape(-1)
-        _normalize_free_joint_quat(model, q_work)
+        if lock_ori and free_qadr is not None:
+            # Re-pin after the step so numerical drift / normalize cannot
+            # reopen an orientation basin hop.
+            q_work = _set_freejoint_quat_from_source(
+                q_work,
+                model,
+                src_quat,
+                hemisphere_ref=q_work[free_qadr + 3 : free_qadr + 7],
+            )
+        else:
+            _normalize_free_joint_quat(model, q_work)
     return q_work
 
 
@@ -1108,6 +1232,8 @@ def iterate_mpc_rti(
     collision_max_pairs_per_body: int = 4,
     # --- trust region ---
     base_step_size: float | None = None,
+    # Freeze FREE-joint orientation to each frame's source pelvis quat.
+    lock_root_orientation_to_source: bool = True,
     progress_callback: Callable[[int, int], None] | None = None,
 ) -> NDArray[np.float64]:
     """Sliding-window MPC with per-frame SQP (holosoma ``iterate_mpc`` pattern).
@@ -1120,6 +1246,12 @@ def iterate_mpc_rti(
 
     Foot sticking hard inequalities apply on window index ``k == 0`` only,
     referencing the previous committed ``qpos``.
+
+    When ``lock_root_orientation_to_source`` is True (default) and each
+    ``FrameLaplacianTarget.source_root_quat_xyzw`` is populated, the FREE
+    joint quaternion is pinned to the source pelvis every SQP step.  This
+    is the fundamental fix for roll→stand basin hops; position-only costs
+    otherwise leave root orientation in a near-nullspace.
     """
     import mujoco
 
@@ -1168,18 +1300,26 @@ def iterate_mpc_rti(
     if Ftot > 0 and int(model.jnt_type[0]) == mujoco.mjtJoint.mjJNT_FREE:
         qadr = int(model.jnt_qposadr[0])
         sv = np.asarray(targets[0].source_vertices, dtype=np.float64)
-        if sv.shape[0] > 0:
-            q_committed[qadr : qadr + 3] = sv[0, :3]
-        sq = getattr(targets[0], "source_root_quat_xyzw", None)
-        if sq is not None:
-            sq = np.asarray(sq, dtype=np.float64).reshape(4)
-            n = float(np.linalg.norm(sq))
-            if n > 1e-9:
-                sq = sq / n
-                q_committed[qadr + 3] = sq[3]
-                q_committed[qadr + 4] = sq[0]
-                q_committed[qadr + 5] = sq[1]
-                q_committed[qadr + 6] = sq[2]
+        # Seed FREE-joint XYZ from the pelvis (or first human vertex), not an
+        # arbitrary contact tip — otherwise frame 0 stays near the MuJoCo
+        # keyframe origin and the trust region crawls into the trajectory.
+        seed_xyz = None
+        if robot_points is not None and sv.shape[0] > 0:
+            for i, pt in enumerate(robot_points[:nh]):
+                sem = str(getattr(pt, "semantic", "")).lower()
+                if "pelvis" in sem or sem in ("hips", "root", "torso"):
+                    if i < sv.shape[0]:
+                        seed_xyz = sv[i, :3]
+                        break
+        if seed_xyz is None and sv.shape[0] > 0:
+            seed_xyz = sv[0, :3]
+        if seed_xyz is not None:
+            q_committed[qadr : qadr + 3] = seed_xyz
+        q_committed = _set_freejoint_quat_from_source(
+            q_committed,
+            model,
+            getattr(targets[0], "source_root_quat_xyzw", None),
+        )
 
     q_t_last: NDArray[np.float64] | None = None
     notify_stride = max(1, Ftot // 40)
@@ -1211,6 +1351,7 @@ def iterate_mpc_rti(
             leg_actuated_qpos_idx=leg_actuated_qpos_idx,
             leg_smooth_weight=leg_smooth_weight,
             leg_sqp_step_scale=leg_sqp_step_scale,
+            lock_root_orientation_to_source=lock_root_orientation_to_source,
         )
 
     # --- Fast path: H=1 (holosoma default) — one SQP per frame, no window loop ---

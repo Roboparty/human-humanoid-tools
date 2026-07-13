@@ -204,6 +204,117 @@ def obj_to_heightfield(
     )
 
 
+def posed_meshes_to_heightfield(
+    meshes: list[
+        tuple[
+            str | Path,
+            NDArray[np.floating] | None,
+            NDArray[np.floating] | None,
+            float,
+        ]
+    ],
+    *,
+    dx: float = 0.05,
+    padding: float = 0.5,
+    z_buffer: float = 3.0,
+    fill_value: float | None = None,
+) -> TerrainHeightfield:
+    """Rasterise one or more posed OBJs onto a single max-z heightfield.
+
+    Each entry is ``(obj_path, object_position, object_quat_xyzw, mesh_scale)``.
+    Transforms match :func:`obj_to_heightfield` so multi-obstacle parkour clips
+    land in the same world frame as a single-mesh bake.
+    """
+    import trimesh
+    from scipy.spatial.transform import Rotation
+
+    if not meshes:
+        raise ValueError("posed_meshes_to_heightfield requires at least one mesh")
+
+    all_verts: list[NDArray[np.floating]] = []
+    all_faces: list[NDArray[np.integer]] = []
+    vert_offset = 0
+    for obj_path, object_position, object_quat_xyzw, mesh_scale in meshes:
+        src = Path(obj_path)
+        if not src.is_file():
+            raise FileNotFoundError(f"terrain OBJ not found: {src}")
+        mesh = trimesh.load(str(src), force="mesh", process=False)
+        if mesh is None or len(mesh.vertices) == 0:
+            raise ValueError(f"empty terrain mesh: {src}")
+        verts = np.asarray(mesh.vertices, dtype=np.float64) * float(mesh_scale)
+        if object_quat_xyzw is not None:
+            q_obj = np.asarray(object_quat_xyzw, dtype=np.float64)
+            if not np.allclose(q_obj, [0, 0, 0, 1], atol=1e-7):
+                verts = Rotation.from_quat(q_obj).apply(verts)
+        if object_position is not None:
+            verts = verts + np.asarray(object_position, dtype=np.float64).reshape(1, 3)
+        faces = np.asarray(mesh.faces, dtype=np.intp) + vert_offset
+        all_verts.append(verts)
+        all_faces.append(faces)
+        vert_offset += int(verts.shape[0])
+
+    verts_cat = np.concatenate(all_verts, axis=0)
+    faces_cat = np.concatenate(all_faces, axis=0)
+
+    xmin = float(verts_cat[:, 0].min()) - float(padding)
+    ymin = float(verts_cat[:, 1].min()) - float(padding)
+    xmax = float(verts_cat[:, 0].max()) + float(padding)
+    ymax = float(verts_cat[:, 1].max()) + float(padding)
+    z_min_g = float(verts_cat[:, 2].min())
+    z_max_g = float(verts_cat[:, 2].max())
+
+    nx = max(int(np.ceil((xmax - xmin) / dx)) + 1, 2)
+    ny = max(int(np.ceil((ymax - ymin) / dx)) + 1, 2)
+    nx = min(nx, 4096)
+    ny = min(ny, 4096)
+
+    fill = float(z_min_g) if fill_value is None else float(fill_value)
+    hf = _rasterise_triangles_to_grid(
+        verts_cat,
+        faces_cat,
+        xmin=xmin,
+        ymin=ymin,
+        nx=nx,
+        ny=ny,
+        dx=float(dx),
+        fill_value=fill,
+    )
+
+    # Thin planks (balance beams ~15 cm) often underfill the XY AABB because
+    # slanted / sparse triangles miss neighbouring cells.  A 1-cell max
+    # dilate restores roughly the convex footprint without changing tall
+    # obstacle heights (max of existing values).
+    if dx > 0.0:
+        from scipy.ndimage import maximum_filter
+
+        hf = maximum_filter(hf, size=3)
+
+    hf_maxmin = np.zeros((nx, ny, 2), dtype=np.float32)
+    hf_maxmin[..., 0] = z_max_g + float(z_buffer)
+    hf_maxmin[..., 1] = z_min_g - float(z_buffer)
+
+    _log.info(
+        "posed meshes → heightfield (%d mesh(es)): %dx%d grid, dx=%.3fm, "
+        "z-range [%.3f, %.3f], min_point=(%.3f, %.3f)",
+        len(meshes),
+        nx,
+        ny,
+        float(dx),
+        float(hf.min()),
+        float(hf.max()),
+        xmin,
+        ymin,
+    )
+
+    return TerrainHeightfield(
+        hf=hf,
+        hf_maxmin=hf_maxmin,
+        min_point=np.array([xmin, ymin], dtype=np.float32),
+        dx=float(dx),
+    )
+
+
 __all__ = [
     "obj_to_heightfield",
+    "posed_meshes_to_heightfield",
 ]

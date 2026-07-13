@@ -559,13 +559,29 @@ function animate() {
   const dt = clock.getDelta();
   player.update(dt);
   // Follow the retargeted robot in world space; pause while the user orbits.
+  // On loop wrap the robot teleports (start ≠ end).  Always hard-snap the
+  // camera with that wrap — even during the post-orbit "manual" grace period —
+  // otherwise the robot flies across the viewport while the camera stays put.
+  const loopSnap = player._justLooped;
+  player._justLooped = false;
   if (
     !state.calibrationMode &&
     robot.group.visible && robot.trajectory &&
-    performance.now() > _orbitManualUntil
+    (loopSnap || performance.now() > _orbitManualUntil)
   ) {
     robot.group.getWorldPosition(_camFocus);
-    orbit.target.lerp(_camFocus, Math.min(1, dt * 3));
+    const jumpSq = orbit.target.distanceToSquared(_camFocus);
+    if (loopSnap || jumpSq > 0.25) {
+      const dx = _camFocus.x - orbit.target.x;
+      const dy = _camFocus.y - orbit.target.y;
+      const dz = _camFocus.z - orbit.target.z;
+      orbit.target.copy(_camFocus);
+      camera.position.x += dx;
+      camera.position.y += dy;
+      camera.position.z += dz;
+    } else {
+      orbit.target.lerp(_camFocus, Math.min(1, dt * 3));
+    }
   }
   if ((state.calibrationMode || r2r.calibrating) && calibManip.active && !calibManip._hudCardDrag) {
     calibManip._positionTags();
@@ -1569,16 +1585,19 @@ const player = {
   duration: 0,
   active: false,
   speed: 1, // playback rate multiplier (0.1×–4×), independent of the timeline
+  // Set by update() on a loop wrap; consumed by animate() to hard-snap the camera.
+  _justLooped: false,
   ready(duration) {
     this.duration = Math.max(0.1, duration || 1);
     this.t = 0;
     this.active = true;
+    this._justLooped = false;
     revealStage();
   },
   _heavyTick: 0,
-  _applyFrac(frac) {
+  _applyFrac(frac, { force = false } = {}) {
     if (r2r.calibrating || (state.calibrationMode && !r2r.active)) return;
-    this._heavyTick = (this._heavyTick + 1) % 2;
+    if (!force) this._heavyTick = (this._heavyTick + 1) % 2;
     const robotReady = Boolean(robot.trajectory && robot.trajectory.frames?.length);
     for (const v of ALL_VIEWS) {
       if (v.numFrames <= 0) continue;
@@ -1588,7 +1607,11 @@ const player = {
       // env views animate even when "invisible" to the HUD — except scaledEnv
       // which follows its toggle.
       if (!v.group.visible) continue;
-      if (this.playing && v.heavy && this._heavyTick === 1) continue;
+      // Heavy views (robot mesh / baked body) update every other frame while
+      // playing — but NEVER skip on a forced seek / loop wrap, or the robot
+      // stays at the last frame for one tick while the timeline is already
+      // back at the start (looks like a global teleport).
+      if (!force && this.playing && v.heavy && this._heavyTick === 1) continue;
       const fi = frac * (v.numFrames - 1);
       if (v.setFrameFrac) v.setFrameFrac(fi);
       else v.setFrame(Math.min(v.numFrames - 1, Math.floor(fi)));
@@ -1596,13 +1619,27 @@ const player = {
   },
   update(dt) {
     if (!this.playing || !this.active) return;
-    this.t += dt * this.speed;
+    // Cap dt so a backgrounded tab cannot leap many seconds and land mid-clip
+    // after a modulo wrap (reads as a random global jump on the 2nd play).
+    const step = Math.min(Math.max(0, dt), 0.1) * this.speed;
+    this.t += step;
+    let looped = false;
     if (this.t >= this.duration) {
-      if (this.loop) this.t = this.t % this.duration;
-      else { this.t = this.duration; this.setPlaying(false); }
+      if (this.loop) {
+        // Exact restart at t=0 — do NOT use ``t % duration``.  Overshoot
+        // remainder lands mid-first-frame (or much later after a large dt),
+        // which looks like the robot teleporting to a wrong global pose
+        // when the clip wraps for the second playthrough.
+        this.t = 0;
+        looped = true;
+        this._justLooped = true;
+      } else {
+        this.t = this.duration;
+        this.setPlaying(false);
+      }
     }
-    const frac = this.t / this.duration;
-    this._applyFrac(frac);
+    const frac = this.duration > 0 ? this.t / this.duration : 0;
+    this._applyFrac(frac, { force: looped });
     this._syncScrub(frac);
   },
   setPlaying(p) {
@@ -1611,9 +1648,11 @@ const player = {
   },
   seek(frac) {
     if (!this.active) return;
-    this.t = frac * this.duration;
-    this._applyFrac(frac);
-    this._syncScrub(frac);
+    const f = Math.min(1, Math.max(0, Number(frac) || 0));
+    this.t = f * this.duration;
+    this._justLooped = false;
+    this._applyFrac(f, { force: true });
+    this._syncScrub(f);
   },
   setSpeed(mult) {
     const m = Math.min(4, Math.max(0.1, Number(mult) || 1));
@@ -1625,7 +1664,7 @@ const player = {
   },
   // Re-pose whatever is currently visible at the current cursor (after a toggle).
   refreshFrame() {
-    if (this.active) this._applyFrac(this.t / this.duration);
+    if (this.active) this._applyFrac(this.t / this.duration, { force: true });
   },
   _syncScrub(frac) {
     document.getElementById("scrubber").value = frac * 100;
@@ -3864,7 +3903,11 @@ document.getElementById("retarget-btn").onclick = async () => {
       (srcFps && Math.abs(srcFps - rtFps) > 0.5 ? `（动作原始 ${srcFps.toFixed(1)} fps）` : "");
     state.robotTrajectory = j.result.trajectory;
     robot.setTrajectory(j.result.trajectory);
-    player.duration = robot.clipDuration;
+    // Always restart the shared timeline at t=0.  Previously we only called
+    // ``ready`` when inactive, so an in-progress source scrub kept ``t`` near
+    // the end — the first "play" of the retarget was already finishing, and
+    // the first loop wrap looked like a mysterious global jump.
+    player.ready(robot.clipDuration);
     player.refreshFrame();
     document.getElementById("tg-robot").disabled = false;
     if (j.result.scaled_preview) {
@@ -3882,7 +3925,6 @@ document.getElementById("retarget-btn").onclick = async () => {
     setBodyVisible(true);
     setViewVisible(scaledSkel, "tg-scaled", true);
     setViewVisible(robot, "tg-robot", true);
-    if (!player.active) player.ready(robot.clipDuration);
     player.setPlaying(true);
     robot.group.getWorldPosition(_camFocus);
     orbit.target.copy(_camFocus);

@@ -68,8 +68,8 @@ _DIR_TO_ADAPTER: dict[str, str] = {
     "parcms": "parc_ms",
     "unified_npz": "unified_npz",
     "unifiednpz": "unified_npz",
-    # meshmimic/20260429_mocap — same layout as parc_ms (<clip>/<clip>.npz + terrain)
-    "20260429mocap": "unified_npz",
+    # meshmimic/20260429_mocap — lean parc_ms layout (<clip>/<clip>.pkl + _terrain.obj)
+    "20260429mocap": "parc_ms",
 }
 
 # File extensions the library will try to enumerate from each dataset directory. The

@@ -457,14 +457,10 @@ def clamp_joint_q_foot_lateral_clearance(
 ) -> np.ndarray:
     """Spread hip abduction until foot meshes have ``min_clearance_m`` inner gap.
 
-    Triggered purely by actual foot-*mesh* interpenetration (``gap <
-    min_clearance_m``): poses where the feet already clear — including
-    wide-stance dance frames — are left untouched, so normal gait is
-    unaffected.  Unlike earlier revisions this also corrects *crossed-ankle*
-    frames (e.g. a narrow-hip robot whose scaled ankle targets cross during a
-    leg-crossing dance move), iteratively abducting both hips a little at a
-    time, respecting joint limits and a ``max_abduction_rad`` cap per leg so
-    the correction stays local and does not snap into an unnatural splay.
+    Triggered by foot-*mesh* interpenetration **or** anatomically crossed
+    ankles (left ankle on the right side of the right ankle along the root
+    lateral axis — typical after a ground-roll recovery).  Poses where the
+    feet already clear with correct laterality are left untouched.
     """
     if min_clearance_m <= 0.0:
         return np.asarray(joint_q_row, dtype=np.float32, copy=True)
@@ -477,19 +473,34 @@ def clamp_joint_q_foot_lateral_clearance(
     out = np.asarray(joint_q_row, dtype=np.float32, copy=True)
     cfg, root = _joint_q_row_to_cfg(out, dof_names, root_coord_count=root_coord_count)
 
+    lat_i = _lateral_axis_idx(model.preset)
+    ankle_sep = _ankle_lateral_separation(model, cfg, root, lat_i)
+
     if ankle_prefilter_m is not None and ankle_prefilter_m > 0.0:
-        lat_i = _lateral_axis_idx(model.preset)
-        ankle_gap = _ankle_lateral_separation(model, cfg, root, lat_i)
-        if ankle_gap is not None and float(ankle_gap) >= float(ankle_prefilter_m):
-            return out
+        # Skip only when ankles are clearly separated *and* on the correct side.
+        if (
+            ankle_sep is not None
+            and float(ankle_sep) >= float(ankle_prefilter_m)
+        ):
+            gap_quick = foot_mesh_lateral_inner_gap(model, cfg, root)
+            if gap_quick is not None and gap_quick >= min_clearance_m:
+                return out
 
     gap = foot_mesh_lateral_inner_gap(model, cfg, root)
-    if gap is None or gap >= min_clearance_m:
+    # Score: mesh clearance, and signed ankle laterality (left − right).
+    # Crossed ankles make ankle_sep negative even when meshes no longer overlap.
+    def _score(mesh_gap: float | None, sep: float | None) -> float:
+        parts = []
+        if mesh_gap is not None:
+            parts.append(float(mesh_gap))
+        if sep is not None:
+            parts.append(float(sep))
+        return min(parts) if parts else 0.0
+
+    score0 = _score(gap, ankle_sep)
+    if score0 >= min_clearance_m:
         return out
 
-    # Determine which abduction sign spreads the feet apart for each leg by
-    # probing both directions once; then iterate in that direction.  This
-    # handles either left/right joint-axis convention.
     limits = _abduction_joint_limits(model, left_joint, right_joint)
     l_lo, l_hi = limits[0] if limits else (-1e9, 1e9)
     r_lo, r_hi = limits[1] if limits else (-1e9, 1e9)
@@ -501,25 +512,26 @@ def clamp_joint_q_foot_lateral_clearance(
     n_iter = max(1, int(max_iterations))
 
     best_cfg = cfg
-    best_gap = float(gap)
+    best_score = float(score0)
     for _ in range(n_iter):
         improved = False
         for l_delta, r_delta in ((step, -step), (-step, step)):
             l_new = best_cfg.get(left_joint, l0) + l_delta
             r_new = best_cfg.get(right_joint, r0) + r_delta
-            # respect URDF limits and the per-leg correction cap
             if not (l_lo <= l_new <= l_hi and r_lo <= r_new <= r_hi):
                 continue
             if abs(l_new - l0) > cap or abs(r_new - r0) > cap:
                 continue
             trial = _apply_abduction_delta(best_cfg, left_joint, right_joint, l_delta, r_delta)
             trial_gap = foot_mesh_lateral_inner_gap(model, trial, root)
-            if trial_gap is not None and trial_gap > best_gap + 1e-5:
-                best_gap = float(trial_gap)
+            trial_sep = _ankle_lateral_separation(model, trial, root, lat_i)
+            trial_score = _score(trial_gap, trial_sep)
+            if trial_score > best_score + 1e-5:
+                best_score = float(trial_score)
                 best_cfg = trial
                 improved = True
                 break
-        if not improved or best_gap >= min_clearance_m:
+        if not improved or best_score >= min_clearance_m:
             break
 
     if best_cfg is cfg:

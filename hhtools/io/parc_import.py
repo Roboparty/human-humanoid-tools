@@ -328,6 +328,21 @@ def motion_from_ms_pickle(
     root_pos = np.asarray(motion_ms["root_pos"], dtype=np.float32)
     root_rot = np.asarray(motion_ms["root_rot"], dtype=np.float32)
     joint_rot = np.asarray(motion_ms["joint_rot"], dtype=np.float32)
+    # Maya / MotionBuilder clips often park root XY at the origin on frame 0
+    # (bind pose) then teleport to the real start.  Drop that lead-in so
+    # retarget does not crawl from the origin under the SQP trust region.
+    _trim_eps = 1e-3
+    _t0 = 0
+    for _t in range(int(root_pos.shape[0])):
+        if float(np.linalg.norm(root_pos[_t, :2])) > _trim_eps:
+            _t0 = int(_t)
+            break
+    else:
+        _t0 = int(min(1, max(0, root_pos.shape[0] - 1)))
+    if _t0 > 0:
+        root_pos = root_pos[_t0:]
+        root_rot = root_rot[_t0:]
+        joint_rot = joint_rot[_t0:]
     positions, world_q = fk_parc_ms(
         root_pos,
         root_rot,
@@ -347,6 +362,17 @@ def motion_from_ms_pickle(
         "loop_mode": loop_mode,
         "misc_data_present": misc_ms is not None,
     }
+    if _t0 > 0:
+        meta["trimmed_leading_bind_frames"] = int(_t0)
+    if isinstance(misc_ms, dict):
+        for key in (
+            "library_folder_label",
+            "mocap_source_take_dir",
+            "source_skeleton_bvh",
+            "terrain_heightfield_frame",
+        ):
+            if key in misc_ms and misc_ms[key] is not None:
+                meta[key] = misc_ms[key]
 
     hierarchy = Hierarchy.from_parent_indices(bone_names, parent_indices)
 

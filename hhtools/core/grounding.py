@@ -144,6 +144,24 @@ def foot_floor_z_in_positions(
     return float(pos[:, :, 2].min())
 
 
+def _meta_path_mentions_folder(meta: dict, folder_label: str) -> bool:
+    """True when any known path-like meta value contains ``/<folder_label>/``."""
+    needle = f"/{folder_label}/"
+    for key in (
+        "mocap_source_take_dir",
+        "npz_path",
+        "source_npz_path",
+        "source_pkl",
+        "terrain_mesh",
+    ):
+        raw = meta.get(key)
+        if not isinstance(raw, str):
+            continue
+        if needle in raw.replace("\\", "/"):
+            return True
+    return False
+
+
 def use_split_terrain_grounding(motion: "Motion") -> bool:
     """Whether to use foot-floor + separate terrain ``z_offset``.
 
@@ -161,18 +179,35 @@ def use_split_terrain_grounding(motion: "Motion") -> bool:
         return True
     if meta.get("split_terrain_grounding") is True:
         return True
-    for key in ("mocap_source_take_dir", "npz_path", "source_npz_path", "source_pkl"):
-        raw = meta.get(key)
-        if not isinstance(raw, str):
-            continue
-        norm = raw.replace("\\", "/")
-        if f"meshmimic/{_SPLIT_GROUNDING_FOLDER_LABEL}/" in norm:
-            return True
-        if f"/{_SPLIT_GROUNDING_FOLDER_LABEL}/" in norm:
-            return True
-        if "meshmimic/parc_ms/" in norm:
-            return True
+    if _meta_path_mentions_folder(meta, _SPLIT_GROUNDING_FOLDER_LABEL):
+        return True
+    if _meta_path_mentions_folder(meta, "parc_ms") and "meshmimic/parc_ms/" in str(
+        meta.get("source_pkl") or meta.get("terrain_mesh") or ""
+    ).replace("\\", "/"):
+        return True
     return False
+
+
+def parc_ms_shares_human_terrain_z(motion: "Motion") -> bool:
+    """Whether ``parc_ms`` skeleton and heightfield share one Z reference.
+
+    Authored PARC / meshmimic ``parc_ms`` clips keep feet and terrain in one world
+    frame, so grounding must apply the same vertical shift to both.
+
+    ``20260429_mocap`` re-exports reuse the parc_ms pkl layout, but obstacle
+    bottoms sit on the Maya floor while foot markers float ~10 cm above it.
+    Those clips need an independent terrain floor (``min(hf)``) so the box
+    bottoms land on the viewer grid instead of sinking below it.
+    """
+
+    meta = getattr(motion, "meta", None)
+    if not isinstance(meta, dict) or meta.get("dataset") != "parc_ms":
+        return False
+    if meta.get("library_folder_label") == _SPLIT_GROUNDING_FOLDER_LABEL:
+        return False
+    if _meta_path_mentions_folder(meta, _SPLIT_GROUNDING_FOLDER_LABEL):
+        return False
+    return True
 
 
 def human_source_floor_z_world(motion: "Motion") -> float:
@@ -193,7 +228,8 @@ def terrain_heightfield_z_offset_world(motion: "Motion", z_human_floor_m: float)
 
     When true and a heightfield exists, returns ``min(z_human_floor_m, min(hf))``
     so obstacle geometry below the foot floor still normalises with its lowest
-    sample at the working plane.
+    sample at the working plane — except authored ``parc_ms`` clips, which share
+    the human floor (:func:`parc_ms_shares_human_terrain_z`).
     """
 
     if not use_split_terrain_grounding(motion):
@@ -201,13 +237,7 @@ def terrain_heightfield_z_offset_world(motion: "Motion", z_human_floor_m: float)
     terr = getattr(motion, "terrain", None)
     if terr is None:
         return float(z_human_floor_m)
-    # ``parc_ms`` motion + terrain live in one shared world frame (the actor is
-    # authored standing/stepping on the heightfield).  The terrain therefore
-    # MUST use the *same* Z reference as the skeleton, otherwise the surface
-    # detaches from the feet it contacts.  Only datasets whose terrain is
-    # grounded independently (``20260429_mocap``) take the ``min(hf)`` floor.
-    meta = getattr(motion, "meta", None)
-    if isinstance(meta, dict) and meta.get("dataset") == "parc_ms":
+    if parc_ms_shares_human_terrain_z(motion):
         return float(z_human_floor_m)
     return min(float(z_human_floor_m), float(np.min(terr.hf)))
 
@@ -217,6 +247,7 @@ __all__ = [
     "foot_contact_bone_indices",
     "foot_floor_z_in_positions",
     "human_source_floor_z_world",
+    "parc_ms_shares_human_terrain_z",
     "preferred_floor_contact_bone_indices",
     "terrain_heightfield_z_offset_world",
     "use_split_terrain_grounding",

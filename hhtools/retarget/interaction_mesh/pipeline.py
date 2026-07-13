@@ -118,6 +118,305 @@ class InteractionMeshPipeline:
         """
         return joint_q
 
+    def _clamp_solved_foot_lateral(
+        self,
+        joint_q: np.ndarray,
+        *,
+        framerate: float = 30.0,
+    ) -> np.ndarray:
+        """Post-MPC hip abduction when solved foot meshes overlap / ankles cross.
+
+        Mirrors :meth:`NewtonBasicPipeline._clamp_solved_foot_lateral`.  MPC's
+        position cost cannot disambiguate left/right laterality when ankle
+        targets nearly coincide (``hip_yaw`` is nearly in the nullspace), so
+        the trajectory can settle into an X-legged pose; this mesh-gated
+        clamp abducts the hips until the feet clear.
+
+        Skips inverted frames (root +Z pointing downward).  On upright frames
+        the correction is **rate-limited** so opening the upright gate cannot
+        dump the full abduction budget in a single stand-up frame.
+        """
+        min_clearance = float(self.cfg.min_foot_clearance_m)
+        if min_clearance <= 0.0 or joint_q.size == 0:
+            return joint_q
+
+        from hhtools.core.math import quaternion as Q
+        from hhtools.robot.foot_geometry import clamp_joint_q_foot_lateral_clearance
+
+        dof_names = self.robot.dof_names()
+        out = joint_q.astype(np.float32, copy=True)
+        n_fixed = 0
+        max_abd = float(self.cfg.foot_lateral_max_abduction_rad)
+        n_iter = int(self.cfg.foot_lateral_max_iterations)
+        dt = 1.0 / max(float(framerate), 1.0)
+        max_step = max(0.0, float(self.cfg.foot_lateral_max_step_rad_s) * dt)
+        for f in range(out.shape[0]):
+            # Root up-vector z: skip while rolling / inverted.
+            if out.shape[1] >= 7:
+                up = Q.to_matrix(out[f, 3:7][None, :])[0] @ np.array(
+                    [0.0, 0.0, 1.0], dtype=np.float64
+                )
+                if float(up[2]) < 0.35:
+                    continue
+            before = out[f].copy()
+            desired = clamp_joint_q_foot_lateral_clearance(
+                self.robot,
+                out[f],
+                dof_names,
+                root_coord_count=7,
+                min_clearance_m=min_clearance,
+                max_abduction_rad=max_abd,
+                max_iterations=n_iter,
+            )
+            if max_step > 0.0:
+                delta = np.asarray(desired, dtype=np.float32) - before
+                # Only the actuated part may move (root stays).
+                if before.size > 7:
+                    delta[:7] = 0.0
+                    delta[7:] = np.clip(delta[7:], -max_step, max_step)
+                out[f] = before + delta
+            else:
+                out[f] = desired
+            if not np.allclose(before, out[f], atol=1e-6):
+                n_fixed += 1
+        if n_fixed:
+            _log.info(
+                "foot-lateral clamp: adjusted hip abduction on %d/%d frames "
+                "(min_clearance=%.3fm, max_abd=%.2frad, max_step=%.3frad)",
+                n_fixed,
+                out.shape[0],
+                min_clearance,
+                max_abd,
+                max_step,
+            )
+        return out
+
+    def _stabilize_joints_after_mpc(
+        self,
+        joint_q: np.ndarray,
+        motion: Motion,
+        *,
+        framerate: float,
+    ) -> np.ndarray:
+        """Optional post-MPC rate-limit (off by default).
+
+        Prefer ``lock_root_orientation_to_source`` in the SQP — that removes
+        roll→stand orientation basin hops at the solver.  This path only
+        papers over residual jumps; enable via
+        ``stabilize_joints_after_mpc=True`` for emergency clips.
+        """
+        if joint_q.ndim != 2 or joint_q.shape[0] < 2 or joint_q.shape[1] < 7:
+            return joint_q
+
+        from hhtools.core.math import quaternion as Q
+
+        dt = 1.0 / max(float(framerate), 1.0)
+        floor_root = float(self.cfg.max_root_angular_velocity)
+        mult = float(self.cfg.root_angular_velocity_source_multiplier)
+        max_yaw = float(self.cfg.max_yaw_joint_velocity) * dt
+        max_leg = float(self.cfg.max_leg_joint_velocity) * dt
+        teleport = float(np.deg2rad(self.cfg.leg_joint_teleport_deg))
+
+        out = joint_q.astype(np.float32, copy=True)
+        out[:, 3:7] = Q.ensure_continuous(out[:, 3:7])
+        raw = joint_q.astype(np.float32, copy=True)
+
+        src_speed: np.ndarray | None = None
+        try:
+            pelvis_i = self._pelvis_source_index(motion)
+            if pelvis_i >= 0 and motion.quaternions.shape[0] == out.shape[0]:
+                qs = Q.ensure_continuous(
+                    Q.normalize(np.asarray(motion.quaternions[:, pelvis_i], dtype=np.float32))
+                )
+                dots = np.abs(np.sum(qs[1:] * qs[:-1], axis=1)).clip(0.0, 1.0)
+                src_speed = (2.0 * np.arccos(dots)) / dt
+        except Exception:
+            src_speed = None
+
+        dof_names = self.robot.dof_names()
+        _leg_keys = ("hip", "knee", "ankle", "thigh", "calf", "leg", "shank")
+        _yaw_keys = ("yaw", "waist")
+        yaw_cols: list[int] = []
+        leg_cols: list[int] = []
+        for i, n in enumerate(dof_names):
+            col = 7 + i
+            if col >= out.shape[1]:
+                break
+            nl = str(n).lower()
+            is_yaw = any(k in nl for k in _yaw_keys)
+            is_leg = any(k in nl for k in _leg_keys)
+            if is_yaw:
+                yaw_cols.append(col)
+            elif is_leg:
+                leg_cols.append(col)
+
+        n_root_clamped = 0
+        n_hinge_clamped = 0
+        n_hinge_held = 0
+
+        def _limit_hinge(f: int, c: int, max_step: float) -> None:
+            nonlocal n_hinge_clamped, n_hinge_held
+            if max_step <= 0.0:
+                return
+            prev = float(out[f - 1, c])
+            target = float(raw[f, c])
+            d = target - prev
+            d = (d + np.pi) % (2.0 * np.pi) - np.pi
+            if abs(d) > teleport:
+                # Isolated spike (next frame returns near prev) → hold.
+                # Sustained stand-up pose change → rate-limit toward target.
+                nxt = float(raw[min(f + 1, out.shape[0] - 1), c])
+                d_next = nxt - prev
+                d_next = (d_next + np.pi) % (2.0 * np.pi) - np.pi
+                if abs(d_next) < 0.5 * teleport:
+                    out[f, c] = prev
+                    n_hinge_held += 1
+                    return
+            if abs(d) > max_step:
+                out[f, c] = prev + float(np.clip(d, -max_step, max_step))
+                n_hinge_clamped += 1
+            else:
+                out[f, c] = prev + d
+
+        for f in range(1, out.shape[0]):
+            prev_q = out[f - 1, 3:7]
+            cur_q = Q.normalize(out[f, 3:7])
+            cap = floor_root
+            if src_speed is not None and mult > 0.0:
+                cap = max(floor_root, float(src_speed[f - 1]) * mult)
+            max_ang = cap * dt
+            dot = float(np.dot(prev_q, cur_q))
+            target_q = -cur_q if dot < 0.0 else cur_q
+            ang = 2.0 * float(np.arccos(min(abs(dot), 1.0)))
+            if max_ang > 0.0 and ang > max_ang and ang > 1e-6:
+                out[f, 3:7] = Q.slerp(prev_q, target_q, max_ang / ang)
+                n_root_clamped += 1
+            else:
+                out[f, 3:7] = Q.normalize(target_q)
+
+            for c in yaw_cols:
+                _limit_hinge(f, c, max_yaw if max_yaw > 0.0 else max_leg)
+            for c in leg_cols:
+                _limit_hinge(f, c, max_leg)
+
+        if n_root_clamped or n_hinge_clamped or n_hinge_held:
+            _log.info(
+                "joint stabilize: root_clamp=%d hinge_clamp=%d hinge_hold=%d "
+                "(root_floor=%.2f rad/s, leg=%.2f rad/s, teleport=%.0f°)",
+                n_root_clamped,
+                n_hinge_clamped,
+                n_hinge_held,
+                floor_root,
+                float(self.cfg.max_leg_joint_velocity),
+                float(self.cfg.leg_joint_teleport_deg),
+            )
+        return out
+
+    # Back-compat alias for anything that imported the old name.
+    def _stabilize_yaw_after_mpc(self, joint_q, motion, *, framerate: float):
+        return self._stabilize_joints_after_mpc(
+            joint_q, motion, framerate=framerate,
+        )
+
+    def _enforce_mapped_ankle_laterality(
+        self,
+        mapped_pos: np.ndarray,
+        robot_points: list,
+    ) -> np.ndarray:
+        """Keep left/right ankle (and foot) targets on the correct sides.
+
+        During ground rolls the source ankles can nearly coincide for a few
+        frames; position-only MPC then freely swaps laterality and the
+        subsequent stand-up locks into an X-leg.  When hip landmarks imply a
+        clear left/right axis **and the body is upright**, push ankle/foot
+        targets apart along that axis to at least
+        ``min_target_foot_separation_m``.
+
+        Inverted / rolling frames are skipped: the hip lateral axis flips in
+        the XY projection while upside-down, and enforcing laterality there
+        teaches the QP a 180° waist-yaw jump on stand-up.
+        """
+        min_sep = float(self.cfg.min_target_foot_separation_m)
+        if min_sep <= 0.0 or mapped_pos.size == 0:
+            return mapped_pos
+
+        def _find(*keys: str) -> int | None:
+            for key in keys:
+                for i, pt in enumerate(robot_points):
+                    sem = str(getattr(pt, "semantic", "")).lower()
+                    if key == sem or sem.endswith(key) or key in sem.split(":"):
+                        return i
+            for key in keys:
+                for i, pt in enumerate(robot_points):
+                    if key in str(getattr(pt, "semantic", "")).lower():
+                        return i
+            return None
+
+        li = _find("left_ankle", "left_foot")
+        ri = _find("right_ankle", "right_foot")
+        l_hip = _find("left_hip", "left_thigh")
+        r_hip = _find("right_hip", "right_thigh")
+        pelvis = _find("pelvis", "hips", "torso")
+        foot_pairs: list[tuple[int, int]] = []
+        if li is not None and ri is not None:
+            foot_pairs.append((li, ri))
+        l_foot = _find("left_foot")
+        r_foot = _find("right_foot")
+        if (
+            l_foot is not None
+            and r_foot is not None
+            and (l_foot, r_foot) not in foot_pairs
+            and (l_foot != li or r_foot != ri)
+        ):
+            foot_pairs.append((l_foot, r_foot))
+        if not foot_pairs:
+            return mapped_pos
+
+        upright_min = float(self.cfg.laterality_upright_min_m)
+        out = np.asarray(mapped_pos, dtype=np.float32, copy=True)
+        prev_axis: np.ndarray | None = None
+        for f in range(out.shape[0]):
+            # Upright gate: hip/pelvis clearly above the feet.
+            foot_zs = [float(out[f, a, 2]) for a, _ in foot_pairs] + [
+                float(out[f, b, 2]) for _, b in foot_pairs
+            ]
+            hip_zs: list[float] = []
+            if l_hip is not None:
+                hip_zs.append(float(out[f, l_hip, 2]))
+            if r_hip is not None:
+                hip_zs.append(float(out[f, r_hip, 2]))
+            if pelvis is not None:
+                hip_zs.append(float(out[f, pelvis, 2]))
+            if hip_zs and foot_zs:
+                if min(hip_zs) - min(foot_zs) < upright_min:
+                    prev_axis = None
+                    continue
+
+            if l_hip is not None and r_hip is not None:
+                axis = out[f, l_hip, :2] - out[f, r_hip, :2]
+            else:
+                axis = out[f, foot_pairs[0][0], :2] - out[f, foot_pairs[0][1], :2]
+            n = float(np.linalg.norm(axis))
+            if n < 1e-4:
+                continue
+            axis = axis / n
+            # Keep the lateral axis in one hemisphere across upright frames.
+            if prev_axis is not None and float(np.dot(axis, prev_axis)) < 0.0:
+                axis = -axis
+            prev_axis = axis.copy()
+
+            for li_i, ri_i in foot_pairs:
+                mid = 0.5 * (out[f, li_i, :2] + out[f, ri_i, :2])
+                sep = float(np.dot(out[f, li_i, :2] - out[f, ri_i, :2], axis))
+                if sep >= min_sep:
+                    continue
+                half = 0.5 * min_sep
+                out[f, li_i, 0] = mid[0] + half * axis[0]
+                out[f, li_i, 1] = mid[1] + half * axis[1]
+                out[f, ri_i, 0] = mid[0] - half * axis[0]
+                out[f, ri_i, 1] = mid[1] - half * axis[1]
+        return out
+
     def _resolve_mapped_joints(
         self, motion: Motion,
     ) -> tuple[list[int], list[str], list[str]]:
@@ -345,6 +644,7 @@ class InteractionMeshPipeline:
         mapped_pos, z_min, smpl_scale = self._build_contact_scaled_positions(
             motion, robot_points,
         )
+        mapped_pos = self._enforce_mapped_ankle_laterality(mapped_pos, robot_points)
 
         obj_positions, object_points = self._build_scaled_object_points(
             motion, z_min, smpl_scale,
@@ -385,24 +685,40 @@ class InteractionMeshPipeline:
             progress_callback=progress_callback,
         )
 
-        # Attach source pelvis quaternion at frame 0 for the SQP's
-        # base-orientation warm-start.  Without this the FREE joint
-        # starts at identity and parc_ms-style sources whose pelvis
-        # faces ~+133° leave the SQP rotating ~30°/iter under the
-        # trust region — far too slow against a per-frame inner-iter
-        # budget.  We use the **raw** source quaternion (no
-        # ``source_body_quat`` rotation) because
-        # :meth:`_build_scaled_source_pose` and the heightfield
-        # transform also keep the source frame, so they all agree
-        # on what "world" is.
+        # Attach continuous source pelvis quaternions on **every** frame.
+        # The SQP locks the FREE-joint orientation to these values so the
+        # floating base cannot flip into another orientation basin during
+        # ground rolls (the root cause of stand-up leg / yaw teleports).
+        # Use the **raw** source quaternion (no ``source_body_quat``)
+        # because :meth:`_build_scaled_source_pose` and the heightfield
+        # transform also keep the source frame.
         try:
+            from hhtools.core.math import quaternion as Q
+
             pelvis_idx = self._pelvis_source_index(motion)
-            if pelvis_idx >= 0 and motion.quaternions.shape[0] > 0:
-                pq = np.asarray(motion.quaternions[0, pelvis_idx], dtype=np.float64)
-                if pq.shape[0] == 4 and float(np.linalg.norm(pq)) > 1e-9:
-                    targets[0].source_root_quat_xyzw = (
-                        float(pq[0]), float(pq[1]), float(pq[2]), float(pq[3]),
+            F = len(targets)
+            if (
+                pelvis_idx >= 0
+                and motion.quaternions.shape[0] >= F
+                and F > 0
+            ):
+                qs = Q.ensure_continuous(
+                    Q.normalize(
+                        np.asarray(
+                            motion.quaternions[:F, pelvis_idx],
+                            dtype=np.float64,
+                        )
                     )
+                )
+                for f in range(F):
+                    pq = qs[f]
+                    if float(np.linalg.norm(pq)) > 1e-9:
+                        targets[f].source_root_quat_xyzw = (
+                            float(pq[0]),
+                            float(pq[1]),
+                            float(pq[2]),
+                            float(pq[3]),
+                        )
         except Exception:
             pass
 
@@ -1031,6 +1347,7 @@ class InteractionMeshPipeline:
         """SQP + RTI MPC on MuJoCo; returns :class:`~hhtools.retarget.newton_basic.pipeline.RetargetedMotion`."""
         from hhtools.retarget.interaction_mesh.collision import cleanup_terrain_files
         from hhtools.retarget.interaction_mesh.mpc_loop import (
+            _arm_actuated_qpos_indices,
             _leg_actuated_qpos_indices,
             causal_smooth_actuated_qpos,
             iterate_mpc_rti,
@@ -1113,6 +1430,7 @@ class InteractionMeshPipeline:
                 penetration_tolerance=self.cfg.penetration_tolerance,
                 collision_fd_epsilon=self.cfg.collision_fd_epsilon,
                 base_step_size=self.cfg.sqp_base_step_size,
+                lock_root_orientation_to_source=self.cfg.lock_root_orientation_to_source,
                 progress_callback=_mpc_cb,
             )
         finally:
@@ -1126,11 +1444,45 @@ class InteractionMeshPipeline:
                 leg_idx,
                 beta=float(self.cfg.post_smooth_leg_beta),
             )
+        if self.cfg.post_smooth_arm_joints and traj.shape[0] > 1:
+            arm_idx = _arm_actuated_qpos_indices(mj)
+            traj = causal_smooth_actuated_qpos(
+                traj,
+                arm_idx,
+                beta=float(self.cfg.post_smooth_arm_beta),
+            )
 
         dof_names = self.robot.dof_names()
         rows = [pack_joint_q_csv(mj, dof_names, traj[f]) for f in range(traj.shape[0])]
         joint_q = np.stack(rows, axis=0).astype(np.float32, copy=False)
         joint_q = self._align_root_to_source_heading(joint_q)
+        fps = float(motion.framerate)
+        joint_q = self._clamp_solved_foot_lateral(joint_q, framerate=fps)
+        if self.cfg.stabilize_joints_after_mpc:
+            joint_q = self._stabilize_joints_after_mpc(
+                joint_q, motion, framerate=fps,
+            )
+        if (
+            self.cfg.post_smooth_leg_joints_after_stabilize
+            and joint_q.shape[0] > 1
+        ):
+            # Causal low-pass on packed leg columns (after clamp+rate-limit).
+            beta = float(self.cfg.post_smooth_leg_beta_after)
+            if beta > 0.0:
+                _leg_keys = ("hip", "knee", "ankle", "thigh", "calf", "leg", "shank")
+                leg_cols = [
+                    7 + i
+                    for i, n in enumerate(dof_names)
+                    if 7 + i < joint_q.shape[1]
+                    and any(k in str(n).lower() for k in _leg_keys)
+                ]
+                if leg_cols:
+                    b = float(np.clip(beta, 0.0, 0.95))
+                    out_s = joint_q.astype(np.float32, copy=True)
+                    for t in range(1, out_s.shape[0]):
+                        for c in leg_cols:
+                            out_s[t, c] = (1.0 - b) * out_s[t, c] + b * out_s[t - 1, c]
+                    joint_q = out_s
 
         # ---- Diagnostic: per-clip alignment quality vs. yellow-skeleton ----
         # Measures the residual between every retargeted robot

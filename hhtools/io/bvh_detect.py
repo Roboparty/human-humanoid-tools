@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 from hhtools.retarget.newton_basic.human_aliases import (
@@ -17,20 +18,39 @@ from hhtools.viewer.library import _DIR_TO_ADAPTER, _normalise_dirname
 _BVH_DATASET_HINTS = frozenset({"soma", "lafan", "mocap", "xsens_mocap"})
 
 
+def iter_bvh_hierarchy_lines(path: str | Path) -> Iterator[str]:
+    """Yield stripped HIERARCHY lines until ``MOTION`` (streams; skips motion data)."""
+    path = Path(path)
+    in_hierarchy = False
+    with path.open(encoding="utf-8", errors="ignore") as fh:
+        for line in fh:
+            stripped = line.strip()
+            if stripped == "HIERARCHY":
+                in_hierarchy = True
+                continue
+            if not in_hierarchy:
+                continue
+            if stripped.startswith("MOTION"):
+                break
+            yield stripped
+
+
+def bvh_hierarchy_has_joints(path: str | Path) -> bool:
+    """True when the BVH has at least one ``JOINT`` (human skeleton, not object track).
+
+    Parkour captures such as ``20260429_mocap`` ship sibling ``*_rig.bvh`` files that
+    only contain a single ``ROOT`` (obstacle / prop transform).
+    """
+    for stripped in iter_bvh_hierarchy_lines(path):
+        if stripped.startswith("JOINT"):
+            return True
+    return False
+
+
 def read_bvh_joint_names(path: str | Path) -> tuple[str, ...]:
     """Extract ``JOINT`` / ``ROOT`` names from the HIERARCHY section (no motion parse)."""
-    path = Path(path)
     names: list[str] = []
-    in_hierarchy = False
-    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
-        stripped = line.strip()
-        if stripped == "HIERARCHY":
-            in_hierarchy = True
-            continue
-        if not in_hierarchy:
-            continue
-        if stripped.startswith("MOTION"):
-            break
+    for stripped in iter_bvh_hierarchy_lines(path):
         if stripped.startswith(("ROOT", "JOINT")):
             parts = stripped.split()
             if len(parts) >= 2:

@@ -272,6 +272,29 @@ def _serialize_object_meta(obj, idx: np.ndarray) -> dict[str, Any]:
     }
 
 
+def _maxpool_strided_2d(arr: np.ndarray, step: int) -> np.ndarray:
+    """Block-max downsample aligned with ``arr[::step, ::step]`` cell origins.
+
+    Plain striding (`arr[::step]`) drops thin raised features (e.g. a
+    ~15–30 cm balance beam spanning only 3–6 fine cells): mid-beam cells
+    can land on the empty neighbour and the web mesh collapses to a
+    knife-edge.  Taking the max over each ``step×step`` block keeps the
+    beam's height and approximate width.
+    """
+    a = np.asarray(arr)
+    if step <= 1:
+        return a.copy()
+    xs = range(0, a.shape[0], step)
+    ys = range(0, a.shape[1], step)
+    out = np.empty((len(xs), len(ys)), dtype=a.dtype)
+    for ii, i in enumerate(xs):
+        i1 = min(i + step, a.shape[0])
+        for jj, j in enumerate(ys):
+            j1 = min(j + step, a.shape[1])
+            out[ii, jj] = np.max(a[i:i1, j:j1])
+    return out
+
+
 def _serialize_terrain(terrain) -> dict[str, Any]:
     """Triangulated terrain mesh for three.js (same topology as Viser).
 
@@ -286,16 +309,32 @@ def _serialize_terrain(terrain) -> dict[str, Any]:
     hf_mm = np.asarray(terrain.hf_maxmin, dtype=np.float32)
     nx0, ny0 = hf.shape[0], hf.shape[1]
     # Keep the grid dense: striding a step terrain skips the sharp risers and
-    # makes stairs look like ramps.  256 keeps ~65k cells which the browser
-    # handles fine, and preserves vertical edges.
-    max_dim = 256
-    rstep = max(1, int(np.ceil(nx0 / max_dim)))
-    cstep = max(1, int(np.ceil(ny0 / max_dim)))
+    # makes stairs look like ramps.  512 keeps ~260k cells which the browser
+    # still handles, and is enough that typical parkour heightfields
+    # (nx×ny ≈ 130×400) ship at full resolution so thin balance beams are
+    # not width-collapsed.  When step>1 we max-pool (not bare-stride) so
+    # remaining thin features keep height/width.
+    #
+    # CRITICAL: TerrainHeightfield.dx is isotropic.  Using different strides on
+    # nx vs ny while scaling dx by only one of them shrinks one world axis
+    # (combo-run clips are long in Y → terrain looked ~half size and the actor
+    # ran off the mesh).
+    max_dim = 512
+    step = max(1, int(np.ceil(max(nx0, ny0) / max_dim)))
+    if step == 1:
+        hf_ds = hf
+        hf_mm_ds = hf_mm
+    else:
+        hf_ds = _maxpool_strided_2d(hf, step)
+        zmax = _maxpool_strided_2d(hf_mm[..., 0], step)
+        # Floor bound: min over the block (negate → maxpool → negate).
+        zmin = -_maxpool_strided_2d(-hf_mm[..., 1], step)
+        hf_mm_ds = np.stack([zmax, zmin], axis=-1).astype(np.float32, copy=False)
     th = TerrainHeightfield(
-        hf=hf[::rstep, ::cstep],
-        hf_maxmin=hf_mm[::rstep, ::cstep, :],
+        hf=hf_ds,
+        hf_maxmin=hf_mm_ds,
         min_point=min_point,
-        dx=dx * float(rstep),
+        dx=dx * float(step),
     )
     verts, faces = th.triangulate()
     return {

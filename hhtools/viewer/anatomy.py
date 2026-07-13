@@ -24,7 +24,11 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
-from hhtools.core.grounding import human_source_floor_z_world, use_split_terrain_grounding
+from hhtools.core.grounding import (
+    human_source_floor_z_world,
+    parc_ms_shares_human_terrain_z,
+    use_split_terrain_grounding,
+)
 from hhtools.core.motion import Motion
 from hhtools.core.scene import SceneObject
 
@@ -515,18 +519,16 @@ def snap_motion_to_ground(motion: Motion, *, margin: float = 0.0) -> Motion:
         return motion
 
     terr = motion.terrain
-    # ``parc_ms`` clips are authored *on* their terrain in one shared world
-    # frame (the human stands/steps on the heightfield), so the terrain MUST
-    # move rigidly with the skeleton — a separate ``min(hf)``-based shift would
-    # detach the feet from the surface they contact (the "imported terrain Z is
-    # offset" bug).  Only the ``20260429_mocap`` capture, where the flat-floor
-    # human and the deep heightfield are grounded independently, wants the split
-    # shift, so restrict it to the non-parc_ms case.
-    is_parc_ms = bool(
-        isinstance(getattr(motion, "meta", None), dict)
-        and motion.meta.get("dataset") == "parc_ms"
-    )
-    if use_split_terrain_grounding(motion) and terr is not None and not is_parc_ms:
+    # Authored ``parc_ms`` clips keep feet and terrain in one world frame, so both
+    # must share the human-floor shift (:func:`parc_ms_shares_human_terrain_z`).
+    # ``20260429_mocap`` re-exports reuse the parc_ms pkl layout but need a
+    # separate ``min(hf)`` shift — otherwise obstacle bottoms (Maya floor) sink
+    # below the viewer grid by the foot-marker height (~10 cm).
+    if (
+        use_split_terrain_grounding(motion)
+        and terr is not None
+        and not parc_ms_shares_human_terrain_z(motion)
+    ):
         z_human = float(human_source_floor_z_world(motion))
         z_hf_min = float(np.min(terr.hf))
         off_h = float(margin) - z_human
