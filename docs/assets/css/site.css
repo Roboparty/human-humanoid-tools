@@ -237,6 +237,31 @@ code {
   text-align: center;
 }
 
+.lab-logo {
+  display: block;
+  width: min(280px, 72vw);
+  margin: 8px auto 28px;
+  text-decoration: none;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--hairline);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.lab-logo:hover {
+  text-decoration: none;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+
+.lab-logo img {
+  display: block;
+  width: 100%;
+  height: auto;
+  vertical-align: middle;
+}
+
 .hero-tagline {
   font-size: 0.85rem;
   color: var(--ink-tertiary);
@@ -631,6 +656,25 @@ table.datasets .mode-tag {
   font-size: 0.85rem;
   color: var(--ink-tertiary);
   border-top: 1px solid var(--hairline);
+}
+
+.footer-lab-link {
+  display: inline-block;
+  text-decoration: none;
+}
+
+.footer-lab-link:hover {
+  text-decoration: none;
+  opacity: 0.9;
+}
+
+.footer-lab-logo {
+  display: block;
+  width: min(220px, 55vw);
+  height: auto;
+  margin: 0 auto 16px;
+  border-radius: 10px;
+  border: 1px solid var(--hairline);
 }
 
 /* ------------------------------------------------------------------ responsive */
