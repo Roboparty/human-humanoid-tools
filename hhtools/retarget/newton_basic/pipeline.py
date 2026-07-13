@@ -420,6 +420,11 @@ class PipelineConfig:
     ground_collision_z: float = 0.0
     ground_collision_bodies: tuple[dict, ...] = ()
     ground_collision_dynamic_boost: bool = True
+    # When ``False``, skip **all** post-IK foot contact polish (height lift,
+    # anti-float, and lateral mesh/ankle clearance).  Batch CSV export of
+    # root + DOF only should leave this off — those clamps dominate wall
+    # time after GPU IK and are irrelevant if the consumer never uses mesh.
+    post_ik_foot_clamps: bool = True
     # Post-IK ``_clamp_solved_foot_heights`` anti-float: when ``False``, only
     # lift the root if solved ankles penetrate the ground plane (soma-style
     # ``_clamp_foot_positions`` lift path).  Xsens mocap clips at high fps
@@ -936,8 +941,9 @@ class NewtonBasicPipeline:
         # 9. Root displacement is already scaled inside HumanToRobotScaler so
         #    IK targets and final floating-base motion stay consistent.
         joint_q_out = self._rescale_root_displacement(joint_q_out)
-        joint_q_out = self._clamp_solved_foot_heights(joint_q_out)
-        joint_q_out = self._clamp_solved_foot_lateral(joint_q_out)
+        if self.config.post_ik_foot_clamps:
+            joint_q_out = self._clamp_solved_foot_heights(joint_q_out)
+            joint_q_out = self._clamp_solved_foot_lateral(joint_q_out)
 
         from hhtools.robot.retarget_profile import apply_upper_body_roll_narrowing_post_ik
 
@@ -1090,7 +1096,16 @@ class NewtonBasicPipeline:
             None,
         )
         results: list[RetargetedMotion | None] = [None] * len(motions)
+        n_active = len(active_idx)
         for j, orig_idx in enumerate(active_idx):
+            if progress_callback is not None:
+                try:
+                    # Keep the UI alive after IK finishes: post-IK foot clamps
+                    # used to run silently for minutes on large batches while
+                    # the status bar still read ``帧 N/N``.
+                    progress_callback(max_frames + j, max_frames + n_active)
+                except Exception:
+                    pass
             m = motions[orig_idx]
             jq = per_env_jq[j]
 
@@ -1113,6 +1128,12 @@ class NewtonBasicPipeline:
             results[orig_idx] = self._postprocess_joint_q(
                 jq, m, source_root_quat=src_root_quat,
             )
+
+        if progress_callback is not None:
+            try:
+                progress_callback(max_frames + n_active, max_frames + n_active)
+            except Exception:
+                pass
 
         # Fill empty-motion slots.
         for i, m in enumerate(motions):
@@ -1381,8 +1402,9 @@ class NewtonBasicPipeline:
         jq_out = joint_q_all[:, :csv_width].astype(np.float32, copy=False)
         jq_out = self._align_root_to_source_heading(jq_out)
         jq_out = self._rescale_root_displacement(jq_out)
-        jq_out = self._clamp_solved_foot_heights(jq_out)
-        jq_out = self._clamp_solved_foot_lateral(jq_out)
+        if self.config.post_ik_foot_clamps:
+            jq_out = self._clamp_solved_foot_heights(jq_out)
+            jq_out = self._clamp_solved_foot_lateral(jq_out)
 
         from hhtools.robot.retarget_profile import apply_upper_body_roll_narrowing_post_ik
 
@@ -1514,8 +1536,16 @@ class NewtonBasicPipeline:
             self.robot.apply_configuration(cfg)
             root_rot = _quat_xyzw_to_rotmat(out[f, 3:7])
             ankle_z = _lowest_ankle_z(self.robot, ik_map, root_rot)
+            # Full-body ``trimesh_scene`` min-Z is only needed for the
+            # penetration lift.  When the user disables that path (batch CSV
+            # export often does), skip mesh entirely — otherwise a 77-clip
+            # GPU batch appears "stuck" at 帧 N/N while post-IK walks every
+            # vertex of every visual STL for tens of thousands of frames.
             contact_z = _lowest_ground_contact_z(
-                self.robot, ik_map, root_rot, include_mesh=True,
+                self.robot,
+                ik_map,
+                root_rot,
+                include_mesh=bool(self.config.foot_clamp_anti_penetration),
             )
             if contact_z is None and ankle_z is None:
                 continue
@@ -1567,6 +1597,12 @@ class NewtonBasicPipeline:
             min_lat = float(feet_cfg.min_lateral_separation)
             ankle_prefilter = min_lat + max(0.03, min_lat * 0.3)
 
+        # Batch CSV exports that disable penetration correction also skip the
+        # per-frame foot-*mesh* lateral sweep (ankle laterality only).  Mesh
+        # gap checks transform visual STL vertices every frame and dominate
+        # wall time after GPU IK has already finished.
+        use_mesh = bool(self.config.foot_clamp_anti_penetration)
+
         dof_names = self.robot.dof_names()
         out = joint_q.astype(np.float32, copy=True)
         for f in range(out.shape[0]):
@@ -1577,6 +1613,7 @@ class NewtonBasicPipeline:
                 root_coord_count=self.ctx.root_coord_count,
                 min_clearance_m=min_clearance,
                 ankle_prefilter_m=ankle_prefilter if ankle_prefilter > 0.0 else None,
+                use_mesh=use_mesh,
             )
         return out
 

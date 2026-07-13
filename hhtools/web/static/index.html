@@ -293,7 +293,8 @@
             </label>
           </div>
           <p class="hint" id="rt-foot-clamp-hint" style="margin-top:4px">
-            对应 <code>robot.yaml</code> 的 <code>foot_clamp_anti_penetration</code>。勾选后 IK 会把<b>脚踝、膝盖及 mesh 最低点</b>抬离地面（跪地/趴地也生效）；默认关闭。翻滚/后空翻建议保持关闭。
+            默认关闭 = <b>只要 root+DOF</b> 的快速路径（跳过全部 IK 后脚部/mesh 校正，批量导出更快）。
+            勾选后会对脚踝/膝盖/mesh 做穿地抬升与脚间距修正，可视化更稳，但大批量会明显变慢。
           </p>
           <p class="hint" id="rt-first-hint" style="margin-top:6px">
             <b>首次 Retarget 较慢：</b>新机器人第一次求解会编译 GPU/Warp IK 内核并捕获 CUDA 图（约 10–60 秒）。进度条可能短暂不动，属正常现象，请耐心等待；加载机器人后会在后台预热，同一机器人后续会快很多。
@@ -382,7 +383,7 @@
               <span title="IK 求解时脚穿地则向上修正 floating base">脚穿地修正（IK）</span>
             </label>
           </div>
-          <p class="hint" style="margin-top:4px">与「机器人 · Retarget」页「脚穿地修正（IK）」同步。</p>
+          <p class="hint" style="margin-top:4px">与「机器人 · Retarget」页同步。关闭时只导出 root+DOF（跳过脚部 mesh 后处理，批量更快）。</p>
           <div class="row" style="margin-top:8px; gap:8px">
             <select class="search" id="batch-format" style="flex:1">
               <option value="csv">CSV（可读，单文件）</option>

@@ -136,6 +136,8 @@ class InteractionMeshPipeline:
         the correction is **rate-limited** so opening the upright gate cannot
         dump the full abduction budget in a single stand-up frame.
         """
+        if not bool(getattr(self.cfg, "post_mpc_foot_clamps", True)):
+            return joint_q
         min_clearance = float(self.cfg.min_foot_clearance_m)
         if min_clearance <= 0.0 or joint_q.size == 0:
             return joint_q

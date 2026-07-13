@@ -3233,11 +3233,39 @@ def _retarget_newton_batch_chunk(
     )
 
     motions = [m for _, m, _ in loaded]
+    _ik_total = {"n": 0}
 
     def _frame_cb(done: int, total: int) -> None:
         if job is None:
             return
-        frac = done / max(1, total)
+        # ``run_batch`` reports IK as ``done/max_frames``, then post-IK as
+        # ``max_frames + clip_i / max_frames + n_clips`` (total grows).
+        if _ik_total["n"] == 0:
+            _ik_total["n"] = max(1, int(total))
+        if int(total) > _ik_total["n"]:
+            post_done = max(0, int(done) - _ik_total["n"])
+            post_tot = max(1, int(total) - _ik_total["n"])
+            total_p, clip_p = _batch_chunk_ik_progress(
+                progress_base, progress_span, 1.0,
+            )
+            post_frac = post_done / post_tot
+            total_p = progress_base + progress_span * (
+                _BATCH_CHUNK_IK_FRAC + 0.5 * _BATCH_CHUNK_EXPORT_FRAC * post_frac
+            )
+            _set_batch_job_progress(
+                job,
+                (
+                    f"并行 IK {chunk_label} · 参考 {reference} · "
+                    f"后处理 {post_done}/{post_tot}"
+                ),
+                total_p,
+                batch_t0,
+                clip_progress=clip_p,
+            )
+            return
+        _ik_total["n"] = max(_ik_total["n"], int(total))
+        ik_total = _ik_total["n"]
+        frac = min(1.0, float(done) / max(1, ik_total))
         total_p, clip_p = _batch_chunk_ik_progress(
             progress_base, progress_span, frac,
         )
@@ -3245,7 +3273,7 @@ def _retarget_newton_batch_chunk(
             job,
             (
                 f"并行 IK {chunk_label} · 参考 {reference} · "
-                f"帧 {done}/{total}（本批最长 clip）"
+                f"帧 {min(int(done), ik_total)}/{ik_total}（本批最长 clip）"
             ),
             total_p,
             batch_t0,
@@ -4012,14 +4040,23 @@ def _retarget_single(
                 o.quaternions = o.quaternions[:lf]
 
     if backend == "interaction_mesh":
+        from hhtools.retarget.interaction_mesh.config import (
+            InteractionMeshPipelineConfig,
+        )
         from hhtools.retarget.interaction_mesh.pipeline import InteractionMeshPipeline
 
         if job is not None:
             _set_retarget_job_clip_progress(
                 job, 0.04, "正在构建 Interaction-Mesh 场景（新机器人首次较慢）…",
             )
+        im_cfg = InteractionMeshPipelineConfig()
+        # Same UI gate as Newton: unchecked 「脚穿地修正」→ skip mesh foot clamps.
+        if foot_clamp_anti_penetration is not None:
+            im_cfg.post_mpc_foot_clamps = bool(foot_clamp_anti_penetration)
+            if not im_cfg.post_mpc_foot_clamps:
+                im_cfg.min_foot_clearance_m = 0.0
         pipe = InteractionMeshPipeline.from_calibration(
-            model, motion, str(cal_path), human_height=human_height,
+            model, motion, str(cal_path), human_height=human_height, cfg=im_cfg,
         )
 
         def _im_cb(stage: str, cur: int, tot: int) -> None:

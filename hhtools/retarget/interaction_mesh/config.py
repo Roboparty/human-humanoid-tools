@@ -244,12 +244,17 @@ class InteractionMeshPipelineConfig:
     post_smooth_arm_joints: bool = True
     post_smooth_arm_beta: float = 0.15
 
+    # Master switch for post-MPC foot lateral clearance (mesh-based hip
+    # abduction).  When False, skip entirely — matching NewtonBasic's
+    # ``post_ik_foot_clamps=False`` "root+DOF only" export path.  Web UI
+    # 「脚穿地修正」unchecked maps here.
+    post_mpc_foot_clamps: bool = True
     # Post-MPC hip abduction spread when solved foot meshes interpenetrate or
     # ankles cross (same mesh-gated clamp as NewtonBasic).  Position-only
     # MPC has a near-zero gradient on ``hip_yaw`` / laterality when left and
     # right ankle targets nearly coincide, so the QP can settle into an
     # X-legged basin; this clamp abducts hips until the foot meshes clear.
-    # Set ``≤ 0`` to disable.
+    # Set ``≤ 0`` to disable (also disabled when ``post_mpc_foot_clamps`` is False).
     min_foot_clearance_m: float = 0.03
     # Per-leg abduction budget for the post-MPC clamp.  Ground-roll recoveries
     # can leave a deep X-leg that needs more than the Newton default (~0.2 rad).

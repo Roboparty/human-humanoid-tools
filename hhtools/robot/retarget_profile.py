@@ -1028,6 +1028,16 @@ def build_pipeline_config_for_preset(
         preset, reference, ground_weight,
     )
 
+    anti_pen = (
+        bool(foot_clamp_anti_penetration)
+        if foot_clamp_anti_penetration is not None
+        else bool(_pick("foot_clamp_anti_penetration", True))
+    )
+    # Web / batch UI "脚穿地修正" off ⇒ raw IK root+DOF only: skip the whole
+    # post-IK foot suite (anti-float + lateral mesh).  Those steps exist for
+    # contact polish and dominate wall time on large LAFAN-style batches.
+    foot_polish = bool(anti_pen)
+
     return PipelineConfig(
         ik_iterations=int(ik_iterations),
         joint_limit_weight=float(_pick("joint_limit_weight", 10.0)),
@@ -1050,11 +1060,10 @@ def build_pipeline_config_for_preset(
         ground_collision_dynamic_boost=bool(
             _pick("ground_collision_dynamic_boost", True)
         ),
-        foot_clamp_anti_float=bool(_pick("foot_clamp_anti_float", True)),
-        foot_clamp_anti_penetration=(
-            bool(foot_clamp_anti_penetration)
-            if foot_clamp_anti_penetration is not None
-            else bool(_pick("foot_clamp_anti_penetration", True))
+        post_ik_foot_clamps=foot_polish,
+        foot_clamp_anti_float=(
+            bool(_pick("foot_clamp_anti_float", True)) if foot_polish else False
         ),
+        foot_clamp_anti_penetration=anti_pen,
         foot_clamp_max_lift_rate=float(_pick("foot_clamp_max_lift_rate", 0.02)),
     )

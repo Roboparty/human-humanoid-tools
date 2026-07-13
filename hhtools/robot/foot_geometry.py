@@ -454,6 +454,7 @@ def clamp_joint_q_foot_lateral_clearance(
     max_iterations: int = 12,
     step_rad: float = 0.02,
     max_abduction_rad: float = 0.20,
+    use_mesh: bool = True,
 ) -> np.ndarray:
     """Spread hip abduction until foot meshes have ``min_clearance_m`` inner gap.
 
@@ -461,6 +462,10 @@ def clamp_joint_q_foot_lateral_clearance(
     ankles (left ankle on the right side of the right ankle along the root
     lateral axis — typical after a ground-roll recovery).  Poses where the
     feet already clear with correct laterality are left untouched.
+
+    Set ``use_mesh=False`` to correct crossed ankles via ankle separation
+    only (no visual-STL vertex transforms).  Batch CSV export uses this
+    when the user disables foot penetration correction.
     """
     if min_clearance_m <= 0.0:
         return np.asarray(joint_q_row, dtype=np.float32, copy=True)
@@ -476,7 +481,7 @@ def clamp_joint_q_foot_lateral_clearance(
     lat_i = _lateral_axis_idx(model.preset)
     ankle_sep = _ankle_lateral_separation(model, cfg, root, lat_i)
 
-    if ankle_prefilter_m is not None and ankle_prefilter_m > 0.0:
+    if use_mesh and ankle_prefilter_m is not None and ankle_prefilter_m > 0.0:
         # Skip only when ankles are clearly separated *and* on the correct side.
         if (
             ankle_sep is not None
@@ -485,8 +490,16 @@ def clamp_joint_q_foot_lateral_clearance(
             gap_quick = foot_mesh_lateral_inner_gap(model, cfg, root)
             if gap_quick is not None and gap_quick >= min_clearance_m:
                 return out
+    elif (
+        not use_mesh
+        and ankle_prefilter_m is not None
+        and ankle_prefilter_m > 0.0
+        and ankle_sep is not None
+        and float(ankle_sep) >= float(ankle_prefilter_m)
+    ):
+        return out
 
-    gap = foot_mesh_lateral_inner_gap(model, cfg, root)
+    gap = foot_mesh_lateral_inner_gap(model, cfg, root) if use_mesh else None
     # Score: mesh clearance, and signed ankle laterality (left − right).
     # Crossed ankles make ankle_sep negative even when meshes no longer overlap.
     def _score(mesh_gap: float | None, sep: float | None) -> float:
@@ -523,7 +536,9 @@ def clamp_joint_q_foot_lateral_clearance(
             if abs(l_new - l0) > cap or abs(r_new - r0) > cap:
                 continue
             trial = _apply_abduction_delta(best_cfg, left_joint, right_joint, l_delta, r_delta)
-            trial_gap = foot_mesh_lateral_inner_gap(model, trial, root)
+            trial_gap = (
+                foot_mesh_lateral_inner_gap(model, trial, root) if use_mesh else None
+            )
             trial_sep = _ankle_lateral_separation(model, trial, root, lat_i)
             trial_score = _score(trial_gap, trial_sep)
             if trial_score > best_score + 1e-5:
