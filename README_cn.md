@@ -2,12 +2,12 @@
 
 **让人形机器人在约 30 秒内完成跑酷 / 跳舞 / 交互动作的重映射**
 
-**[项目主页](https://jaggerShen.github.io/human-humanoid-tools/)** · **[English README](README.md)**
+**[项目主页](https://roboparty.github.io/human-humanoid-tools/)** · **[English README](README.md)**
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![GitHub](https://img.shields.io/badge/GitHub-jaggerShen%2Fhuman--humanoid--tools-blue)](https://github.com/jaggerShen/human-humanoid-tools)
-[![Project Page](https://img.shields.io/badge/Project%20Page-GitHub%20Pages-blue)](https://jaggerShen.github.io/human-humanoid-tools/)
+[![GitHub](https://img.shields.io/badge/GitHub-Roboparty%2Fhuman--humanoid--tools-blue)](https://github.com/Roboparty/human-humanoid-tools)
+[![Project Page](https://img.shields.io/badge/Project%20Page-GitHub%20Pages-blue)](https://roboparty.github.io/human-humanoid-tools/)
 
 | | |
 | :---: | :---: |
@@ -35,7 +35,7 @@
 ## 快速开始
 
 ```bash
-git clone https://github.com/jaggerShen/human-humanoid-tools.git
+git clone https://github.com/Roboparty/human-humanoid-tools.git
 cd human-humanoid-tools
 curl -LsSf https://astral.sh/uv/install.sh | sh   # 若未安装
 uv sync --extra all
@@ -119,12 +119,12 @@ smooth_joint_filter_masks:
   title        = {human-humanoid-tools (hhtools): humanoid motion retargeting and dataset analysis},
   author       = {jaggerShen and hhtools contributors},
   year         = {2026},
-  url          = {https://github.com/jaggerShen/human-humanoid-tools},
+  url          = {https://github.com/Roboparty/human-humanoid-tools},
   license      = {Apache-2.0}
 }
 ```
 
-**链接：** [GitHub 仓库](https://github.com/jaggerShen/human-humanoid-tools) · [Issues](https://github.com/jaggerShen/human-humanoid-tools/issues) · [LICENSE](LICENSE)
+**链接：** [GitHub 仓库](https://github.com/Roboparty/human-humanoid-tools) · [Issues](https://github.com/Roboparty/human-humanoid-tools/issues) · [LICENSE](LICENSE)
 
 使用内置数据集适配器时，请同时引用对应 **上游数据集与算法**（见上表及 [NOTICE](NOTICE)，如 SOMA-Retargeter、holosoma）。
 

@@ -2,12 +2,12 @@
 
 **Retarget parkour, dance, and interaction clips onto any humanoid in ~30 seconds**
 
-**[Project page](https://jaggerShen.github.io/human-humanoid-tools/)** · **[中文说明](README_cn.md)**
+**[Project page](https://roboparty.github.io/human-humanoid-tools/)** · **[中文说明](README_cn.md)**
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![GitHub](https://img.shields.io/badge/GitHub-jaggerShen%2Fhuman--humanoid--tools-blue)](https://github.com/jaggerShen/human-humanoid-tools)
-[![Project Page](https://img.shields.io/badge/Project%20Page-GitHub%20Pages-blue)](https://jaggerShen.github.io/human-humanoid-tools/)
+[![GitHub](https://img.shields.io/badge/GitHub-Roboparty%2Fhuman--humanoid--tools-blue)](https://github.com/Roboparty/human-humanoid-tools)
+[![Project Page](https://img.shields.io/badge/Project%20Page-GitHub%20Pages-blue)](https://roboparty.github.io/human-humanoid-tools/)
 
 | | |
 | :---: | :---: |
@@ -35,7 +35,7 @@ We welcome suggestions and ideas — please open an issue or discussion anytime.
 ## Quick start
 
 ```bash
-git clone https://github.com/jaggerShen/human-humanoid-tools.git
+git clone https://github.com/Roboparty/human-humanoid-tools.git
 cd human-humanoid-tools
 curl -LsSf https://astral.sh/uv/install.sh | sh   # if needed
 uv sync --extra all
@@ -117,12 +117,12 @@ If you use **human-humanoid-tools** in research or products, please cite the rep
   title        = {human-humanoid-tools (hhtools): humanoid motion retargeting and dataset analysis},
   author       = {jaggerShen and hhtools contributors},
   year         = {2026},
-  url          = {https://github.com/jaggerShen/human-humanoid-tools},
+  url          = {https://github.com/Roboparty/human-humanoid-tools},
   license      = {Apache-2.0}
 }
 ```
 
-**Links:** [GitHub repository](https://github.com/jaggerShen/human-humanoid-tools) · [Issues](https://github.com/jaggerShen/human-humanoid-tools/issues) · [LICENSE](LICENSE)
+**Links:** [GitHub repository](https://github.com/Roboparty/human-humanoid-tools) · [Issues](https://github.com/Roboparty/human-humanoid-tools/issues) · [LICENSE](LICENSE)
 
 When publishing results built on bundled adapters, also cite the **upstream datasets and solvers** listed above and in [NOTICE](NOTICE) (e.g. SOMA-Retargeter, holosoma).
 

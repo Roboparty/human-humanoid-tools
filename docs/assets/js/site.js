@@ -6,11 +6,11 @@ const BIBTEX = `@software{human_humanoid_tools2026,
   title        = {human-humanoid-tools (hhtools): humanoid motion retargeting and dataset analysis},
   author       = {jaggerShen and hhtools contributors},
   year         = {2026},
-  url          = {https://github.com/jaggerShen/human-humanoid-tools},
+  url          = {https://github.com/Roboparty/human-humanoid-tools},
   license      = {Apache-2.0}
 }`;
 
-const QUICKSTART = `git clone https://github.com/jaggerShen/human-humanoid-tools.git
+const QUICKSTART = `git clone https://github.com/Roboparty/human-humanoid-tools.git
 cd human-humanoid-tools
 curl -LsSf https://astral.sh/uv/install.sh | sh   # if needed
 uv sync --extra all
