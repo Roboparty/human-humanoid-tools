@@ -249,6 +249,12 @@ class InteractionMeshPipelineConfig:
     # ``post_ik_foot_clamps=False`` "root+DOF only" export path.  Web UI
     # 「脚穿地修正」unchecked maps here.
     post_mpc_foot_clamps: bool = True
+    # After MPC (and optional lateral clamp / terrain Z-snap): on **flat**
+    # ground (no heightfield), one global root-Z shift so the clip-wide
+    # minimum foot sole sits on ``z=0``.  Terrain clips already use the
+    # geometric heightfield Z-snap; this covers LAFAN-style flat floors.
+    # Independent of ``post_mpc_foot_clamps``.
+    clip_floor_snap: bool = True
     # Post-MPC hip abduction spread when solved foot meshes interpenetrate or
     # ankles cross (same mesh-gated clamp as NewtonBasic).  Position-only
     # MPC has a near-zero gradient on ``hip_yaw`` / laterality when left and

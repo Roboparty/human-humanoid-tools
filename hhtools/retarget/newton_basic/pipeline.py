@@ -425,6 +425,11 @@ class PipelineConfig:
     # root + DOF only should leave this off — those clamps dominate wall
     # time after GPU IK and are irrelevant if the consumer never uses mesh.
     post_ik_foot_clamps: bool = True
+    # After IK (and optional foot clamps): one global root-Z shift so the
+    # clip-wide minimum foot **sole** sits on flat ground ``z=0``.  Independent
+    # of ``post_ik_foot_clamps`` — keep this on by default so raw CSV exports
+    # still touch the floor even when per-frame polish is disabled.
+    clip_floor_snap: bool = True
     # Post-IK ``_clamp_solved_foot_heights`` anti-float: when ``False``, only
     # lift the root if solved ankles penetrate the ground plane (soma-style
     # ``_clamp_foot_positions`` lift path).  Xsens mocap clips at high fps
@@ -945,6 +950,17 @@ class NewtonBasicPipeline:
             joint_q_out = self._clamp_solved_foot_heights(joint_q_out)
             joint_q_out = self._clamp_solved_foot_lateral(joint_q_out)
 
+        clip_floor_snap_m = 0.0
+        if bool(getattr(self.config, "clip_floor_snap", True)):
+            from hhtools.retarget.clip_ground_snap import snap_joint_q_clip_floor
+
+            joint_q_out, clip_floor_snap_m = snap_joint_q_clip_floor(
+                self.robot,
+                joint_q_out,
+                root_coord_count=self.ctx.root_coord_count,
+                ground_z=0.0,
+            )
+
         from hhtools.robot.retarget_profile import apply_upper_body_roll_narrowing_post_ik
 
         joint_q_out = apply_upper_body_roll_narrowing_post_ik(
@@ -967,6 +983,7 @@ class NewtonBasicPipeline:
                 "used_mjcf": self.ctx.used_mjcf,
                 "ik_iterations": self.config.ik_iterations,
                 "human_height": self.human_height,
+                "clip_floor_snap_m": float(clip_floor_snap_m),
             },
         )
 
@@ -1406,6 +1423,17 @@ class NewtonBasicPipeline:
             jq_out = self._clamp_solved_foot_heights(jq_out)
             jq_out = self._clamp_solved_foot_lateral(jq_out)
 
+        clip_floor_snap_m = 0.0
+        if bool(getattr(self.config, "clip_floor_snap", True)):
+            from hhtools.retarget.clip_ground_snap import snap_joint_q_clip_floor
+
+            jq_out, clip_floor_snap_m = snap_joint_q_clip_floor(
+                self.robot,
+                jq_out,
+                root_coord_count=self.ctx.root_coord_count,
+                ground_z=0.0,
+            )
+
         from hhtools.robot.retarget_profile import apply_upper_body_roll_narrowing_post_ik
 
         jq_out = apply_upper_body_roll_narrowing_post_ik(
@@ -1427,6 +1455,7 @@ class NewtonBasicPipeline:
                 "num_mapped_joints": len(self.ik_mapping.entries),
                 "used_mjcf": self.ctx.used_mjcf,
                 "ik_iterations": self.config.ik_iterations,
+                "clip_floor_snap_m": float(clip_floor_snap_m),
                 "human_height": self.human_height,
             },
         )

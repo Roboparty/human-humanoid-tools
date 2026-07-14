@@ -1061,6 +1061,9 @@ def build_pipeline_config_for_preset(
             _pick("ground_collision_dynamic_boost", True)
         ),
         post_ik_foot_clamps=foot_polish,
+        # Always default-on: clip-wide sole↔floor snap is cheap vs mesh clamps
+        # and must still run when the UI disables per-frame foot polish.
+        clip_floor_snap=bool(_pick("clip_floor_snap", True)),
         foot_clamp_anti_float=(
             bool(_pick("foot_clamp_anti_float", True)) if foot_polish else False
         ),

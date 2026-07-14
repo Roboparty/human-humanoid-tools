@@ -1530,6 +1530,7 @@ class InteractionMeshPipeline:
         # against constraint slack at SQP termination.
         floor_offset = 0.0
         signed_min_gap = float("nan")
+        used_terrain_snap = False
         if coll_model is not None and motion.terrain is not None:
             terrain_robot = motion.terrain.scaled(
                 float(smpl_scale),
@@ -1538,24 +1539,28 @@ class InteractionMeshPipeline:
             signed_min_gap = self._terrain_signed_min_gap_geom(
                 coll_model, coll_data, joint_q, terrain_robot,
             )
-            floor_offset = max(0.0, signed_min_gap)
-        if floor_offset > 1e-4:
-            joint_q = joint_q.copy()
-            joint_q[:, 2] -= np.float32(floor_offset)
-            _log.info(
-                "Z-snap: lifted ground contact by %.4fm so the lowest "
-                "foot point during the trajectory touches the terrain",
-                floor_offset,
-            )
-        elif np.isfinite(signed_min_gap) and signed_min_gap < -1e-4:
-            _log.warning(
-                "Z-snap: lowest foot point is %.4fm BELOW terrain — "
-                "leaving trajectory unchanged.  This means the SQP's "
-                "non-penetration constraint left residual penetration "
-                "at some frame; consider raising "
-                "``collision_threshold`` or tightening "
-                "``penetration_tolerance``.",
-                signed_min_gap,
+            # Bidirectional: float → push down; penetrate → lift up, so the
+            # clip-wide minimum foot↔terrain gap is exactly 0.
+            floor_offset = float(signed_min_gap) if np.isfinite(signed_min_gap) else 0.0
+            used_terrain_snap = True
+            if abs(floor_offset) > 1e-4:
+                joint_q = joint_q.copy()
+                joint_q[:, 2] -= np.float32(floor_offset)
+                _log.info(
+                    "Z-snap: Δz=%+.4fm so the lowest foot point during the "
+                    "trajectory touches the terrain (was gap %+.4fm)",
+                    floor_offset,
+                    signed_min_gap,
+                )
+        elif bool(getattr(self.cfg, "clip_floor_snap", True)):
+            # Flat-ground clips (LAFAN, etc.): no heightfield — snap sole to z=0.
+            from hhtools.retarget.clip_ground_snap import snap_joint_q_clip_floor
+
+            joint_q, floor_offset = snap_joint_q_clip_floor(
+                self.robot,
+                joint_q,
+                root_coord_count=7,
+                ground_z=0.0,
             )
 
         _meta_r = {
@@ -1580,6 +1585,7 @@ class InteractionMeshPipeline:
                 ),
                 "terrain_floor_offset": float(floor_offset),
                 "terrain_signed_min_gap": float(signed_min_gap),
+                "clip_floor_snap_m": float(floor_offset) if not used_terrain_snap else 0.0,
                 "position_weight": float(self.cfg.position_weight),
                 "alignment_mean_m": align_summary["mean_m"],
                 "alignment_max_m": align_summary["max_m"],
