@@ -4756,24 +4756,9 @@ def _build_robot_tab(  # type: ignore[no-untyped-def]
             )
             return
 
-        yaml_path = preset.meta.get("yaml_path")
-        if yaml_path and derived is not None:
-            from hhtools.robot.joint_scales import (
-                sync_joint_scale_multipliers_to_robot_yaml,
-            )
-
-            try:
-                sync_joint_scale_multipliers_to_robot_yaml(
-                    yaml_path,
-                    derived.scales,
-                    dict(preset.ik_map),
-                )
-            except Exception as err:  # noqa: BLE001
-                _notify_all(
-                    server, "Scale yaml sync failed",
-                    f"{type(err).__name__}: {err}",
-                    color="orange",
-                )
+        # Do not sync derived.scales into robot.yaml joint_scale_multipliers:
+        # that global table is shared across references and would pollute the
+        # next dataset's retarget (see active_joint_scale_overrides).
 
         # --- Also persist the (possibly edited) ik_map to robot.yaml ---
         # We do this after the calibration yaml write so the user has a

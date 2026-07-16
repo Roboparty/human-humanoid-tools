@@ -701,22 +701,11 @@ def scaffold_preset(
         payload["feet"] = feet
     payload["rest_offsets"] = {}
 
+    # joint_scale_multipliers is intentionally omitted: absolute calibration
+    # scales belong in retarget_calibration_<ref>.yaml.  Writing them into the
+    # global robot.yaml table pollutes other references at retarget time.
+    # Users may add intentional per-joint overrides by hand when needed.
     retarget_cfg: dict[str, object] = dict(_DEFAULT_RETARGET)
-    from hhtools.robot.joint_scales import (
-        infer_joint_scales_for_scaffold,
-        robot_dir_has_calibration,
-    )
-
-    if robot_dir_has_calibration(root_dir):
-        joint_scales = infer_joint_scales_for_scaffold(
-            root_dir,
-            urdf_path,
-            ordered_ik_map,
-            preset_name=preset_name,
-            mesh_search_paths=mesh_paths,
-        )
-        if joint_scales:
-            retarget_cfg["joint_scale_multipliers"] = joint_scales
     payload["retarget"] = retarget_cfg
 
     header = _yaml_header(preset_name, urdf_rel)
@@ -789,9 +778,9 @@ def _yaml_header(name: str, urdf_rel: str) -> str:
         f"# You may edit this file freely; hhtools will NOT overwrite it.\n"
         f"# Run `hhtools robot scaffold {name} --force` to regenerate from the URDF.\n"
         f"#\n"
-        f"# retarget.joint_scale_multipliers: per-canonical scale defaults.\n"
-        f"# Uses saved calibration scales when present, else URDF zero pose.\n"
-        f"# Edit individual entries to tune without re-calibrating.\n"
+        f"# retarget.joint_scale_multipliers (optional): intentional absolute\n"
+        f"# per-canonical scale overrides only — do not paste calibration\n"
+        f"# derived.scales here (cross-reference pollution). Omit when unused.\n"
         f"#\n"
         f"# ik_map merges keyword matching with URDF topology inference\n"
         f"# (distal wrist/ankle/end-effector links).  Double-check mappings\n"

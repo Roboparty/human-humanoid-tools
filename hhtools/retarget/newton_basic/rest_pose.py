@@ -177,9 +177,10 @@ def rest_pose_from_motion_tpose(motion: "Motion") -> SourceRestPose:
     be patched from the loaded clip's frame 0 so bind twist matches capture;
     the bundled file itself stays a clean T-pose for the blue calibration overlay.
 
-    Note: :func:`build_scaler_config_from_calibration` uses
-    :func:`rest_pose_from_motion` (frame 0) for LAFAN scaler offsets instead —
-    mixing bundled positions with patched leg quats alone breaks foot IK.
+    Note: :func:`build_scaler_config_from_calibration` currently uses
+    :func:`rest_pose_from_motion` (frame 0) for LAFAN scaler offsets — a
+    pure bundled T-pose rest misaligns heading with the clip trajectory
+    (limbs look twisted).  Kept for overlay / experiments.
     """
 
     ref = _bundled_reference_for_motion(motion)

@@ -1011,7 +1011,7 @@ def create_app(
                 output_path=urdf_path,
             )
             # Restore calibration / bundled scalers before scaffold so
-            # ``joint_scale_multipliers`` defaults match saved calibration.
+            # retarget_calibration_*.yaml survives the URDF replace.
             for fname, data in preserved_files.items():
                 try:
                     (drop / fname).write_bytes(data)
@@ -1178,20 +1178,9 @@ def create_app(
             )
             path = calibration_path_for(preset.urdf_path.parent, reference=reference)
             save_calibration(cal, path, derived=derived)
-            yaml_path = preset.meta.get("yaml_path")
-            if yaml_path and derived is not None:
-                from hhtools.robot.joint_scales import (
-                    sync_joint_scale_multipliers_to_robot_yaml,
-                )
-
-                sync_joint_scale_multipliers_to_robot_yaml(
-                    yaml_path,
-                    derived.scales,
-                    dict(preset.ik_map),
-                )
-                from hhtools.robot.registry import refresh
-
-                refresh()
+            # Do not sync derived.scales into robot.yaml joint_scale_multipliers:
+            # that global table is shared across references and would pollute
+            # the next dataset's retarget (see active_joint_scale_overrides).
         except Exception as err:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=f"calibration save failed: {err}") from err
         return {"ok": True, "path": str(path)}

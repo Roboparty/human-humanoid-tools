@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 _log = logging.getLogger(__name__)
 
 __all__ = [
+    "active_joint_scale_overrides",
+    "all_calibration_scales_for_preset",
     "infer_joint_scales_for_scaffold",
     "infer_joint_scales_from_urdf",
     "joint_scale_baselines_for_preset",
@@ -171,10 +173,11 @@ def infer_joint_scales_for_scaffold(
     preset_name: str = "scaffold",
     mesh_search_paths: Iterable[Path | str] = (),
 ) -> dict[str, float]:
-    """Calibration-derived ``joint_scale_multipliers`` for re-scaffolded ``robot.yaml``.
+    """Calibration-derived absolute scales (legacy helper).
 
-    Call only when ``robot_dir`` already has a calibration file (see
-    :func:`robot_dir_has_calibration`).
+    Scaffold no longer writes these into ``robot.yaml``; kept for callers that
+    still want a calibration/URDF baseline table.  Prefer
+    :func:`joint_scale_baselines_for_preset` for new code.
     """
 
     robot_dir = Path(robot_dir).resolve()
@@ -205,16 +208,80 @@ def infer_joint_scales_for_scaffold(
     }
 
 
+def _rel_close(yaml_val: float, ref_val: float) -> bool:
+    ref = float(ref_val)
+    if ref <= 1e-6:
+        return False
+    return abs(float(yaml_val) - ref) / ref <= _SCALE_MATCH_EPS
+
+
+def all_calibration_scales_for_preset(
+    preset,
+    robot_model: "URDFRobotModel | None" = None,
+) -> list[dict[str, float]]:
+    """Per-reference ``derived.scales`` tables for every on-disk calibration.
+
+    Used to recognise historical auto-sync copies of *any* reference's
+    scales sitting in the global ``joint_scale_multipliers`` table.
+    """
+
+    from hhtools.retarget.calibration.calibration import (
+        derive_calibration_params,
+        load_calibration,
+        resolve_calibration_file,
+    )
+
+    model = robot_model
+    if model is None:
+        from hhtools.robot.loader import load_robot
+
+        try:
+            model = load_robot(preset, compile_mjcf=False)
+        except Exception:
+            return []
+
+    tables: list[dict[str, float]] = []
+    for ref in _CALIBRATION_REF_ORDER:
+        cal_path = resolve_calibration_file(preset.root_dir, ref)
+        if cal_path is None or not cal_path.is_file():
+            continue
+        try:
+            cal = load_calibration(cal_path)
+            if cal.robot and cal.robot != preset.name:
+                continue
+            tables.append(
+                {
+                    str(k): float(v)
+                    for k, v in derive_calibration_params(cal, model).scales.items()
+                }
+            )
+        except Exception:
+            continue
+    return tables
+
+
 def active_joint_scale_overrides(
     yaml_scales: dict[str, float],
     baseline_scales: dict[str, float],
     *,
     zero_pose_scales: dict[str, float] | None = None,
+    sibling_calibration_scales: list[dict[str, float]] | None = None,
 ) -> dict[str, float]:
-    """Keep only yaml entries that intentionally differ from calibration."""
+    """Keep only yaml entries that intentionally differ from calibration.
+
+    An entry is ignored (not an override) when it matches:
+
+    * the **current** retarget baseline (``baseline_scales``), or
+    * URDF zero-pose scaffold defaults (``zero_pose_scales``), or
+    * **any** sibling ``retarget_calibration_*.yaml`` derived scale table
+      (``sibling_calibration_scales``) — these are leftover auto-sync
+      copies from calibrating a different human-reference format.
+    """
 
     if not yaml_scales or not baseline_scales:
         return {}
+
+    siblings = sibling_calibration_scales or ()
 
     active: dict[str, float] = {}
     for canonical, yaml_val in yaml_scales.items():
@@ -223,13 +290,18 @@ def active_joint_scale_overrides(
             continue
         if zero_pose_scales is not None:
             zp = zero_pose_scales.get(canonical)
-            if zp is not None and float(zp) > 1e-6:
-                zp_rel = abs(float(yaml_val) - float(zp)) / float(zp)
-                if zp_rel <= _SCALE_MATCH_EPS:
-                    # Stale scaffold zero-pose default — user has not edited.
-                    continue
-        rel = abs(float(yaml_val) - float(base)) / float(base)
-        if rel <= _SCALE_MATCH_EPS:
+            if zp is not None and _rel_close(yaml_val, zp):
+                # Stale scaffold zero-pose default — user has not edited.
+                continue
+        if _rel_close(yaml_val, base):
+            continue
+        stale_sibling = False
+        for table in siblings:
+            sib = table.get(canonical)
+            if sib is not None and _rel_close(yaml_val, sib):
+                stale_sibling = True
+                break
+        if stale_sibling:
             continue
         active[canonical] = float(yaml_val)
     return active
@@ -266,13 +338,18 @@ def sync_joint_scale_multipliers_to_robot_yaml(
     derived_scales: dict[str, float],
     ik_map: dict[str, str],
 ) -> None:
-    """Write calibration scales into ``retarget.joint_scale_multipliers``."""
+    """No-op: calibration scales must not be written into robot.yaml.
 
-    from hhtools.robot.yaml_io import update_robot_yaml_joint_scale_multipliers
+    Historically this copied ``derived.scales`` into the global
+    ``retarget.joint_scale_multipliers`` table after every calibration save.
+    That table is shared across human-reference formats, so mocap scales
+    would then activate as "manual overrides" when retargeting LAFAN (and
+    vice versa), breaking frame-0 rest closure.
 
-    scales = scales_for_robot_yaml_from_derived(derived_scales, ik_map)
-    if scales:
-        update_robot_yaml_joint_scale_multipliers(yaml_path, scales)
+    Kept as a callable for older call sites / tests; arguments are ignored.
+    """
+
+    _ = (yaml_path, derived_scales, ik_map)
 
 
 def joint_scale_baselines_for_preset(

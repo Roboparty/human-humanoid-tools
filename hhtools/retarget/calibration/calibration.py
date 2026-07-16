@@ -880,10 +880,13 @@ def build_scaler_config_from_calibration(
     elif _ref == "xsens_mocap" and bundled_reference_bvh_path(_ref) is not None:
         rest_pose = rest_pose_from_bundled_reference("xsens_mocap")
     elif _ref == "lafan_bvh" and bundled_reference_bvh_path(_ref) is not None:
-        # Bundled ``lafan_zero_frame0.bvh`` stays clip-independent for the blue
-        # calibration overlay.  Scaler offsets must come from the clip's frame 0
-        # as a *whole* skeleton — patching only leg quats onto bundled T-pose
-        # positions leaves hips ~180° from the legs' bind frame and IK flips feet.
+        # Clip frame 0 as a *whole* skeleton.  The blue calibration overlay
+        # still uses bundled ``lafan_zero_frame0.bvh`` (T-pose), but feeding
+        # that T-pose into the scaler while the clip opens mid-motion makes
+        # heading / ``q_offset`` fight the trajectory (arms & legs look
+        # twisted).  Frame-0 rest keeps limb directions and facing coherent
+        # with the capture; wrist twist vs the T-pose overlay is a known
+        # LAFAN trade-off until we have a heading-safe T-pose rest path.
         rest_pose = rest_pose_from_motion(
             clip,
             frame=0,
@@ -1582,11 +1585,11 @@ def build_scaler_config_soma_style(
         # and t_offset construction.  So the splay yaw on ankles affects
         # only the IK rotation target, not its position target.
         rbt_disp = p_rbt_j - p_rbt_root
-        # Offsets are solved against the calibration scale (``scale_base``),
-        # while ``joint_scales`` may carry an absolute override from
-        # ``robot.yaml`` ``retarget.joint_scale_multipliers``.  That
-        # deliberately shifts rest/motion IK targets without re-calibrating.
-        residual = rbt_disp - np.float32(scale_base) * (p_src_j - p_src_root)
+        # Solve t_offset against the *final* scale (including any
+        # ``joint_scale_multipliers`` override) so frame-0 rest closure
+        # still holds.  Proportion tweaks then affect motion-frame
+        # displacements; upper-body lateral narrowing is handled post-IK.
+        residual = rbt_disp - np.float32(scale) * (p_src_j - p_src_root)
         t_offset = Q.rotate(
             Q.conjugate(q_rest_target[None, :]),
             residual.astype(np.float32)[None, :],

@@ -562,6 +562,11 @@ function animate() {
   // On loop wrap the robot teleports (start ≠ end).  Always hard-snap the
   // camera with that wrap — even during the post-orbit "manual" grace period —
   // otherwise the robot flies across the viewport while the camera stays put.
+  //
+  // Target and camera must translate by the *same* delta.  Lerping only
+  // ``orbit.target`` leaves the eye behind; at walk speed the lag settles
+  // near the hard-snap threshold (~0.5 m) and the view stutter-snaps every
+  // few frames.
   const loopSnap = player._justLooped;
   player._justLooped = false;
   if (
@@ -570,18 +575,20 @@ function animate() {
     (loopSnap || performance.now() > _orbitManualUntil)
   ) {
     robot.group.getWorldPosition(_camFocus);
-    const jumpSq = orbit.target.distanceToSquared(_camFocus);
-    if (loopSnap || jumpSq > 0.25) {
-      const dx = _camFocus.x - orbit.target.x;
-      const dy = _camFocus.y - orbit.target.y;
-      const dz = _camFocus.z - orbit.target.z;
-      orbit.target.copy(_camFocus);
-      camera.position.x += dx;
-      camera.position.y += dy;
-      camera.position.z += dz;
-    } else {
-      orbit.target.lerp(_camFocus, Math.min(1, dt * 3));
-    }
+    const dx = _camFocus.x - orbit.target.x;
+    const dy = _camFocus.y - orbit.target.y;
+    const dz = _camFocus.z - orbit.target.z;
+    const jumpSq = dx * dx + dy * dy + dz * dz;
+    const a = (loopSnap || jumpSq > 0.25) ? 1 : Math.min(1, dt * 12);
+    const ox = dx * a;
+    const oy = dy * a;
+    const oz = dz * a;
+    orbit.target.x += ox;
+    orbit.target.y += oy;
+    orbit.target.z += oz;
+    camera.position.x += ox;
+    camera.position.y += oy;
+    camera.position.z += oz;
   }
   if ((state.calibrationMode || r2r.calibrating) && calibManip.active && !calibManip._hudCardDrag) {
     calibManip._positionTags();

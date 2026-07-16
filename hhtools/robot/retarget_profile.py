@@ -214,8 +214,9 @@ def joint_scale_overrides_from_preset(
     """Read ``retarget.joint_scale_multipliers`` from ``robot.yaml``.
 
     Values are absolute per-canonical joint scales (same units as calibration
-    ``derived.scales``).  Scaffold writes URDF-derived defaults; edit entries
-    to tune without re-calibrating.
+    ``derived.scales``).  Only intentional manual tweaks belong here — values
+    that match the current or any sibling calibration are ignored at retarget
+    time (see :func:`~hhtools.robot.joint_scales.active_joint_scale_overrides`).
     """
 
     block = _reload_retarget_block(preset)
@@ -240,6 +241,7 @@ def _yaml_active_scale_edits(
 
     from hhtools.robot.joint_scales import (
         active_joint_scale_overrides,
+        all_calibration_scales_for_preset,
         scale_context_for_preset,
     )
 
@@ -266,8 +268,12 @@ def _yaml_active_scale_edits(
     zero_pose: dict[str, float] = {}
     if robot_model is not None:
         _, zero_pose = scale_context_for_preset(preset, robot_model)
+    siblings = all_calibration_scales_for_preset(preset, robot_model)
     active = active_joint_scale_overrides(
-        yaml_scales, baselines, zero_pose_scales=zero_pose,
+        yaml_scales,
+        baselines,
+        zero_pose_scales=zero_pose,
+        sibling_calibration_scales=siblings,
     )
     return active, baselines
 
@@ -351,8 +357,9 @@ def apply_upper_body_lateral_ik_narrowing(
 ) -> "NDArray":
     """Pull upper-body IK positions toward the body midplane in the lateral axis.
 
-    Compares ``retarget.joint_scale_multipliers`` against calibration / URDF
-    baselines so the solved robot mesh narrows when yaml scales are reduced.
+    Compares active ``retarget.joint_scale_multipliers`` edits against
+    calibration / URDF baselines so the solved robot mesh narrows when the
+    user intentionally reduced yaml scales.
     """
 
     import numpy as np
