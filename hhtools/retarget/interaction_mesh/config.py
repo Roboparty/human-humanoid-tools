@@ -280,6 +280,8 @@ class InteractionMeshPipelineConfig:
     # pelvis quaternion inside the SQP (δq on quat DOFs frozen to 0).
     # This is the fundamental fix for roll→stand root/leg teleports:
     # position-only MPC otherwise leaves orientation in a near-nullspace.
+    # Skipped automatically when source pelvis quats are identity
+    # (OMOMO / holosoma position-only clips) — locking those freezes yaw.
     lock_root_orientation_to_source: bool = True
 
     # Post-MPC: kill single-frame root / joint teleports after rolls.

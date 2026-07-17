@@ -851,9 +851,17 @@ def sqp_step_laplacian(
     # to teleport into a different IK basin on stand-up.  Freezing quat to the
     # (continuous) source orientation removes that basin hop at the source.
     src_quat = getattr(frame, "source_root_quat_xyzw", None)
+    # Near-identity source quats (position-only mocap: OMOMO / holosoma)
+    # must not freeze the FREE joint — that locks yaw for the whole clip.
+    _src_usable = False
+    if src_quat is not None:
+        _sq = np.asarray(src_quat, dtype=np.float64).reshape(4)
+        _id = np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float64)
+        _src_usable = float(np.abs(_sq - _id).max()) >= 0.01
     lock_ori = (
         bool(lock_root_orientation_to_source)
         and src_quat is not None
+        and _src_usable
         and int(model.jnt_type[0]) == int(mujoco.mjtJoint.mjJNT_FREE)
     )
     free_qadr: int | None = int(model.jnt_qposadr[0]) if lock_ori else None

@@ -694,6 +694,12 @@ class InteractionMeshPipeline:
         # Use the **raw** source quaternion (no ``source_body_quat``)
         # because :meth:`_build_scaled_source_pose` and the heightfield
         # transform also keep the source frame.
+        #
+        # Position-only datasets (OMOMO, holosoma, …) leave every joint
+        # quaternion at identity.  Locking the FREE joint to that identity
+        # freezes yaw for the whole clip — the actor looks "heading-locked"
+        # while the body still translates.  Skip the attach so SQP can yaw
+        # freely from position / Laplacian costs.
         try:
             from hhtools.core.math import quaternion as Q
 
@@ -703,6 +709,9 @@ class InteractionMeshPipeline:
                 pelvis_idx >= 0
                 and motion.quaternions.shape[0] >= F
                 and F > 0
+                and self._pelvis_orientations_are_informative(
+                    motion, pelvis_idx, F,
+                )
             ):
                 qs = Q.ensure_continuous(
                     Q.normalize(
@@ -725,6 +734,24 @@ class InteractionMeshPipeline:
             pass
 
         return targets, robot_links, z_min, smpl_scale, robot_points
+
+    @staticmethod
+    def _pelvis_orientations_are_informative(
+        motion: Motion,
+        pelvis_idx: int,
+        num_frames: int,
+    ) -> bool:
+        """False when pelvis quats are (near-)identity for the whole clip."""
+
+        qs = np.asarray(
+            motion.quaternions[:num_frames, pelvis_idx],
+            dtype=np.float64,
+        )
+        if qs.ndim != 2 or qs.shape[0] == 0 or qs.shape[1] != 4:
+            return False
+        identity = np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float64)
+        # Same threshold as the scaler's position-only heading probe.
+        return float(np.abs(qs - identity[None, :]).max()) >= 0.01
 
     def _build_contact_scaled_positions(
         self,
