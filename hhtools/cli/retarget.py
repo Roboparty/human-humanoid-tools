@@ -289,17 +289,23 @@ def retarget(
         else:
             out_path = output / f"{motion.name or src.stem}.csv"
 
+        from hhtools.web.export_bundle import bake_export_root_z
+
+        joint_q, lift = bake_export_root_z(robot_model, retargeted, source_motion=motion)
+        meta_out = {
+            "source": str(src.resolve()),
+            "source_format": motion.meta.get("source_format", ""),
+            "ik_iterations": str(ik_iterations),
+            **{k: str(v) for k, v in retargeted.meta.items()},
+        }
+        if abs(lift) > 1e-12:
+            meta_out["playback_mesh_z_lift"] = f"{lift:.6f}"
         save_robot_csv(
             out_path,
             robot=robot_model,
-            joint_q=retargeted.joint_q,
+            joint_q=joint_q,
             sample_rate=retargeted.sample_rate,
-            meta={
-                "source": str(src.resolve()),
-                "source_format": motion.meta.get("source_format", ""),
-                "ik_iterations": str(ik_iterations),
-                **{k: str(v) for k, v in retargeted.meta.items()},
-            },
+            meta=meta_out,
         )
         typer.echo(f"  → {out_path}  ({retargeted.num_frames} frames)")
         written.append(out_path)
@@ -444,16 +450,22 @@ def interaction_mesh_run(
         )
         ret = pipe.run(motion)
         out_path = output if output_is_file else output / f"{motion.name or src.stem}.csv"
+        from hhtools.web.export_bundle import bake_export_root_z
+
+        joint_q, lift = bake_export_root_z(robot_model, ret, source_motion=motion)
+        meta_out = {
+            "source": str(src),
+            "retarget_backend": "interaction_mesh",
+            **{k: str(v) for k, v in ret.meta.items()},
+        }
+        if abs(lift) > 1e-12:
+            meta_out["playback_mesh_z_lift"] = f"{lift:.6f}"
         save_robot_csv(
             out_path,
             robot=robot_model,
-            joint_q=ret.joint_q,
+            joint_q=joint_q,
             sample_rate=ret.sample_rate,
-            meta={
-                "source": str(src),
-                "retarget_backend": "interaction_mesh",
-                **{k: str(v) for k, v in ret.meta.items()},
-            },
+            meta=meta_out,
         )
         typer.echo(f"[interaction-mesh] → {out_path} ({ret.num_frames} frames)", file=sys.stderr)
 

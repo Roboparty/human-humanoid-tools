@@ -790,6 +790,96 @@ def _scaled_overlay_foot_z(scaled_preview: dict[str, Any], playback_i: int) -> f
     return min(zs) if zs else None
 
 
+def constant_playback_mesh_z_lift(
+    model,
+    retargeted,
+    *,
+    scaled_preview: dict[str, Any] | None = None,
+    yellow_foot_z: float | None = None,
+    preserve_absolute_z: bool = False,
+    frame_index: int = 0,
+) -> float:
+    """Constant browser ``mesh_z_lift`` used when ``ground_follow`` is off.
+
+    Matches playback: yellow overlay foot when available, else terrain-absolute
+    ankle→sole correction, else flat sole→``z=0`` at ``frame_index``.
+    """
+    root = np.asarray(retargeted.root_trajectory, dtype=np.float32)
+    dof = np.asarray(retargeted.dof_trajectory, dtype=np.float32)
+    if root.shape[0] == 0:
+        return 0.0
+    f0 = int(np.clip(frame_index, 0, root.shape[0] - 1))
+    root0 = root[f0]
+    ret_dof_names = list(retargeted.dof_names)
+    ik_map = dict(model.preset.ik_map) if model.preset.ik_map else {}
+    sole_depth_ref = _sole_depth_reference(model, ik_map)
+
+    yellow_foot_f0 = yellow_foot_z
+    if yellow_foot_f0 is None and scaled_preview is not None:
+        yellow_foot_f0 = _scaled_overlay_foot_z(scaled_preview, 0)
+
+    lift0 = _mesh_playback_z_lift(
+        model,
+        ret_dof_names,
+        dof[f0],
+        root0,
+        sole_depth_ref=sole_depth_ref,
+        ik_map=ik_map,
+        yellow_foot_z=yellow_foot_f0,
+    )
+    if yellow_foot_f0 is not None:
+        return float(lift0)
+    if preserve_absolute_z:
+        return float(lift0) if sole_depth_ref is not None else 0.0
+
+    _apply_retarget_dof(model, ret_dof_names, dof[f0])
+    root_rot0 = _quat_xyzw_to_rotmat(root0[3:7])
+    min_mesh_z0 = _scene_min_mesh_z(model.trimesh_scene(), root_rot0)
+    if min_mesh_z0 is not None:
+        world_min = float(root0[2]) + lift0 + min_mesh_z0
+        return float(lift0 - world_min)
+    return float(lift0)
+
+
+def bake_playback_mesh_z_lift_into_joint_q(
+    model,
+    retargeted,
+    joint_q: np.ndarray,
+    *,
+    scaled_preview: dict[str, Any] | None = None,
+    yellow_foot_z: float | None = None,
+    preserve_absolute_z: bool = False,
+) -> tuple[np.ndarray, float]:
+    """Bake constant playback ``mesh_z_lift`` into ``joint_q[:, 2]`` (root_z).
+
+    External consumers that only read CSV/PKL root height then match the
+    hhtools viewer (``group.z = root_z + mesh_z_lift``).  Terrain/object
+    sidecars stay in the retarget frame — only the robot root is shifted.
+    """
+    import dataclasses
+
+    q = np.asarray(joint_q, dtype=np.float32)
+    if q.ndim != 2 or q.shape[0] == 0 or q.shape[1] < 3:
+        return q, 0.0
+    ret_for_lift = dataclasses.replace(retargeted, joint_q=q)
+    try:
+        lift = constant_playback_mesh_z_lift(
+            model,
+            ret_for_lift,
+            scaled_preview=scaled_preview,
+            yellow_foot_z=yellow_foot_z,
+            preserve_absolute_z=preserve_absolute_z,
+            frame_index=0,
+        )
+    except Exception:
+        return q.copy() if q.flags.writeable else q, 0.0
+    if abs(float(lift)) < 1e-12:
+        return q.copy() if not q.flags.writeable else q, 0.0
+    out = q.copy()
+    out[:, 2] = out[:, 2] + float(lift)
+    return out, float(lift)
+
+
 def serialize_robot_trajectory(
     model,
     retargeted,
@@ -835,51 +925,16 @@ def serialize_robot_trajectory(
     sole_depth_ref = _sole_depth_reference(model, ik_map)
 
     # When foot-follow is off, compute the grounding lift ONCE at the first
-    # played frame and reuse it for all frames.  When a yellow scaled overlay
-    # is available (parc_ms / OMOMO / holosoma), align the mesh sole to that
-    # overlay foot — the IK root already tracks the same scaled targets, so
-    # snapping the mesh to z=0 would sink the robot below the yellow skeleton
-    # whenever the actor stands on terrain above the clip foot-floor (boxes,
-    # stairs, vaults).  Flat clips without overlay data keep scheme A (sole on
-    # z=0 at frame 0).
+    # played frame and reuse it for all frames (same helper as CSV/PKL bake).
     const_lift = 0.0
     if not ground_follow and len(idx) > 0:
-        f0 = int(idx[0])
-        root0 = root[f0]
-        yellow_foot_f0 = (
-            _scaled_overlay_foot_z(scaled_preview, 0)
-            if scaled_preview is not None
-            else None
-        )
-        lift0 = _mesh_playback_z_lift(
+        const_lift = constant_playback_mesh_z_lift(
             model,
-            ret_dof_names,
-            dof[f0],
-            root0,
-            sole_depth_ref=sole_depth_ref,
-            ik_map=ik_map,
-            yellow_foot_z=yellow_foot_f0,
+            retargeted,
+            scaled_preview=scaled_preview,
+            preserve_absolute_z=preserve_absolute_z,
+            frame_index=int(idx[0]),
         )
-        if yellow_foot_f0 is not None:
-            # ``_mesh_playback_z_lift`` already places the mesh sole on the
-            # overlay foot; do not re-normalise to ``z=0``.
-            const_lift = float(lift0)
-        elif preserve_absolute_z:
-            # Trust the exported floating-base root in the retarget/terrain frame.
-            # Apply ankle→sole mesh correction when available; otherwise leave
-            # ``mesh_z_lift`` at zero so the sidecar heightfield stays aligned.
-            const_lift = float(lift0) if sole_depth_ref is not None else 0.0
-        else:
-            # Flat robot CSV exports with no terrain: shift the constant group
-            # lift so the lowest mesh vertex rests on z=0 at the first frame.
-            _apply_retarget_dof(model, ret_dof_names, dof[f0])
-            root_rot0 = _quat_xyzw_to_rotmat(root0[3:7])
-            min_mesh_z0 = _scene_min_mesh_z(model.trimesh_scene(), root_rot0)
-            if min_mesh_z0 is not None:
-                world_min = float(root0[2]) + lift0 + min_mesh_z0
-                const_lift = float(lift0 - world_min)
-            else:
-                const_lift = lift0
 
     frames: list[dict[str, Any]] = []
     for pi, f in enumerate(idx):

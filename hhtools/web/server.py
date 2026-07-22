@@ -1258,6 +1258,8 @@ def create_app(
             scaled_scene = _compute_scaled_scene(
                 model, robot, motion, reference, human_height,
             )
+            from hhtools.web.serialize import _scaled_overlay_foot_z
+
             # Keep the retarget result + source motion in memory so the export
             # endpoint can render CSV or PKL at any target fps on demand.
             export_token = uuid.uuid4().hex[:10]
@@ -1269,6 +1271,8 @@ def create_app(
                 "stem": motion.name or token,
                 "has_scene": bool(motion.terrain is not None or motion.objects),
                 "source_path": rec.get("source_path"),
+                # Same yellow-foot Z the viewer used so CSV/PKL bake matches playback.
+                "yellow_foot_z": _scaled_overlay_foot_z(scaled, 0),
             }
             job.result = {
                 "trajectory": traj,
@@ -1714,6 +1718,7 @@ def create_app(
                     },
                     stem=stem, fps=fps, fmt=fmt,
                     csv_header=_parse_csv_header(csv_header),
+                    yellow_foot_z=rec.get("yellow_foot_z"),
                 )
             else:
                 path = _write_export(
@@ -1721,6 +1726,7 @@ def create_app(
                     stem=stem, fps=fps, fmt=fmt, backend=rec["backend"],
                     csv_header=_parse_csv_header(csv_header),
                     source_path=rec.get("source_path"),
+                    yellow_foot_z=rec.get("yellow_foot_z"),
                 )
         except Exception as err:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=f"export failed: {err}") from err
@@ -1907,6 +1913,7 @@ def create_app(
             scaled = _align_scaled_preview_to_robot_playback(tgt, ret, scaled, traj)
             from hhtools.web.r2r_export_bundle import clip_has_export_scene
             from hhtools.web.r2r_scene import compute_r2r_target_scaled_scene
+            from hhtools.web.serialize import _scaled_overlay_foot_z
 
             stem = rec.get("stem") or "r2r"
             clip_dir_path = Path(rec.get("clip_dir") or Path(rec["source_path"]).parent)
@@ -1939,6 +1946,7 @@ def create_app(
                 "source_path": rec.get("source_path"),
                 "r2r": True,
                 "source_robot": source,
+                "yellow_foot_z": _scaled_overlay_foot_z(scaled, 0),
                 "r2r_entry": {
                     "source_path": rec.get("source_path"),
                     "clip_dir": rec.get("clip_dir"),
@@ -3709,6 +3717,7 @@ def _write_r2r_export(
     fmt: str,
     subdir: str | None = None,
     csv_header: bool = True,
+    yellow_foot_z: float | None = None,
 ):
     """R2R clip bundle: target robot traj + rescaled terrain/object sidecars."""
     from hhtools.web.export_bundle import resolve_clip_export_dir
@@ -3735,6 +3744,7 @@ def _write_r2r_export(
         fmt=fmt,
         resample_fn=_resample_retargeted,
         csv_header=csv_header,
+        yellow_foot_z=yellow_foot_z,
     )
     if subdir is not None and path.suffix == ".zip":
         import shutil
@@ -3776,6 +3786,7 @@ def _write_export(
     subdir: str | None = None,
     csv_header: bool = True,
     source_path: str | Path | None = None,
+    yellow_foot_z: float | None = None,
 ):
     """Write a browser-downloadable CSV/PKL bundle (zip when scene props exist)."""
     from hhtools.web.export_bundle import (
@@ -3801,6 +3812,7 @@ def _write_export(
         resample_fn=_resample_retargeted,
         csv_header=csv_header,
         source_path=source_path,
+        yellow_foot_z=yellow_foot_z,
     )
     # Batch jobs unpack per-clip zips into the job tree (final zip later).
     if subdir is not None and path.suffix == ".zip":

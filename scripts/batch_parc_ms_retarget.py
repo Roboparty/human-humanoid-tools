@@ -192,10 +192,13 @@ def _process_clip(pkl: Path, cfg: _ClipConfig) -> None:
     ret = pipe.run(motion)
 
     clip_dir.mkdir(parents=True, exist_ok=True)
+    from hhtools.web.export_bundle import bake_export_root_z
+
+    joint_q, _lift = bake_export_root_z(robot_model, ret, source_motion=motion)
     save_robot_csv(
         csv_path,
         robot=robot_model,
-        joint_q=ret.joint_q,
+        joint_q=joint_q,
         sample_rate=ret.sample_rate,
         include_header=False,
     )

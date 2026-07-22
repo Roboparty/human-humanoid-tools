@@ -20,6 +20,7 @@ import numpy as np
 
 from hhtools.web.export_bundle import (
     OBJECT_CSV_HEADER,
+    _bake_export_joint_q,
     _robot_pkl_blob,
     _save_object_track_csv,
     resolve_clip_export_dir,
@@ -226,6 +227,7 @@ def write_r2r_export_bundle(
     fmt: str,
     resample_fn,
     csv_header: bool = True,
+    yellow_foot_z: float | None = None,
 ) -> Path:
     """Write robot + rescaled scene sidecars; zip when terrain/objects present."""
     import dataclasses
@@ -242,7 +244,6 @@ def write_r2r_export_bundle(
     )
 
     joint_q, sample_rate = resample_fn(retargeted, fps)
-    ret2 = dataclasses.replace(retargeted, joint_q=joint_q, sample_rate=sample_rate)
     ratio = r2r_scene_scale_ratio(
         source_model, target_model, source_motion, calibrated_joint_q,
     )
@@ -254,7 +255,27 @@ def write_r2r_export_bundle(
         shutil.rmtree(clip_dir, ignore_errors=True)
     clip_dir.mkdir(parents=True, exist_ok=True)
 
-    meta = {"retarget_backend": "r2r", "r2r_scale_ratio": f"{ratio:.6f}"}
+    meta = dict(getattr(retargeted, "meta", {}) or {})
+    meta["retarget_backend"] = "r2r"
+    meta["r2r_scale_ratio"] = f"{ratio:.6f}"
+    has_terrain = (
+        getattr(source_motion, "terrain", None) is not None
+        or _terrain_src_path(Path(source_clip_dir), stem) is not None
+    )
+    joint_q, playback_lift = _bake_export_joint_q(
+        target_model,
+        retargeted,
+        joint_q,
+        source_motion,
+        meta,
+        yellow_foot_z=yellow_foot_z,
+        preserve_absolute_z=has_terrain,
+    )
+    if abs(playback_lift) > 1e-12:
+        meta["playback_mesh_z_lift"] = f"{playback_lift:.6f}"
+    ret2 = dataclasses.replace(
+        retargeted, joint_q=joint_q, sample_rate=sample_rate, meta=meta,
+    )
 
     if fmt == "pkl":
         pkl_path = clip_dir / f"{stem}.pkl"

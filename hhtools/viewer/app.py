@@ -4497,15 +4497,24 @@ def _build_robot_tab(  # type: ignore[no-untyped-def]
                         f"hhtools_{model.preset.name}_"
                         f"{(stem or 'motion').replace('/', '_')}.csv"
                     )
+                    from hhtools.web.export_bundle import bake_export_root_z
+
+                    src_motion = clips[i] if i < len(clips) else None
+                    joint_q, lift = bake_export_root_z(
+                        model, result, source_motion=src_motion,
+                    )
+                    meta_out = {
+                        "source_motion": result.name,
+                        **{k: str(v) for k, v in result.meta.items()},
+                    }
+                    if abs(lift) > 1e-12:
+                        meta_out["playback_mesh_z_lift"] = f"{lift:.6f}"
                     save_robot_csv(
                         out_path,
                         robot=model,
-                        joint_q=result.joint_q,
+                        joint_q=joint_q,
                         sample_rate=result.sample_rate,
-                        meta={
-                            "source_motion": result.name,
-                            **{k: str(v) for k, v in result.meta.items()},
-                        },
+                        meta=meta_out,
                     )
                     exported.append(out_path)
 

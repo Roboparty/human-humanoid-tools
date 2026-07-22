@@ -94,6 +94,107 @@ def _resolve_export_scene_params(meta: dict, source_motion) -> tuple[float, floa
     return smpl_scale, z_offset, z_terrain
 
 
+def _yellow_foot_z_from_motion_meta(source_motion, meta: dict) -> float | None:
+    """Lowest ankle/foot Z in the retarget robot frame (``smpl_scale`` + floor snap).
+
+    Used when no browser scaled-preview is available (batch export) so the
+    baked root_z still tracks terrain/object height the same way playback does.
+    """
+    if source_motion is None:
+        return None
+    try:
+        smpl_scale = float(meta.get("smpl_scale", 1.0))
+        z_min = float(meta.get("source_z_min", 0.0))
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(smpl_scale) or smpl_scale <= 0.0:
+        return None
+    hierarchy = getattr(source_motion, "hierarchy", None)
+    names = list(getattr(hierarchy, "bone_names", []) or [])
+    positions = np.asarray(getattr(source_motion, "positions", None), dtype=np.float64)
+    if not names or positions.ndim != 3 or positions.shape[0] == 0:
+        return None
+
+    def _norm(name: str) -> str:
+        return str(name).lower().replace("_", "").replace(" ", "")
+
+    name_to_i = {_norm(n): i for i, n in enumerate(names)}
+    zs: list[float] = []
+    pos0 = positions[0]
+    for key in (
+        "leftankle",
+        "rightankle",
+        "leftfoot",
+        "rightfoot",
+        "leftleg",
+        "rightleg",
+    ):
+        idx = name_to_i.get(key)
+        if idx is not None and idx < pos0.shape[0]:
+            zs.append(float((pos0[idx, 2] - z_min) * smpl_scale))
+    return min(zs) if zs else None
+
+
+def _bake_export_joint_q(
+    model,
+    retargeted,
+    joint_q: np.ndarray,
+    source_motion,
+    meta: dict,
+    *,
+    scaled_preview: dict | None = None,
+    yellow_foot_z: float | None = None,
+    preserve_absolute_z: bool | None = None,
+) -> tuple[np.ndarray, float]:
+    """Bake viewer ``mesh_z_lift`` into robot ``root_z`` for CSV/PKL export."""
+    from hhtools.web.serialize import bake_playback_mesh_z_lift_into_joint_q
+
+    if model is None or not hasattr(model, "trimesh_scene"):
+        return np.asarray(joint_q, dtype=np.float32), 0.0
+
+    if preserve_absolute_z is None:
+        preserve_absolute_z = getattr(source_motion, "terrain", None) is not None
+    yellow = yellow_foot_z
+    if yellow is None and scaled_preview is None:
+        has_scene = motion_has_scene(source_motion)
+        if has_scene or preserve_absolute_z:
+            yellow = _yellow_foot_z_from_motion_meta(source_motion, meta)
+
+    return bake_playback_mesh_z_lift_into_joint_q(
+        model,
+        retargeted,
+        joint_q,
+        scaled_preview=scaled_preview,
+        yellow_foot_z=yellow,
+        preserve_absolute_z=bool(preserve_absolute_z),
+    )
+
+
+def bake_export_root_z(
+    model,
+    retargeted,
+    joint_q: np.ndarray | None = None,
+    source_motion=None,
+    *,
+    scaled_preview: dict | None = None,
+    yellow_foot_z: float | None = None,
+    preserve_absolute_z: bool | None = None,
+) -> tuple[np.ndarray, float]:
+    """Public helper: bake viewer mesh Z lift into ``joint_q`` for any export path."""
+    q = joint_q if joint_q is not None else np.asarray(retargeted.joint_q, dtype=np.float32)
+    meta = dict(getattr(retargeted, "meta", {}) or {})
+    return _bake_export_joint_q(
+        model,
+        retargeted,
+        q,
+        source_motion,
+        meta,
+        scaled_preview=scaled_preview,
+        yellow_foot_z=yellow_foot_z,
+        preserve_absolute_z=preserve_absolute_z,
+    )
+
+
 def _scaled_terrain(source_motion, smpl_scale: float, z_terrain: float):
     terrain = getattr(source_motion, "terrain", None)
     if terrain is None:
@@ -352,11 +453,16 @@ def write_retarget_export_bundle(
     resample_fn,
     csv_header: bool = True,
     source_path: str | Path | None = None,
+    scaled_preview: dict | None = None,
+    yellow_foot_z: float | None = None,
 ) -> Path:
     """Write a clip bundle and return the path to a ``.zip`` (or bare file if no scene).
 
     ``resample_fn`` is ``_resample_retargeted`` from :mod:`hhtools.web.server` to
     avoid a circular import at module load time.
+
+    Robot ``root_z`` is baked with the same constant ``mesh_z_lift`` the browser
+    applies during playback so external sims match ground / terrain / objects.
     """
     import dataclasses
 
@@ -366,8 +472,19 @@ def write_retarget_export_bundle(
     has_scene = motion_has_scene(source_motion)
 
     joint_q, sample_rate = resample_fn(retargeted, fps)
-    ret2 = dataclasses.replace(retargeted, joint_q=joint_q, sample_rate=sample_rate)
-    meta = getattr(retargeted, "meta", {}) or {}
+    meta = dict(getattr(retargeted, "meta", {}) or {})
+    joint_q, playback_lift = _bake_export_joint_q(
+        model,
+        retargeted,
+        joint_q,
+        source_motion,
+        meta,
+        scaled_preview=scaled_preview,
+        yellow_foot_z=yellow_foot_z,
+    )
+    if abs(playback_lift) > 1e-12:
+        meta["playback_mesh_z_lift"] = f"{playback_lift:.6f}"
+    ret2 = dataclasses.replace(retargeted, joint_q=joint_q, sample_rate=sample_rate, meta=meta)
     smpl_scale, z_offset, z_terrain = _resolve_export_scene_params(meta, source_motion)
 
     clip_dir = resolve_clip_export_dir(
@@ -386,6 +503,10 @@ def write_retarget_export_bundle(
         if clip_dir.exists() and clip_dir.is_dir():
             shutil.rmtree(clip_dir, ignore_errors=True)
         clip_dir.mkdir(parents=True, exist_ok=True)
+
+    csv_meta = {"retarget_backend": backend}
+    if "playback_mesh_z_lift" in meta:
+        csv_meta["playback_mesh_z_lift"] = meta["playback_mesh_z_lift"]
 
     if fmt == "pkl":
         blob: dict[str, object] = {
@@ -409,7 +530,7 @@ def write_retarget_export_bundle(
             robot=model,
             joint_q=joint_q,
             sample_rate=sample_rate,
-            meta={"retarget_backend": backend},
+            meta=csv_meta,
             include_header=csv_header,
         )
 
