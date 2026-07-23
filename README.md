@@ -22,7 +22,7 @@ We welcome suggestions and ideas — please open an issue or discussion anytime.
 
 ## Highlights
 
-- **Fast retarget** — drag a human clip, pick a robot, export CSV/ZIP; **Newton IK** + **MPC-SQP** interaction mesh.
+- **Fast retarget** — Web UI or **CLI** (`hhtools retarget` / `scripts/batch_*_retarget.py`); **Newton IK** + **MPC-SQP** interaction mesh.
 - **Human formats** — BVH / GLB / SMPL family; adapters for AMASS, GVHMR, LAFAN, OMOMO, PHUMA, intermimic, meshmimic, …
 - **Any URDF** — upload any robot in the Web UI: drag in the URDF, drag in meshes; auto-detected, no manual tuning.
 - **Robot→robot (R2R)** — retarget existing robot CSV/PKL exports onto a new URDF.
@@ -51,6 +51,92 @@ Open `http://127.0.0.1:8009`.
 | **Dataset analysis** | Drop a folder → analyze → explore tags & scatter → export subset |
 
 Robot tuning: edit [`configs/robots/unitree_g1/`](configs/robots/unitree_g1/) or uploaded `~/.config/hhtools/robots/<name>/robot.yaml`; run `hhtools robot validate <name>`. Details in [framework.md](framework.md).
+
+### CLI (batch / no Web UI)
+
+Entry point: `uv run hhtools` (same package as the Web UI). Use this for large datasets (thousands of clips) instead of dragging files into the browser. Calibrate once in the Web UI (or place `retarget_calibration_<ref>.yaml` next to the URDF) before batch retarget.
+
+| Command | Purpose |
+|---------|---------|
+| `hhtools convert run` | BVH / GLB → unified NPZ |
+| `hhtools import list` / `import run` | List adapters; import a dataset root → NPZ |
+| `hhtools bodymodel check` / `setup` | SMPL-family weight paths / download hints |
+| `hhtools robot list` / `info` / `schema` / `validate` / `scaffold` / `add` | Robot presets |
+| `hhtools retarget run` | Newton IK → CSV (files or directory) |
+| `hhtools retarget interaction-mesh run` | Interaction-mesh (terrain / objects) → CSV |
+| `hhtools retarget interaction-mesh precompute-laplacian` | Precompute Laplacian targets (`.npz`) |
+| `hhtools web` | HTML / three.js UI (default `127.0.0.1:8009`) |
+| `hhtools ui` | Legacy Viser viewer |
+
+**Convert & import**
+
+```bash
+uv run hhtools convert run assets/motions/mimic/LAFAN/dance1_subject2.bvh -o /tmp/npz --unit m
+uv run hhtools convert run assets/motions/mimic/GLB/cranberry.glb -o /tmp/npz
+
+uv run hhtools import list
+uv run hhtools import run --dataset lafan \
+  --root assets/motions/mimic/LAFAN -o /tmp/lafan_npz \
+  --sequence dance1_subject2.bvh
+uv run hhtools import run --dataset omomo \
+  --root assets/motions/intermimic/OMOMO -o /tmp/omomo_npz \
+  --sequence sub12_woodchair_000/sub12_woodchair_000.pkl
+```
+
+**Robots**
+
+```bash
+uv run hhtools robot list
+uv run hhtools robot info unitree_g1__g1_29dof --no-mjcf
+uv run hhtools robot schema unitree_g1__g1_29dof -o /tmp/g1_header.csv
+uv run hhtools robot validate unitree_g1__g1_29dof
+uv run hhtools robot scaffold unitree_g1          # skip existing yaml
+# uv run hhtools robot add /path/to/urdf_or_dir  # ingest into configs/robots/
+```
+
+**Retarget (smoke with `--limit-frames`)**
+
+```bash
+# Newton IK (flat / AMASS-style NPZ)
+uv run hhtools retarget run path/to/clip.npz \
+  --robot unitree_g1__g1_29dof -o /tmp/out.csv \
+  --calibration-reference smpl --limit-frames 30
+
+# Interaction-mesh (OMOMO / terrain clips)
+uv run hhtools retarget interaction-mesh run path/to/clip.pkl \
+  --robot unitree_g1__g1_29dof -o /tmp/out_im.csv \
+  --calibration-reference smpl --limit-frames 30
+```
+
+**Large offline batches** (resumable, subprocess isolation; export matches Web CSV/sidecars, folders not zipped):
+
+```bash
+# mimic (flat mocap → Newton IK): amass | lafan | glb | …
+python scripts/batch_mimic_retarget.py \
+  --robot rp1 --dataset amass \
+  --in /path/to/AMASS --out /path/to/AMASS_rp1 \
+  --skip-existing --limit 5
+
+# intermimic (human–object): omomo
+python scripts/batch_intermimic_retarget.py \
+  --robot rp1 --dataset omomo \
+  --in /path/to/OMOMO --out /path/to/OMOMO_rp1 \
+  --skip-existing
+
+# meshmimic (terrain): parc_ms | holosoma
+python scripts/batch_meshmimic_retarget.py \
+  --robot rp1 --dataset parc_ms \
+  --in /path/to/parc_ms --out /path/to/parc_ms_rp1 \
+  --skip-existing --failure-log failures.jsonl
+
+# robot→robot (input = already-exported source-robot trajectories)
+python scripts/batch_r2r_retarget.py \
+  --source-robot rp1 --target-robot unitree_g1__g1_29dof \
+  --in /path/to/rp1_exports --out /path/to/g1_from_rp1 \
+  --profile auto --skip-existing
+```
+
+Scene clips → `<out>/<clip>/<clip>.csv` + terrain/object sidecars (robot frame). Flat mimic → `<out>/…/<stem>.csv`. Interaction-mesh needs `mujoco` + `osqp`; Newton needs the NVIDIA `newton` package. R2R needs a saved `r2r_calibration_<source>.yaml` beside the target URDF (Web calibrate once, or `--calibration` / `--init-zero-calibration`).
 
 ### Tuning `robot.yaml`
 

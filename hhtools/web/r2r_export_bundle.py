@@ -228,8 +228,13 @@ def write_r2r_export_bundle(
     resample_fn,
     csv_header: bool = True,
     yellow_foot_z: float | None = None,
+    pack_scene: bool = True,
 ) -> Path:
-    """Write robot + rescaled scene sidecars; zip when terrain/objects present."""
+    """Write robot + rescaled scene sidecars; zip when terrain/objects present.
+
+    When ``pack_scene`` is False (offline batch), keep an uncompressed folder
+    instead of a ``.zip``. File contents match the Web export either way.
+    """
     import dataclasses
 
     out_root = Path(out_root)
@@ -323,6 +328,16 @@ def write_r2r_export_bundle(
 
     if not has_scene:
         return clip_dir / (f"{stem}.pkl" if fmt == "pkl" else f"{stem}.csv")
+
+    if not pack_scene:
+        _log.info(
+            "r2r export folder %s (ratio=%.4f, meshes=%s, object_tracks=%s)",
+            clip_dir,
+            ratio,
+            mesh_names,
+            object_tracks,
+        )
+        return clip_dir
 
     # See ``write_retarget_export_bundle`` — avoid zipping a directory into
     # a ``.zip`` path that lives inside that same directory (R2R batch uploads

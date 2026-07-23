@@ -440,6 +440,18 @@ def _copy_scene_meshes(
     return copied
 
 
+def identity_resample(retargeted: Any, fps: float | None):
+    """No-op resample helper for CLI / batch exporters (keeps native sample rate)."""
+    src = float(getattr(retargeted, "sample_rate", 30.0))
+    jq = np.asarray(retargeted.joint_q, dtype=np.float32)
+    if fps is None or fps <= 0 or abs(float(fps) - src) < 1e-6:
+        return jq, src
+    from hhtools.web.serialize import resample_joint_q
+
+    rc = int(getattr(retargeted, "root_coord_count", 7))
+    return resample_joint_q(jq, src, float(fps), root_coord_count=rc), float(fps)
+
+
 def write_retarget_export_bundle(
     retargeted: Any,
     model,
@@ -455,6 +467,7 @@ def write_retarget_export_bundle(
     source_path: str | Path | None = None,
     scaled_preview: dict | None = None,
     yellow_foot_z: float | None = None,
+    pack_scene: bool = True,
 ) -> Path:
     """Write a clip bundle and return the path to a ``.zip`` (or bare file if no scene).
 
@@ -463,6 +476,10 @@ def write_retarget_export_bundle(
 
     Robot ``root_z`` is baked with the same constant ``mesh_z_lift`` the browser
     applies during playback so external sims match ground / terrain / objects.
+
+    When ``pack_scene`` is False (batch / offline), scene clips keep an uncompressed
+    folder (``<stem>/<stem>.csv`` + terrain/object sidecars) instead of a ``.zip``.
+    File contents match the Web export either way.
     """
     import dataclasses
 
@@ -557,6 +574,15 @@ def write_retarget_export_bundle(
 
     if not has_scene:
         return clip_dir / (f"{stem}.pkl" if fmt == "pkl" else f"{stem}.csv")
+
+    if not pack_scene:
+        _log.info(
+            "export folder %s (meshes=%s, object_tracks=%s)",
+            clip_dir,
+            mesh_names,
+            object_tracks,
+        )
+        return clip_dir
 
     # ``make_archive(out_root/stem, root_dir=clip_dir)`` hangs when
     # ``clip_dir == out_root`` (batch upload layout: ``out/sub10/sub10/``):

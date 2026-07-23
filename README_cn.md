@@ -22,7 +22,7 @@
 
 ## 亮点
 
-- **快速重映射**：拖入人体动作 → 选机器人 → 导出 CSV/ZIP；**Newton IK** + **MPC-SQP** 交互网格。
+- **快速重映射**：Web UI 或 **CLI**（`hhtools retarget` / `scripts/batch_*_retarget.py`）；**Newton IK** + **MPC-SQP** 交互网格。
 - **多源人体数据**：BVH / GLB / SMPL 系；适配 AMASS、GVHMR、LAFAN、OMOMO、PHUMA、intermimic、meshmimic 等。
 - **任意 URDF**：Web 上传任意其他机器人。拖入 URDF，拖入 mesh，自动识别，无需调参。
 - **机器人→机器人（R2R）**：已有机器人 CSV/PKL 轨迹重映射到新 URDF。
@@ -51,6 +51,92 @@ uv run hhtools web
 | **数据集可视化分析** | 拖入文件夹 → 分析 → 标签/散点探索 → 导出子集 |
 
 参数调优：改 [`configs/robots/unitree_g1/`](configs/robots/unitree_g1/) 或 `~/.config/hhtools/robots/<名称>/robot.yaml`，运行 `hhtools robot validate <名称>`。原理见 [framework.md](framework.md)。
+
+### CLI（批量 / 不走 Web）
+
+入口：`uv run hhtools`（与 Web 同一套包）。上万条数据请用 CLI/脚本，不要往浏览器里拖。批量前请先在 Web 标定一次（或准备好 URDF 旁的 `retarget_calibration_<ref>.yaml`）。
+
+| 命令 | 作用 |
+|------|------|
+| `hhtools convert run` | BVH / GLB → 统一 NPZ |
+| `hhtools import list` / `import run` | 列出适配器；数据集根目录 → NPZ |
+| `hhtools bodymodel check` / `setup` | SMPL 系权重路径 / 下载说明 |
+| `hhtools robot list` / `info` / `schema` / `validate` / `scaffold` / `add` | 机器人预设 |
+| `hhtools retarget run` | Newton IK → CSV（文件或目录） |
+| `hhtools retarget interaction-mesh run` | Interaction-mesh（地形/物体）→ CSV |
+| `hhtools retarget interaction-mesh precompute-laplacian` | 预计算 Laplacian 目标（`.npz`） |
+| `hhtools web` | HTML / three.js UI（默认 `127.0.0.1:8009`） |
+| `hhtools ui` | 旧版 Viser 查看器 |
+
+**转换与导入**
+
+```bash
+uv run hhtools convert run assets/motions/mimic/LAFAN/dance1_subject2.bvh -o /tmp/npz --unit m
+uv run hhtools convert run assets/motions/mimic/GLB/cranberry.glb -o /tmp/npz
+
+uv run hhtools import list
+uv run hhtools import run --dataset lafan \
+  --root assets/motions/mimic/LAFAN -o /tmp/lafan_npz \
+  --sequence dance1_subject2.bvh
+uv run hhtools import run --dataset omomo \
+  --root assets/motions/intermimic/OMOMO -o /tmp/omomo_npz \
+  --sequence sub12_woodchair_000/sub12_woodchair_000.pkl
+```
+
+**机器人**
+
+```bash
+uv run hhtools robot list
+uv run hhtools robot info unitree_g1__g1_29dof --no-mjcf
+uv run hhtools robot schema unitree_g1__g1_29dof -o /tmp/g1_header.csv
+uv run hhtools robot validate unitree_g1__g1_29dof
+uv run hhtools robot scaffold unitree_g1          # 已有 yaml 则跳过
+# uv run hhtools robot add /path/to/urdf_or_dir  # 写入 configs/robots/
+```
+
+**重映射（可用 `--limit-frames` 冒烟）**
+
+```bash
+# Newton IK（平坦 / AMASS 类 NPZ）
+uv run hhtools retarget run path/to/clip.npz \
+  --robot unitree_g1__g1_29dof -o /tmp/out.csv \
+  --calibration-reference smpl --limit-frames 30
+
+# Interaction-mesh（OMOMO / 带地形）
+uv run hhtools retarget interaction-mesh run path/to/clip.pkl \
+  --robot unitree_g1__g1_29dof -o /tmp/out_im.csv \
+  --calibration-reference smpl --limit-frames 30
+```
+
+**大批量离线脚本**（可断点续跑、子进程隔离；导出内容与 Web 一致，场景 clip 保留文件夹不打 zip）：
+
+```bash
+# mimic（平坦 mocap → Newton IK）：amass | lafan | glb | …
+python scripts/batch_mimic_retarget.py \
+  --robot rp1 --dataset amass \
+  --in /path/to/AMASS --out /path/to/AMASS_rp1 \
+  --skip-existing --limit 5
+
+# intermimic（人–物）：omomo
+python scripts/batch_intermimic_retarget.py \
+  --robot rp1 --dataset omomo \
+  --in /path/to/OMOMO --out /path/to/OMOMO_rp1 \
+  --skip-existing
+
+# meshmimic（地形）：parc_ms | holosoma
+python scripts/batch_meshmimic_retarget.py \
+  --robot rp1 --dataset parc_ms \
+  --in /path/to/parc_ms --out /path/to/parc_ms_rp1 \
+  --skip-existing --failure-log failures.jsonl
+
+# robot→robot（输入为已导出的源机轨迹树）
+python scripts/batch_r2r_retarget.py \
+  --source-robot rp1 --target-robot unitree_g1__g1_29dof \
+  --in /path/to/rp1_exports --out /path/to/g1_from_rp1 \
+  --profile auto --skip-existing
+```
+
+场景 clip → `<out>/<clip>/<clip>.csv` + 地形/物体 sidecar（机器人坐标系）。平坦 mimic → `<out>/…/<stem>.csv`。Interaction-mesh 需要 `mujoco` + `osqp`；Newton 需要 NVIDIA `newton` 包。R2R 需要目标机旁已有 `r2r_calibration_<source>.yaml`（先在 Web 标定，或 `--calibration` / `--init-zero-calibration`）。
 
 ### 调整 `robot.yaml`
 
