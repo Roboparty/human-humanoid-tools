@@ -286,16 +286,6 @@
           <p class="hint" id="rt-retarget-fps-hint" style="margin-top:4px">
             <b>Retarget FPS</b>：在跑 IK/MPC <b>之前</b>对人体动作（含物体轨迹）重采样；帧数变少会<b>更快</b>，但可能丢失快动作/接触细节。留空则用原始帧率。
           </p>
-          <div class="row" style="margin-top:8px; align-items:center; gap:8px">
-            <label class="k" style="display:flex; align-items:center; gap:6px; cursor:pointer">
-              <input type="checkbox" id="rt-foot-clamp-anti-penetration" />
-              <span title="IK 求解时脚穿地则向上修正 floating base">脚穿地修正（IK）</span>
-            </label>
-          </div>
-          <p class="hint" id="rt-foot-clamp-hint" style="margin-top:4px">
-            默认关闭 = <b>只要 root+DOF</b> 的快速路径（跳过全部 IK 后脚部/mesh 校正，批量导出更快）。
-            勾选后会对脚踝/膝盖/mesh 做穿地抬升与脚间距修正，可视化更稳，但大批量会明显变慢。
-          </p>
           <p class="hint" id="rt-first-hint" style="margin-top:6px">
             <b>首次 Retarget 较慢：</b>新机器人第一次求解会编译 GPU/Warp IK 内核并捕获 CUDA 图（约 10–60 秒）。进度条可能短暂不动，属正常现象，请耐心等待；加载机器人后会在后台预热，同一机器人后续会快很多。
           </p>
@@ -320,6 +310,15 @@
           <div class="hint" id="rt-export-srcfps" style="margin-top:4px">
             <b>导出 FPS</b>：只对已算好的机器人关节轨迹做时间重采样（插值），<b>不会</b>重新 IK/MPC。与上方的 Retarget FPS 无关；可 Retarget 用 30 fps、导出再降到 15 fps。
           </div>
+          <div class="row" style="margin-top:8px; align-items:center; gap:8px">
+            <label class="k" style="white-space:nowrap" title="相对 Retarget 结果时间轴">起始 (s)</label>
+            <input class="search" id="rt-export-t-start" type="number" min="0" step="0.01" style="flex:1"
+              placeholder="留空 = 0" />
+            <label class="k" style="white-space:nowrap">截止 (s)</label>
+            <input class="search" id="rt-export-t-end" type="number" min="0" step="0.01" style="flex:1"
+              placeholder="留空 = 结尾" />
+          </div>
+          <p class="hint" style="margin-top:4px">可选：只导出 clip 中一段；时间相对 Retarget 播放轴，导出后 <code>time</code> 从 0 重计。物体轨迹同步裁剪。</p>
           <div class="row" style="margin-top:8px">
             <select class="search" id="rt-export-format" style="flex:1">
               <option value="csv" selected>CSV（机器人 + 物体轨迹，默认）</option>
@@ -377,13 +376,6 @@
               placeholder="留空 = 原始" />
           </div>
           <p class="hint" style="margin-top:4px">批量求解前对人体动作抽帧；低于原始帧率可加速，可能损质量。</p>
-          <div class="row" style="margin-top:8px; align-items:center; gap:8px">
-            <label class="k" style="display:flex; align-items:center; gap:6px; cursor:pointer">
-              <input type="checkbox" id="batch-foot-clamp-anti-penetration" />
-              <span title="IK 求解时脚穿地则向上修正 floating base">脚穿地修正（IK）</span>
-            </label>
-          </div>
-          <p class="hint" style="margin-top:4px">与「机器人 · Retarget」页同步。关闭时只导出 root+DOF（跳过脚部 mesh 后处理，批量更快）。</p>
           <div class="row" style="margin-top:8px; gap:8px">
             <select class="search" id="batch-format" style="flex:1">
               <option value="csv">CSV（可读，单文件）</option>
@@ -394,6 +386,15 @@
           </div>
           <p class="hint" style="margin-top:4px">导出 FPS：仅对机器人轨迹插值写文件，不重新求解。大批量优先选 <b>PKL</b>（写盘更快）；CSV 批量打包使用无压缩 ZIP 以加速。
           </p>
+          <div class="row" style="margin-top:8px; align-items:center; gap:8px">
+            <label class="k" style="white-space:nowrap">起始 (s)</label>
+            <input class="search" id="batch-export-t-start" type="number" min="0" step="0.01" style="flex:1"
+              placeholder="留空 = 0" title="对篮子内每条 clip 统一裁剪" />
+            <label class="k" style="white-space:nowrap">截止 (s)</label>
+            <input class="search" id="batch-export-t-end" type="number" min="0" step="0.01" style="flex:1"
+              placeholder="留空 = 结尾" />
+          </div>
+          <p class="hint" style="margin-top:4px">可选：导出时对每条 clip 裁同一时间窗（相对各 clip 的 Retarget 时间轴）；超出该 clip 长度的截止会夹到结尾。</p>
           <label class="row" style="margin-top:8px; gap:8px; align-items:center; cursor:pointer">
             <input type="checkbox" id="batch-csv-header" checked />
             <span class="hint" style="margin:0">CSV 含注释与列名表头</span>
@@ -527,6 +528,15 @@
             <input class="search" id="r2r-export-fps" type="number" min="1" step="1" style="flex:1"
               placeholder="留空 = Retarget 结果帧率" />
           </div>
+          <div class="row" style="margin-top:8px; align-items:center; gap:8px">
+            <label class="k" style="white-space:nowrap">起始 (s)</label>
+            <input class="search" id="r2r-export-t-start" type="number" min="0" step="0.01" style="flex:1"
+              placeholder="留空 = 0" />
+            <label class="k" style="white-space:nowrap">截止 (s)</label>
+            <input class="search" id="r2r-export-t-end" type="number" min="0" step="0.01" style="flex:1"
+              placeholder="留空 = 结尾" />
+          </div>
+          <p class="hint" style="margin-top:4px">可选：只导出一段；时间相对 R2R 结果轴，导出 <code>time</code> 从 0 重计。</p>
           <div class="row" style="margin-top:8px">
             <select class="search" id="r2r-export-format" style="flex:1">
               <option value="csv" selected>CSV</option>
@@ -567,6 +577,12 @@
           <div class="row" style="margin-top:8px; align-items:center; gap:8px">
             <label class="k" style="white-space:nowrap">导出 FPS</label>
             <input class="search" id="r2r-batch-export-fps" type="number" min="1" step="1" style="flex:1" placeholder="留空 = Retarget 帧率" />
+          </div>
+          <div class="row" style="margin-top:8px; align-items:center; gap:8px">
+            <label class="k" style="white-space:nowrap">起始 (s)</label>
+            <input class="search" id="r2r-batch-t-start" type="number" min="0" step="0.01" style="flex:1" placeholder="留空 = 0" />
+            <label class="k" style="white-space:nowrap">截止 (s)</label>
+            <input class="search" id="r2r-batch-t-end" type="number" min="0" step="0.01" style="flex:1" placeholder="留空 = 结尾" />
           </div>
           <input class="search" id="r2r-batch-out" placeholder="ZIP 文件名" value="r2r_batch_export" style="margin-top:8px" />
           <label class="row" style="margin-top:8px; gap:8px; align-items:center; cursor:pointer">

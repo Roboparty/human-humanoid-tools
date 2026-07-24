@@ -9,31 +9,20 @@ function parseOptionalFps(el) {
   return v > 0 && Number.isFinite(v) ? v : null;
 }
 
-function footClampAntiPenetrationEnabled() {
-  return !!document.getElementById("rt-foot-clamp-anti-penetration")?.checked;
+/** Non-negative seconds for export window; empty → null (natural bound). */
+function parseOptionalTime(el) {
+  if (!el || el.value === "" || el.value == null) return null;
+  const v = parseFloat(el.value);
+  return Number.isFinite(v) && v >= 0 ? v : null;
 }
 
-function wireSyncedCheckboxes(ids) {
-  const els = ids.map((id) => document.getElementById(id)).filter(Boolean);
-  if (els.length < 2) return;
-  let syncing = false;
-  for (const el of els) {
-    el.addEventListener("change", () => {
-      if (syncing) return;
-      syncing = true;
-      const { checked } = el;
-      for (const other of els) {
-        if (other !== el) other.checked = checked;
-      }
-      syncing = false;
-    });
-  }
+function appendExportTimeParams(url, tStartElId, tEndElId) {
+  const t0 = parseOptionalTime(document.getElementById(tStartElId));
+  const t1 = parseOptionalTime(document.getElementById(tEndElId));
+  if (t0 != null) url += `&t_start=${encodeURIComponent(t0)}`;
+  if (t1 != null) url += `&t_end=${encodeURIComponent(t1)}`;
+  return url;
 }
-
-wireSyncedCheckboxes([
-  "rt-foot-clamp-anti-penetration",
-  "batch-foot-clamp-anti-penetration",
-]);
 
 function escapeHtml(s) {
   return String(s)
@@ -3885,7 +3874,7 @@ document.getElementById("retarget-btn").onclick = async () => {
       motion_token: state.motion.token,
       reference: state.reference,
       backend: document.getElementById("rt-backend").value,
-      foot_clamp_anti_penetration: footClampAntiPenetrationEnabled(),
+      foot_clamp_anti_penetration: false,
     };
     if (retargetFps) body.retarget_fps = retargetFps;
     const { job_id } = await API.post("/api/retarget", body);
@@ -3942,6 +3931,10 @@ document.getElementById("retarget-btn").onclick = async () => {
     document.getElementById("rt-export-card").style.display = "block";
     const fpsInput = document.getElementById("rt-export-fps");
     fpsInput.value = "";
+    const tStartEl = document.getElementById("rt-export-t-start");
+    const tEndEl = document.getElementById("rt-export-t-end");
+    if (tStartEl) tStartEl.value = "";
+    if (tEndEl) tEndEl.value = "";
     const eff = j.result.retarget_fps ?? j.result.source_fps ?? 30;
     fpsInput.placeholder = `留空 = ${eff.toFixed(0)} fps（Retarget 结果）`;
     const clipSrc = j.result.motion_source_fps ?? state.motion?.framerate;
@@ -3979,6 +3972,7 @@ document.getElementById("rt-export-btn").onclick = async () => {
   let url = `/api/export/${state.exportToken}?fmt=${encodeURIComponent(fmt)}`;
   if (fps && fps > 0) url += `&fps=${fps}`;
   if (!csvHeaderEnabled("rt-csv-header")) url += "&csv_header=0";
+  url = appendExportTimeParams(url, "rt-export-t-start", "rt-export-t-end");
   const name = state.exportHasScene || fmt === "pkl"
     ? `${state.motion?.name || "clip"}_export.zip`
     : `${state.motion?.name || "clip"}.csv`;
@@ -4189,7 +4183,7 @@ document.getElementById("batch-run").onclick = async () => {
       format: document.getElementById("batch-format").value,
       csv_header: csvHeaderEnabled("batch-csv-header"),
       entries: basket,
-      foot_clamp_anti_penetration: footClampAntiPenetrationEnabled(),
+      foot_clamp_anti_penetration: false,
     };
     const batchSizeRaw = parseInt(document.getElementById("batch-size")?.value, 10);
     if (Number.isFinite(batchSizeRaw) && batchSizeRaw >= 1) {
@@ -4199,6 +4193,10 @@ document.getElementById("batch-run").onclick = async () => {
     const exFps = parseOptionalFps(document.getElementById("batch-export-fps"));
     if (rtFps) batchBody.retarget_fps = rtFps;
     if (exFps) batchBody.export_fps = exFps;
+    const t0 = parseOptionalTime(document.getElementById("batch-export-t-start"));
+    const t1 = parseOptionalTime(document.getElementById("batch-export-t-end"));
+    if (t0 != null) batchBody.t_start = t0;
+    if (t1 != null) batchBody.t_end = t1;
     const { job_id } = await API.post("/api/batch/retarget", batchBody);
     const j = await pollJob(job_id, (jp) => {
       setBatchProgress(jp);
@@ -4993,6 +4991,10 @@ async function r2rRunRetarget() {
       `完成：${j.result.num_frames} 帧 @ ${(j.result.source_fps || 30).toFixed(1)} fps`;
     document.getElementById("r2r-export-card").style.display = "block";
     document.getElementById("r2r-export-fps").value = "";
+    const r2rT0 = document.getElementById("r2r-export-t-start");
+    const r2rT1 = document.getElementById("r2r-export-t-end");
+    if (r2rT0) r2rT0.value = "";
+    if (r2rT1) r2rT1.value = "";
     const r2rBundleHint = document.getElementById("r2r-export-bundle-hint");
     if (r2rBundleHint) r2rBundleHint.style.display = j.result.has_scene ? "block" : "none";
     toast("R2R Retarget 完成，正在播放目标机器人");
@@ -5140,6 +5142,7 @@ function r2rInit() {
     let url = `/api/export/${r2r.exportToken}?fmt=${encodeURIComponent(fmt)}`;
     if (fps && fps > 0) url += `&fps=${fps}`;
     if (!document.getElementById("r2r-csv-header").checked) url += "&csv_header=0";
+    url = appendExportTimeParams(url, "r2r-export-t-start", "r2r-export-t-end");
     const stem = r2r.resultStem || "r2r";
     const name = r2r.exportHasScene || fmt === "pkl"
       ? `${stem}_export.zip`
@@ -5175,6 +5178,10 @@ function r2rInit() {
       const rtFps = parseOptionalFps(document.getElementById("r2r-retarget-fps"));
       if (exFps) body.export_fps = exFps;
       if (rtFps) body.retarget_fps = rtFps;
+      const t0 = parseOptionalTime(document.getElementById("r2r-batch-t-start"));
+      const t1 = parseOptionalTime(document.getElementById("r2r-batch-t-end"));
+      if (t0 != null) body.t_start = t0;
+      if (t1 != null) body.t_end = t1;
       const { job_id } = await API.post("/api/r2r/batch/retarget", body);
       const j = await pollJob(job_id, (jp) => {
         if (bar) bar.style.width = `${Math.max(2, (jp.progress || 0) * 100).toFixed(0)}%`;

@@ -229,13 +229,23 @@ def write_r2r_export_bundle(
     csv_header: bool = True,
     yellow_foot_z: float | None = None,
     pack_scene: bool = True,
+    t_start: float | None = None,
+    t_end: float | None = None,
 ) -> Path:
     """Write robot + rescaled scene sidecars; zip when terrain/objects present.
 
     When ``pack_scene`` is False (offline batch), keep an uncompressed folder
     instead of a ``.zip``. File contents match the Web export either way.
+
+    ``t_start`` / ``t_end`` (seconds on the retargeted timeline) keep a sub-clip.
     """
     import dataclasses
+
+    from hhtools.web.export_bundle import apply_export_time_window
+
+    retargeted, source_motion = apply_export_time_window(
+        retargeted, source_motion, t_start=t_start, t_end=t_end,
+    )
 
     out_root = Path(out_root)
     out_root.mkdir(parents=True, exist_ok=True)

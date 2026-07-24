@@ -452,6 +452,153 @@ def identity_resample(retargeted: Any, fps: float | None):
     return resample_joint_q(jq, src, float(fps), root_coord_count=rc), float(fps)
 
 
+def resolve_export_frame_window(
+    num_frames: int,
+    sample_rate: float,
+    t_start: float | None,
+    t_end: float | None,
+) -> tuple[int, int]:
+    """Map optional seconds ``[t_start, t_end)`` to half-open frame indices.
+
+    Times are relative to the retargeted clip start (same clock as playback).
+    ``None`` means the natural clip start / end.
+    """
+    n = int(num_frames)
+    if n <= 0:
+        raise ValueError("cannot export an empty trajectory")
+    sr = float(sample_rate)
+    if not np.isfinite(sr) or sr <= 0.0:
+        raise ValueError(f"invalid sample_rate for export window: {sample_rate!r}")
+
+    i0 = 0
+    i1 = n
+    if t_start is not None:
+        i0 = int(round(float(t_start) * sr))
+    if t_end is not None:
+        i1 = int(round(float(t_end) * sr))
+    if i0 < 0:
+        i0 = 0
+    if i1 > n:
+        i1 = n
+    if i0 >= n:
+        raise ValueError(
+            f"t_start={t_start!r}s is past clip end "
+            f"({(n - 1) / sr:.3f}s, {n} frames @ {sr:.3f} Hz)"
+        )
+    if i1 <= i0:
+        raise ValueError(
+            f"empty export window after clamp: t_start={t_start!r}, t_end={t_end!r} "
+            f"→ frames [{i0}, {i1}) of {n}"
+        )
+    return i0, i1
+
+
+def _slice_scene_object(ob: Any, i0: int, i1: int) -> Any:
+    """Return a shallow copy of ``ob`` with per-frame arrays sliced to ``[i0, i1)``."""
+    import dataclasses
+
+    n = int(np.asarray(ob.positions).shape[0])
+    a = max(0, min(int(i0), n))
+    b = max(a + 1 if n else a, min(int(i1), n)) if n else a
+    if a == 0 and b == n:
+        return ob
+    kwargs = {
+        "name": ob.name,
+        "positions": np.asarray(ob.positions, dtype=np.float32)[a:b].copy(),
+        "quaternions": np.asarray(ob.quaternions, dtype=np.float32)[a:b].copy(),
+        "extents": np.asarray(getattr(ob, "extents", (0.3, 0.3, 0.3)), dtype=np.float32),
+        "mesh_path": str(getattr(ob, "mesh_path", "") or ""),
+        "scale": float(getattr(ob, "scale", 1.0)),
+        "opacity": getattr(ob, "opacity", None),
+        "color": getattr(ob, "color", None),
+    }
+    if dataclasses.is_dataclass(ob) and not isinstance(ob, type):
+        return dataclasses.replace(
+            ob,
+            positions=kwargs["positions"],
+            quaternions=kwargs["quaternions"],
+        )
+    from hhtools.core.scene import SceneObject
+
+    return SceneObject(**kwargs)
+
+
+def slice_motion_frames(motion: Any, i0: int, i1: int) -> Any:
+    """Slice skeleton (+ objects) to ``[i0, i1)``; terrain is left unchanged."""
+    import dataclasses
+
+    if motion is None:
+        return None
+    pos = np.asarray(motion.positions)
+    n = int(pos.shape[0])
+    if n <= 0:
+        return motion
+    a = max(0, min(int(i0), n))
+    b = max(a + 1, min(int(i1), n))
+    if a == 0 and b == n:
+        return motion
+    objs = [_slice_scene_object(ob, a, b) for ob in (getattr(motion, "objects", None) or [])]
+    if dataclasses.is_dataclass(motion) and not isinstance(motion, type):
+        return dataclasses.replace(
+            motion,
+            positions=pos[a:b].astype(np.float32, copy=True),
+            quaternions=np.asarray(motion.quaternions, dtype=np.float32)[a:b].copy(),
+            objects=objs,
+        )
+    motion.positions = pos[a:b].astype(np.float32, copy=True)
+    motion.quaternions = np.asarray(motion.quaternions, dtype=np.float32)[a:b].copy()
+    motion.objects = objs
+    return motion
+
+
+def apply_export_time_window(
+    retargeted: Any,
+    source_motion: Any,
+    *,
+    t_start: float | None = None,
+    t_end: float | None = None,
+) -> tuple[Any, Any]:
+    """Trim ``retargeted`` (+ aligned ``source_motion``) before export resampling.
+
+    ``t_start`` / ``t_end`` are seconds on the retargeted clip timeline (playback
+    clock).  Omitted bounds keep the natural start / end.  Exported ``time``
+    columns restart at 0 for the kept window.
+    """
+    import dataclasses
+
+    if t_start is None and t_end is None:
+        return retargeted, source_motion
+
+    jq = np.asarray(retargeted.joint_q)
+    sr = float(getattr(retargeted, "sample_rate", 30.0))
+    i0, i1 = resolve_export_frame_window(jq.shape[0], sr, t_start, t_end)
+    meta = dict(getattr(retargeted, "meta", {}) or {})
+    meta["export_t_start"] = f"{i0 / sr:.6f}"
+    meta["export_t_end"] = f"{i1 / sr:.6f}"
+    meta["export_frame_start"] = str(i0)
+    meta["export_frame_end"] = str(i1)
+    ret2 = dataclasses.replace(
+        retargeted,
+        joint_q=jq[i0:i1].astype(np.float32, copy=True),
+        meta=meta,
+    )
+
+    src_n = int(np.asarray(getattr(source_motion, "positions", np.zeros((0,)))).shape[0]) if source_motion is not None else 0
+    if source_motion is not None and src_n > 0 and src_n != jq.shape[0]:
+        # Map retargeted frame window onto the source frame grid.
+        src_i0 = int(round(i0 * src_n / jq.shape[0]))
+        src_i1 = int(round(i1 * src_n / jq.shape[0]))
+        motion2 = slice_motion_frames(source_motion, src_i0, src_i1)
+    else:
+        motion2 = slice_motion_frames(source_motion, i0, i1)
+
+    _log.info(
+        "export time window [%.3f, %.3f)s → frames [%d, %d) of %d @ %.3f Hz",
+        i0 / sr, i1 / sr, i0, i1, jq.shape[0], sr,
+    )
+    return ret2, motion2
+
+
 def write_retarget_export_bundle(
     retargeted: Any,
     model,
@@ -468,6 +615,8 @@ def write_retarget_export_bundle(
     scaled_preview: dict | None = None,
     yellow_foot_z: float | None = None,
     pack_scene: bool = True,
+    t_start: float | None = None,
+    t_end: float | None = None,
 ) -> Path:
     """Write a clip bundle and return the path to a ``.zip`` (or bare file if no scene).
 
@@ -480,8 +629,15 @@ def write_retarget_export_bundle(
     When ``pack_scene`` is False (batch / offline), scene clips keep an uncompressed
     folder (``<stem>/<stem>.csv`` + terrain/object sidecars) instead of a ``.zip``.
     File contents match the Web export either way.
+
+    ``t_start`` / ``t_end`` (seconds, retargeted timeline) optionally keep only a
+    sub-clip; exported ``time`` restarts at 0.
     """
     import dataclasses
+
+    retargeted, source_motion = apply_export_time_window(
+        retargeted, source_motion, t_start=t_start, t_end=t_end,
+    )
 
     out_root = Path(out_root)
     out_root.mkdir(parents=True, exist_ok=True)

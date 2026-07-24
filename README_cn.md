@@ -136,7 +136,7 @@ python scripts/batch_r2r_retarget.py \
   --profile auto --skip-existing
 ```
 
-场景 clip → `<out>/<clip>/<clip>.csv` + 地形/物体 sidecar（机器人坐标系）。平坦 mimic → `<out>/…/<stem>.csv`。Interaction-mesh 需要 `mujoco` + `osqp`；Newton 需要 NVIDIA `newton` 包。R2R 需要目标机旁已有 `r2r_calibration_<source>.yaml`（先在 Web 标定，或 `--calibration` / `--init-zero-calibration`）。
+场景 clip → `<out>/<clip>/<clip>.csv` + 地形/物体 sidecar（机器人坐标系）。平坦 mimic → `<out>/…/<stem>.csv`。可用 `--t-start` / `--t-end`（秒，相对 Retarget 时间轴）只导出一段；Web 单条/批量导出也有对应选项。Interaction-mesh 需要 `mujoco` + `osqp`；Newton 需要 NVIDIA `newton` 包。R2R 需要目标机旁已有 `r2r_calibration_<source>.yaml`（先在 Web 标定，或 `--calibration` / `--init-zero-calibration`）。
 
 ### 调整 `robot.yaml`
 

@@ -37,7 +37,7 @@ _log = logging.getLogger(__name__)
 
 # Bump when static/ front-end behaviour changes.  Injected into ``index.html``
 # at serve time so collaborators only need to pull + restart (no triple-sync).
-UI_BUILD_ID = "20260622-v83"
+UI_BUILD_ID = "20260716-v85"
 
 # Datasets whose adapters accept ``with_mesh=True`` (SMPL forward → baked vertices).
 # The web UI always requests mesh so AMASS / Motion-X etc. show a real body surface,
@@ -1402,6 +1402,8 @@ def create_app(
             csv_header = _parse_csv_header(body.get("csv_header", True))
             export_fps = _parse_optional_fps(body.get("export_fps", body.get("fps")))
             retarget_fps = _parse_optional_fps(body.get("retarget_fps"))
+            export_t_start = _parse_optional_time(body.get("t_start"), name="t_start")
+            export_t_end = _parse_optional_time(body.get("t_end"), name="t_end")
             limit_frames = body.get("limit_frames")
             foot_clamp_anti_penetration = bool(
                 body.get("foot_clamp_anti_penetration", False)
@@ -1454,6 +1456,8 @@ def create_app(
                     written=written, errors=errors, failures=failures,
                     failure_log=failure_log, batch_t0=batch_t0,
                     foot_clamp_anti_penetration=foot_clamp_anti_penetration,
+                    t_start=export_t_start,
+                    t_end=export_t_end,
                 )
             else:
                 from collections import defaultdict
@@ -1579,6 +1583,8 @@ def create_app(
                                 reference=reference,
                                 errors=errors,
                                 failures=failures,
+                                t_start=export_t_start,
+                                t_end=export_t_end,
                             )
                         except Exception as err:  # noqa: BLE001
                             for e, _, _ in loaded_chunk:
@@ -1653,6 +1659,8 @@ def create_app(
         fps: float | None = None,
         fmt: str = "csv",
         csv_header: bool = True,
+        t_start: float | None = None,
+        t_end: float | None = None,
     ):
         rec = state.motions.get(f"export::{export_token}")
         if rec is None:
@@ -1666,6 +1674,8 @@ def create_app(
         stem = rec["stem"]
         fmt = (fmt or "csv").lower()
         try:
+            t0 = _parse_optional_time(t_start, name="t_start")
+            t1 = _parse_optional_time(t_end, name="t_end")
             # The robot may have been unloaded/swapped since this clip was
             # retargeted (``/api/robot`` unload pops ``state.robots``).  A bare
             # ``state.robots[name]`` here used to raise KeyError *outside* this
@@ -1719,6 +1729,8 @@ def create_app(
                     stem=stem, fps=fps, fmt=fmt,
                     csv_header=_parse_csv_header(csv_header),
                     yellow_foot_z=rec.get("yellow_foot_z"),
+                    t_start=t0,
+                    t_end=t1,
                 )
             else:
                 path = _write_export(
@@ -1727,6 +1739,8 @@ def create_app(
                     csv_header=_parse_csv_header(csv_header),
                     source_path=rec.get("source_path"),
                     yellow_foot_z=rec.get("yellow_foot_z"),
+                    t_start=t0,
+                    t_end=t1,
                 )
         except Exception as err:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=f"export failed: {err}") from err
@@ -2206,6 +2220,8 @@ def _batch_export_retargeted_chunk(
     reference: str,
     errors: list[str],
     failures: list[dict],
+    t_start: float | None = None,
+    t_end: float | None = None,
 ):
     """Write retarget results for one GPU chunk (parallel CSV/PKL when >1 clip)."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -2233,6 +2249,8 @@ def _batch_export_retargeted_chunk(
                 fps=export_fps, fmt=fmt, backend=backend,
                 subdir=subdir, csv_header=csv_header,
                 source_path=e.get("source_path"),
+                t_start=t_start,
+                t_end=t_end,
             )
             return export_i, e, str(out_path.relative_to(motion_out_dir)), None
         except Exception as err:  # noqa: BLE001
@@ -2793,6 +2811,8 @@ def _run_r2r_batch_job(job: Job, body: dict, state: SessionState) -> None:
         ik_iters = int(body.get("ik_iterations", 24))
         retarget_fps = _parse_optional_fps(body.get("retarget_fps"))
         export_fps = _parse_optional_fps(body.get("export_fps", body.get("fps")))
+        export_t_start = _parse_optional_time(body.get("t_start"), name="t_start")
+        export_t_end = _parse_optional_time(body.get("t_end"), name="t_end")
         fmt = (body.get("format") or "csv").lower()
         csv_header = _parse_csv_header(body.get("csv_header", True))
         out_name = body.get("out_dir") or "r2r_batch_export"
@@ -2875,6 +2895,8 @@ def _run_r2r_batch_job(job: Job, body: dict, state: SessionState) -> None:
                     entry=e,
                     stem=stem, fps=export_fps, fmt=fmt,
                     subdir=subdir, csv_header=csv_header,
+                    t_start=export_t_start,
+                    t_end=export_t_end,
                 )
                 written.append(str(out_path.relative_to(out_dir)))
             except Exception as err:  # noqa: BLE001
@@ -3008,6 +3030,8 @@ def _run_batch_entries_sequential(
     failure_log,
     batch_t0: float,
     foot_clamp_anti_penetration: bool = False,
+    t_start: float | None = None,
+    t_end: float | None = None,
 ) -> BatchFailureLog | None:
     from hhtools.web.motion_library_links import library_entry_for_load
 
@@ -3076,6 +3100,8 @@ def _run_batch_entries_sequential(
                 fmt=fmt, backend=backend, subdir=subdir,
                 csv_header=csv_header,
                 source_path=e.get("source_path"),
+                t_start=t_start,
+                t_end=t_end,
             )
             written.append(str(out_path.relative_to(out_dir)))
             _set_batch_job_progress(
@@ -3674,6 +3700,19 @@ def _parse_optional_fps(value) -> float | None:
     return fps if fps > 0 else None
 
 
+def _parse_optional_time(value, *, name: str = "t") -> float | None:
+    """Non-negative seconds for export window bounds, or ``None`` if omitted."""
+    if value is None or value == "":
+        return None
+    try:
+        t = float(value)
+    except (TypeError, ValueError) as err:
+        raise ValueError(f"{name} must be a number of seconds") from err
+    if not math.isfinite(t) or t < 0.0:
+        raise ValueError(f"{name} must be a non-negative finite number of seconds")
+    return t
+
+
 def _motion_for_retarget(motion, retarget_fps: float | None):
     """Optionally down/up-sample the clip before IK/MPC (fewer frames ⇒ faster).
 
@@ -3718,6 +3757,8 @@ def _write_r2r_export(
     subdir: str | None = None,
     csv_header: bool = True,
     yellow_foot_z: float | None = None,
+    t_start: float | None = None,
+    t_end: float | None = None,
 ):
     """R2R clip bundle: target robot traj + rescaled terrain/object sidecars."""
     from hhtools.web.export_bundle import resolve_clip_export_dir
@@ -3745,6 +3786,8 @@ def _write_r2r_export(
         resample_fn=_resample_retargeted,
         csv_header=csv_header,
         yellow_foot_z=yellow_foot_z,
+        t_start=t_start,
+        t_end=t_end,
     )
     if subdir is not None and path.suffix == ".zip":
         import shutil
@@ -3787,6 +3830,8 @@ def _write_export(
     csv_header: bool = True,
     source_path: str | Path | None = None,
     yellow_foot_z: float | None = None,
+    t_start: float | None = None,
+    t_end: float | None = None,
 ):
     """Write a browser-downloadable CSV/PKL bundle (zip when scene props exist)."""
     from hhtools.web.export_bundle import (
@@ -3813,6 +3858,8 @@ def _write_export(
         csv_header=csv_header,
         source_path=source_path,
         yellow_foot_z=yellow_foot_z,
+        t_start=t_start,
+        t_end=t_end,
     )
     # Batch jobs unpack per-clip zips into the job tree (final zip later).
     if subdir is not None and path.suffix == ".zip":

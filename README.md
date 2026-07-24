@@ -136,7 +136,7 @@ python scripts/batch_r2r_retarget.py \
   --profile auto --skip-existing
 ```
 
-Scene clips → `<out>/<clip>/<clip>.csv` + terrain/object sidecars (robot frame). Flat mimic → `<out>/…/<stem>.csv`. Interaction-mesh needs `mujoco` + `osqp`; Newton needs the NVIDIA `newton` package. R2R needs a saved `r2r_calibration_<source>.yaml` beside the target URDF (Web calibrate once, or `--calibration` / `--init-zero-calibration`).
+Scene clips → `<out>/<clip>/<clip>.csv` + terrain/object sidecars (robot frame). Flat mimic → `<out>/…/<stem>.csv`. Use `--t-start` / `--t-end` (seconds on the retargeted timeline) to export a sub-clip; the Web single/batch export UI has the same option. Interaction-mesh needs `mujoco` + `osqp`; Newton needs the NVIDIA `newton` package. R2R needs a saved `r2r_calibration_<source>.yaml` beside the target URDF (Web calibrate once, or `--calibration` / `--init-zero-calibration`).
 
 ### Tuning `robot.yaml`
 

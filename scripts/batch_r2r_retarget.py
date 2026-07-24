@@ -71,6 +71,8 @@ class _R2rConfig:
     fmt: str
     csv_header: bool
     fps: float | None
+    t_start: float | None = None
+    t_end: float | None = None
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -114,6 +116,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--fmt", choices=("csv", "pkl"), default="csv")
     p.add_argument("--no-csv-header", action="store_true")
     p.add_argument("--fps", type=float, default=None)
+    p.add_argument(
+        "--t-start",
+        type=float,
+        default=None,
+        help="Export window start (seconds on retargeted timeline).",
+    )
+    p.add_argument(
+        "--t-end",
+        type=float,
+        default=None,
+        help="Export window end (seconds, exclusive). Exported time restarts at 0.",
+    )
     p.add_argument("--in-process", action="store_true")
     p.add_argument("--failure-log", type=Path, default=None)
     p.add_argument("--_worker-seq", type=str, default=None, help=argparse.SUPPRESS)
@@ -281,6 +295,8 @@ def process_r2r_clip(seq_key: str, cfg: _R2rConfig) -> Path:
         resample_fn=identity_resample,
         csv_header=cfg.csv_header,
         pack_scene=False,
+        t_start=cfg.t_start,
+        t_end=cfg.t_end,
     )
 
 
@@ -307,6 +323,10 @@ def _worker_command(cfg: _R2rConfig, seq_key: str, *, verbose: bool) -> list[str
         cmd.extend(["--limit-frames", str(cfg.limit_frames)])
     if cfg.fps is not None:
         cmd.extend(["--fps", str(cfg.fps)])
+    if cfg.t_start is not None:
+        cmd.extend(["--t-start", str(cfg.t_start)])
+    if cfg.t_end is not None:
+        cmd.extend(["--t-end", str(cfg.t_end)])
     if verbose:
         cmd.append("--verbose")
     return cmd
@@ -332,6 +352,8 @@ def main(argv: list[str] | None = None) -> int:
         fmt=args.fmt,
         csv_header=not args.no_csv_header,
         fps=args.fps,
+        t_start=args.t_start,
+        t_end=args.t_end,
     )
 
     if args._worker_seq is not None:
