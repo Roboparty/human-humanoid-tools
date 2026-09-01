@@ -7,7 +7,7 @@ limit_upper`` fields that :mod:`hhtools.robot.loader` already exposes so the
 module is trivially unit-testable on CI machines without a GPU.
 
 Original implementation: soma-retargeter, licensed under Apache-2.0.
-  https://github.com/NVlabs/SOMA-Retargeter
+  https://github.com/NVIDIA/SOMA-Retargeter
   SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES.
 
 Key differences from the original:

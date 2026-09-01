@@ -1,7 +1,7 @@
 """Newton-based IK retargeting pipeline — Stage 1 (pure NumPy).
 
 This package is an Apache-2.0 re-implementation of the core blocks from
-soma-retargeter (https://github.com/NVlabs/SOMA-Retargeter), rewritten
+soma-retargeter (https://github.com/NVIDIA/SOMA-Retargeter), rewritten
 against the hhtools :class:`~hhtools.core.motion.Motion` /
 :class:`~hhtools.core.hierarchy.Hierarchy` / :class:`~hhtools.robot.base
 .RobotModel` contracts.  See the project-root ``NOTICE`` for full

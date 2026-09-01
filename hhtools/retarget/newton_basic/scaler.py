@@ -10,7 +10,7 @@ an FK pass and stay on pure NumPy.
 Attribution:
   Portions of the scaling formula and offset semantics are adapted from
   soma-retargeter (Apache-2.0).
-  https://github.com/NVlabs/SOMA-Retargeter
+  https://github.com/NVIDIA/SOMA-Retargeter
   SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES.
 
 The upstream scaler also ships a long chain of ``_enforce_*`` post-processors

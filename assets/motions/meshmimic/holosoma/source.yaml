@@ -6,7 +6,7 @@
 
 schema_version: 1
 source: holosoma
-source_url: https://github.com/HumanoidTeam/holosoma
+source_url: https://github.com/amazon-far/holosoma
 source_license: Apache-2.0 (holosoma code); motion data derives from holosoma climb demo bundle
 task: climbing / parkour (human + static terrain)
 

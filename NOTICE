@@ -6,12 +6,12 @@ This product includes software developed at:
   - NVIDIA Corporation: SOMA Retargeter (Apache-2.0). The Newton+Warp retargeting
     pipeline, human-to-robot scaler, feet stabilizer, and joint-limit clamper
     modules in this project are adapted from the original soma-retargeter sources.
-    https://github.com/NVlabs/SOMA-Retargeter
+    https://github.com/NVIDIA/SOMA-Retargeter
 
-  - NVIDIA Corporation: holosoma (Apache-2.0). Laplacian interaction-mesh helpers
+  - Amazon FAR: holosoma (Apache-2.0). Laplacian interaction-mesh helpers
     and MPC/SQP retargeting logic in ``hhtools.retarget.interaction_mesh`` were
     adapted from holosoma interaction-mesh retargeting utilities.
-    https://github.com/NVIDIA-Omniverse/holosoma
+    https://github.com/amazon-far/holosoma
 
   - Meta Platforms, Inc. and affiliates: AI4AnimationPy (Apache-2.0). The public
     API shape for Motion import and the NPZ schema were inspired by the
@@ -47,7 +47,7 @@ and comply with the respective terms):
   - OMOMO        : https://github.com/lijiaman/omomo_release
   - PHUMA        : https://github.com/DAVIAN-Robotics/PHUMA
   - GVHMR        : https://github.com/zju3dv/GVHMR
-  - holosoma / meshmimic : https://github.com/NVIDIA-Omniverse/holosoma
+  - holosoma / meshmimic : https://github.com/amazon-far/holosoma
   - LAFAN1       : https://github.com/ubisoft/ubisoft-laforge-animation-dataset
   - 100STYLE     : https://www.ianxmason.com/100style/
 
