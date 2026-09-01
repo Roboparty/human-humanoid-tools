@@ -19,7 +19,7 @@ trajectories in, constrained trajectories out) while we wait on the solver.
 Attribution:
   Portions of the constraint formulas are adapted from soma-retargeter
   (Apache-2.0).
-  https://github.com/NVlabs/SOMA-Retargeter
+  https://github.com/NVIDIA/SOMA-Retargeter
   SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES.
 """
 

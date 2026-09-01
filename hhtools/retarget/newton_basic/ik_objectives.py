@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Portions adapted from soma-retargeter (Apache-2.0).
-# See https://github.com/NVlabs/SOMA-Retargeter and the project root NOTICE.
+# See https://github.com/NVIDIA/SOMA-Retargeter and the project root NOTICE.
 """Custom Newton IK objectives used by ``newton_basic`` pipeline.
 
 Currently only :class:`IKSmoothJointFilter` — a soft penalty that pulls every
