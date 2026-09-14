@@ -28,7 +28,8 @@ We welcome suggestions and ideas — please open an issue or discussion anytime.
 - **Robot→robot (R2R)** — retarget existing robot CSV/PKL exports onto a new URDF, including [MotionDecode](https://huggingface.co/datasets/CMRobot/MotionDecode) G1 CSVs.
 - **Dataset analysis** — scan, tag, embed, cluster, and subset human or robot motion libraries in the Web UI.
 
-**Requirements:** Linux, Python 3.12+. Preview on CPU; retarget needs **NVIDIA GPU (CUDA 12)**.
+**Requirements:** Python 3.12+. Linux/Windows support **NVIDIA GPU (CUDA 12)** acceleration;
+the Apple Silicon macOS desktop package uses CPU retargeting. See the desktop section for packaging requirements.
 Video-to-motion additionally needs a separate CUDA-capable GVHMR installation.
 
 ---
@@ -42,7 +43,7 @@ robot, and retargeting core, but their installation and launch paths are intenti
 |------|----------|--------|
 | **Terminal (CLI/TUI workflow)** | Batch jobs, servers, SSH, and automation | `uv run hhtools ...` |
 | **WebUI** | Browser-based visualization and interactive workflows | `uv run hhtools web` |
-| **Desktop GUI** | Windows standalone app or Linux first-run setup | Application menu or `hhtools-desktop` |
+| **Desktop GUI** | Windows standalone app or Linux / macOS first-run setup | Application menu, Mac Applications, or `hhtools-desktop` |
 | **Agent (JSON CLI / MCP)** | Versioned H2R, scene-free R2R, and scalable Batch automation | [`hhtools agent` / `hhtools-mcp`](docs/agent.md) |
 
 ### Recommended: source checkout with uv
@@ -99,6 +100,14 @@ ownership, and the included Codex project configuration.
 
 ### Desktop GUI
 
+Download the **0.1.0 preview** desktop package for your platform:
+
+| Platform | Download | Architecture |
+|----------|----------|--------------|
+| Windows | [EXE installer](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/v0.1.0%28beta%29/hhtools-0.1.0-x64-setup.exe) | x64 |
+| Linux | [Debian package](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/v0.1.0%28beta%29/hhtools-0.1.0-amd64.deb) | amd64 |
+| macOS 12+ | [DMG installer](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/v0.1.0%28beta%29/hhtools-0.1.0-mac-arm64.dmg) | Apple Silicon (arm64) |
+
 The Debian package contains Electron plus the curated built-in motions and robots. On first launch,
 its setup page uses the HHTools wheel, locked dependency list, uv configuration, and uv executable
 carried inside that same package. The recommended per-user option needs no administrator password,
@@ -110,8 +119,21 @@ hhtools-desktop
 ```
 
 The Windows installer instead bundles its Python runtime and application source, so it starts
-without a checkout or system Python. GVHMR and separately licensed SMPL-family weights remain
-optional on both platforms. Build and packaging details are in
+without a checkout or system Python.
+
+**macOS installation:**
+
+1. Download and open the DMG above, then drag **Human-Humanoid Tools** into **Applications**.
+2. Launch the app from Applications. This preview is ad-hoc signed and has not been notarized by
+   Apple; if macOS blocks it, approve this app under **System Settings → Privacy & Security → Open Anyway**.
+3. Follow the first-run setup and keep an internet connection while it downloads an isolated
+   Python 3.12 environment. No existing Python, source checkout, or Homebrew installation is needed;
+   the runtime is installed for the current user without an administrator password.
+
+The macOS package includes the same 30 built-in motions and six robots as the other desktop packages.
+Warp retargeting runs on CPU; Intel Macs and the local NVIDIA GVHMR pipeline are unsupported.
+
+GVHMR and separately licensed SMPL-family weights remain optional on all platforms. Build details are in
 [`desktop/README.md`](desktop/README.md#desktop-packages).
 
 ### Frontend development

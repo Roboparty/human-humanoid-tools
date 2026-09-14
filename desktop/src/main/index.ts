@@ -9,11 +9,12 @@ import { randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { app, BrowserWindow, dialog, session } from 'electron'
+import { app, BrowserWindow, dialog, powerSaveBlocker, session } from 'electron'
 
 import { DESKTOP_CHANNELS } from '../shared/desktop-api'
 import type { RuntimeState } from '../shared/runtime-state'
 import { AppLifecycle } from './app-lifecycle'
+import { withAppActivity } from './app-activity'
 import { DesktopTutorialState } from './desktop-tutorial-state'
 import { DesktopLogger } from './desktop-logger'
 import { diagnosticsDataUrl } from './diagnostics-page'
@@ -338,7 +339,7 @@ async function showStartupFailure(reason: unknown): Promise<void> {
   if (
     reason instanceof RuntimeNotFoundError &&
     app.isPackaged &&
-    process.platform === 'linux'
+    (process.platform === 'linux' || process.platform === 'darwin')
   ) {
     await showRuntimeInstaller(reason)
     return
@@ -397,6 +398,7 @@ async function showRuntimeInstaller(reason: RuntimeNotFoundError): Promise<void>
   installerCleanup = registerInstallerHandlers({
     window,
     installer,
+    activityBlocker: process.platform === 'darwin' ? powerSaveBlocker : undefined,
     onInstalled: () => {
       installerCleanup?.()
       installerCleanup = undefined
@@ -414,7 +416,8 @@ async function showRuntimeInstaller(reason: RuntimeNotFoundError): Promise<void>
   await window.loadURL(
     installerDataUrl({
       version: app.getVersion(),
-      reason: reason.message
+      reason: reason.message,
+      allowSystemInstall: process.platform === 'linux'
     })
   )
   if (!window.isDestroyed()) window.show()
@@ -452,10 +455,10 @@ if (!hasSingleInstanceLock) {
   })
 
   app.whenReady()
-    .then(async () => {
+    .then(() => withAppActivity(process.platform === 'darwin' ? powerSaveBlocker : undefined, async () => {
       if (!(await prepareDesktopGraphics())) return
       await startDesktop()
-    })
+    }))
     .catch((reason: unknown) => void showStartupFailure(reason))
 
   app.on('window-all-closed', () => {

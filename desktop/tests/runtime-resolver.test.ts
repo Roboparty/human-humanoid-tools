@@ -54,10 +54,12 @@ describe('resolveRuntime', () => {
     expect(runtime.bodyModelsRoot).toBe(bodyModels)
   })
 
-  it('uses a completed user-managed Linux runtime with packaged built-in assets', () => {
+  it.each(['linux', 'darwin'] as const)('uses a completed user-managed %s runtime with packaged built-in assets', (platform) => {
     const root = mkdtempSync(join(tmpdir(), 'hhtools-managed-runtime-test-'))
     const home = join(root, 'home')
-    const installRoot = join(home, '.local', 'share', 'hhtools')
+    const installRoot = platform === 'darwin'
+      ? join(home, 'Library', 'Application Support', 'hhtools')
+      : join(home, '.local', 'share', 'hhtools')
     const pythonExecutable = join(installRoot, 'tools', 'hhtools', 'bin', 'python')
     const resourcesPath = join(root, 'resources')
     const motions = join(resourcesPath, 'builtin', 'motions')
@@ -79,7 +81,7 @@ describe('resolveRuntime', () => {
       resourcesPath,
       appVersion: '0.1.0',
       env: { HOME: home },
-      platform: 'linux'
+      platform
     })
 
     expect(runtime.kind).toBe('managed')
@@ -88,6 +90,38 @@ describe('resolveRuntime', () => {
     expect(runtime.pythonExecutable).toBe(pythonExecutable)
     expect(runtime.sourceRoot).toBe(motions)
     expect(runtime.bundledRobotRoot).toBe(robots)
+  })
+
+  it('does not select Linux system runtimes on macOS', () => {
+    const root = mkdtempSync(join(tmpdir(), 'hhtools-mac-runtime-test-'))
+    const python = join(root, 'system', 'tools', 'hhtools', 'bin', 'python')
+    mkdirSync(dirname(python), { recursive: true })
+    writeFileSync(python, '')
+    writeFileSync(join(root, 'system', 'runtime-version'), '0.1.0\n')
+
+    expect(() => resolveRuntime({
+      appPath: join(root, 'app'),
+      cwd: root,
+      userData: join(root, 'data'),
+      isPackaged: true,
+      appVersion: '0.1.0',
+      systemInstallRoot: join(root, 'system'),
+      env: { HOME: join(root, 'home'), XDG_DATA_HOME: join(root, 'system') },
+      platform: 'darwin'
+    })).toThrow(RuntimeNotFoundError)
+  })
+
+  it('does not silently use the build checkout when a packaged app needs first-run setup', () => {
+    const root = fileURLToPath(new URL('../..', import.meta.url))
+    const home = mkdtempSync(join(tmpdir(), 'hhtools-mac-clean-home-'))
+    expect(() => resolveRuntime({
+      appPath: join(root, 'desktop', 'release', 'mac-arm64', 'HHTools.app'),
+      cwd: root,
+      userData: join(home, 'data'),
+      isPackaged: true,
+      env: { HOME: home },
+      platform: 'darwin'
+    })).toThrow(RuntimeNotFoundError)
   })
 
   it('prefers a complete bundled Windows runtime when no checkout override exists', () => {

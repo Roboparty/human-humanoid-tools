@@ -27,7 +27,8 @@
     "test": "vitest run --config vitest.config.ts",
     "test:e2e": "npm run build && playwright test --config playwright.config.ts",
     "dist:win": "npm run prepare:electron && npm run build && npm run prepare:runtime && npm run prepare:builtin && electron-builder --win nsis",
-    "dist:linux": "npm run prepare:electron && npm run build && npm run prepare:builtin && npm run prepare:bootstrap && electron-builder --linux deb --x64"
+    "dist:linux": "npm run prepare:electron && npm run build && npm run prepare:builtin && npm run prepare:bootstrap && electron-builder --linux deb --x64",
+    "dist:mac": "node scripts/check-mac-host.mjs && npm run prepare:electron && npm run build && npm run prepare:builtin && npm run prepare:bootstrap && electron-builder --mac dmg zip --arm64"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
@@ -76,6 +77,56 @@
       ],
       "target": [
         "nsis"
+      ]
+    },
+    "mac": {
+      "artifactName": "hhtools-${version}-mac-${arch}.${ext}",
+      "category": "public.app-category.education",
+      "icon": "resources/icon.png",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "notarize": false,
+      "minimumSystemVersion": "12.0.0",
+      "signIgnore": [
+        "Contents/Resources/bootstrap/bin/uv$"
+      ],
+      "extraResources": [
+        {
+          "from": ".bootstrap",
+          "to": "bootstrap",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ],
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "dmg": {
+      "title": "Human-Humanoid Tools",
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     },
     "linux": {

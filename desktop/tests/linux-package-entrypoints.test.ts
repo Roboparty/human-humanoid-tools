@@ -104,7 +104,7 @@ describe('Linux package entry points', () => {
       }
     )
 
-    expect(result.status).toBe(0)
+    expect(result.status, result.stderr).toBe(0)
     const installer = readFileSync(join(output, 'install.sh'), 'utf8')
     expect(installer).toContain("embedded_version='0.1.0'")
     expect(installer).toContain("embedded_wheel='hhtools-0.1.0-py3-none-any.whl'")
@@ -113,7 +113,8 @@ describe('Linux package entry points', () => {
     expect(installer).toContain(`embedded_runtime_id='${runtimeId}'`)
     expect(installer).not.toMatch(/(^|[;&|]\s*)curl(?:\s|$)/m)
     expect(
-      spawnSync('sha256sum', ['-c', 'SHA256SUMS'], {
+      spawnSync(process.platform === 'darwin' ? 'shasum' : 'sha256sum',
+        [...(process.platform === 'darwin' ? ['-a', '256'] : []), '-c', 'SHA256SUMS'], {
         cwd: output,
         encoding: 'utf8'
       }).status

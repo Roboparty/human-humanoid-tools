@@ -28,6 +28,11 @@ const templatePath = join(desktopRoot, 'scripts', 'install-packaged-runtime.sh')
 const uvConfiguration = join(repositoryRoot, 'packaging', 'installer', 'uv.toml')
 const uvVersion = '0.12.9'
 
+// The embedded uv and locked native wheels must match the machine building the package.
+if (!['linux:x64', 'darwin:arm64'].includes(`${process.platform}:${process.arch}`)) {
+  throw new Error('[prepare-bootstrap] build on Linux x86_64 or macOS Apple Silicon')
+}
+
 function fail(message) {
   throw new Error(`[prepare-bootstrap] ${message}`)
 }
@@ -75,11 +80,12 @@ function run(command, args, cwd = repositoryRoot) {
 function resolveUv(fixtureRoot) {
   if (fixtureRoot) return regularFile(join(fixtureRoot, 'bin', 'uv'), 'fixture uv')
   const configured = process.env.HHTOOLS_PACKAGING_UV_BIN
-  if (configured) return regularFile(resolve(configured), 'packaging uv')
+  // Package managers such as Homebrew expose uv through a symlink. Copy its real binary.
+  if (configured) return regularFile(realpathSync(resolve(configured)), 'packaging uv')
   const discovered = spawnSync('which', ['uv'], { encoding: 'utf8' })
   const path = discovered.status === 0 ? discovered.stdout.trim() : ''
   if (!path) fail('uv is not on PATH; set HHTOOLS_PACKAGING_UV_BIN')
-  return regularFile(path, 'packaging uv')
+  return regularFile(realpathSync(path), 'packaging uv')
 }
 
 function sha256(path) {
@@ -146,8 +152,10 @@ if (outputRoot === defaultOutputRoot) {
   assertInside(desktopRoot, stagingRoot)
 } else {
   const temporaryRoot = realpathSync(tmpdir())
-  assertInside(temporaryRoot, outputRoot)
-  assertInside(temporaryRoot, stagingRoot)
+  // macOS exposes the same temporary directory through /var and /private/var.
+  const outputParent = realpathSync(dirname(outputRoot))
+  assertInside(temporaryRoot, join(outputParent, basename(outputRoot)))
+  assertInside(temporaryRoot, join(outputParent, basename(stagingRoot)))
 }
 regularFile(templatePath, 'packaged runtime installer')
 rmSync(stagingRoot, { recursive: true, force: true })
@@ -182,10 +190,13 @@ try {
   )
   const runtimeDigest = createHash('sha256')
   for (const path of payloadPaths) runtimeDigest.update(`${path}\0${payloadHashes.get(path)}\n`)
+  runtimeDigest.update(`installer-template\0${sha256(templatePath)}\n`)
   const runtimeId = `${version}+sha256.${runtimeDigest.digest('hex').slice(0, 20)}`
   writeFileSync(join(stagingRoot, 'RUNTIME_ID'), `${runtimeId}\n`, 'utf8')
 
-  for (const field of ['embedded_version', 'embedded_wheel', 'embedded_runtime_id']) {
+  for (const field of [
+    'embedded_version', 'embedded_wheel', 'embedded_runtime_id', 'embedded_platform', 'embedded_arch',
+  ]) {
     if (!new RegExp(`^${field}=.*$`, 'm').test(template)) {
       fail(`packaged runtime installer has no ${field} field`)
     }
@@ -194,6 +205,8 @@ try {
     .replace(/^embedded_version=.*$/m, `embedded_version='${version}'`)
     .replace(/^embedded_wheel=.*$/m, `embedded_wheel='${wheelName}'`)
     .replace(/^embedded_runtime_id=.*$/m, `embedded_runtime_id='${runtimeId}'`)
+    .replace(/^embedded_platform=.*$/m, `embedded_platform='${process.platform === 'darwin' ? 'Darwin' : 'Linux'}'`)
+    .replace(/^embedded_arch=.*$/m, `embedded_arch='${process.arch === 'arm64' ? 'arm64' : 'x86_64'}'`)
   if (/(^|[;&|]\s*)curl(?:\s|$)/m.test(installer)) {
     fail('packaged runtime installer must not invoke curl')
   }

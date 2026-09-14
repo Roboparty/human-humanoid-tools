@@ -1,4 +1,4 @@
-/** Resolve a checkout, bundled Windows runtime, or managed Linux runtime. */
+/** Resolve a checkout, bundled Windows runtime, or managed Linux/macOS runtime. */
 import { existsSync, readFileSync } from 'node:fs'
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 
@@ -114,11 +114,15 @@ function managedRuntimeRoots(
   platform: NodeJS.Platform,
   systemInstallRoot: string | null = '/opt/hhtools'
 ): string[] {
-  if (platform !== 'linux') return []
+  if (platform !== 'linux' && platform !== 'darwin') return []
   const roots = [env.HHTOOLS_INSTALL_ROOT]
-  if (env.XDG_DATA_HOME) roots.push(join(env.XDG_DATA_HOME, 'hhtools'))
-  else if (env.HOME) roots.push(join(env.HOME, '.local', 'share', 'hhtools'))
-  if (systemInstallRoot) roots.push(systemInstallRoot)
+  if (platform === 'darwin') {
+    if (env.HOME) roots.push(join(env.HOME, 'Library', 'Application Support', 'hhtools'))
+  } else {
+    if (env.XDG_DATA_HOME) roots.push(join(env.XDG_DATA_HOME, 'hhtools'))
+    else if (env.HOME) roots.push(join(env.HOME, '.local', 'share', 'hhtools'))
+    if (systemInstallRoot) roots.push(systemInstallRoot)
+  }
   return [
     ...new Set(
       roots.filter((root): root is string => Boolean(root)).map((root) => resolve(root))
@@ -185,7 +189,7 @@ export function resolveRuntime(options: ResolveRuntimeOptions): RuntimeConfig {
     : undefined
   const repoRoot = explicitRepoRoot
     ?? packaged?.repoRoot
-    ?? (managed === undefined ? discoveredRepositoryRoot(options) : undefined)
+    ?? (managed === undefined && !options.isPackaged ? discoveredRepositoryRoot(options) : undefined)
   if (repoRoot === undefined && managed === undefined) {
     throw new RuntimeNotFoundError(
       'HHTools needs a local Python runtime. Install it here or set HHTOOLS_REPO_ROOT.'

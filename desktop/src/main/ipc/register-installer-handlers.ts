@@ -7,6 +7,7 @@ import {
   type RuntimeInstallResult
 } from '../../shared/installer-api'
 import type { RuntimeInstaller } from '../runtime-installer'
+import { withAppActivity, type ActivityBlocker } from '../app-activity'
 
 function assertInstallerSender(event: IpcMainInvokeEvent, window: BrowserWindow): void {
   if (window.isDestroyed() || event.sender !== window.webContents) {
@@ -17,6 +18,7 @@ function assertInstallerSender(event: IpcMainInvokeEvent, window: BrowserWindow)
 export function registerInstallerHandlers(options: {
   window: BrowserWindow
   installer: RuntimeInstaller
+  activityBlocker?: ActivityBlocker
   onInstalled(): void
 }): () => void {
   let restartTimer: NodeJS.Timeout | undefined
@@ -33,7 +35,7 @@ export function registerInstallerHandlers(options: {
     assertInstallerSender(event, options.window)
     if (mode !== 'user' && mode !== 'system') throw new Error('Invalid installation mode')
     if (restartTimer !== undefined) throw new Error('Runtime installation is already complete')
-    const result = await options.installer.start(mode)
+    const result = await withAppActivity(options.activityBlocker, () => options.installer.start(mode))
     if (result.status === 'completed') restartTimer = setTimeout(options.onInstalled, 500)
     return result
   }

@@ -29,6 +29,7 @@ const INSTALL_ENVIRONMENT = new Set([
   'DBUS_SESSION_BUS_ADDRESS',
   'DISPLAY',
   'HOME',
+  'HHTOOLS_INSTALL_ROOT',
   'HTTPS_PROXY',
   'HTTP_PROXY',
   'LANG',
@@ -59,8 +60,11 @@ export function runtimeInstallCommand(
   scriptPath: string,
   platform: NodeJS.Platform = process.platform
 ): RuntimeInstallCommand {
-  if (platform !== 'linux') {
-    throw new Error('The runtime installer page is currently available only on Linux')
+  if (platform !== 'linux' && platform !== 'darwin') {
+    throw new Error('The runtime installer page is available only on Linux and macOS')
+  }
+  if (platform === 'darwin' && mode !== 'user') {
+    throw new Error('macOS supports current-user runtime installation only')
   }
   const script = resolve(scriptPath)
   if (!existsSync(script)) throw new Error(`Bundled runtime installer is missing: ${script}`)

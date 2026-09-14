@@ -28,7 +28,8 @@
 - **机器人→机器人（R2R）**：已有机器人 CSV/PKL 轨迹重映射到新 URDF，含 [MotionDecode](https://huggingface.co/datasets/CMRobot/MotionDecode) 的 G1 CSV。
 - **数据集分析**：Web 端扫描、打标、聚类、子集推荐。
 
-**环境：** Linux，Python 3.12+；预览 CPU 即可，重映射需 **NVIDIA GPU（CUDA 12）**。
+**环境：** Python 3.12+；Linux / Windows 支持 **NVIDIA GPU（CUDA 12）** 加速，
+Apple Silicon macOS 桌面版使用 CPU 重定向。桌面打包要求见下方说明。
 视频转动作还需要一套单独安装、可使用 CUDA 的 GVHMR 环境。
 
 ---
@@ -42,7 +43,7 @@ hhtools 有三种交互式运行方式，另提供一个 Agent 自动化接口�
 |------|----------|----------|
 | **终端（CLI/TUI 工作流）** | 批处理、服务器、SSH 与自动化 | `uv run hhtools ...` |
 | **WebUI** | 浏览器中的可视化与交互工作流 | `uv run hhtools web` |
-| **桌面 GUI** | Windows 独立应用或 Linux 首次启动安装 | 应用菜单或 `hhtools-desktop` |
+| **桌面 GUI** | Windows 独立应用、Linux / macOS 首次启动安装 | 应用菜单、Mac 应用程序或 `hhtools-desktop` |
 | **Agent（JSON CLI / MCP）** | 带版本契约的 H2R、无场景 R2R 与可扩展 Batch 自动化 | [`hhtools agent` / `hhtools-mcp`](docs/agent.md) |
 
 ### 推荐：使用 uv 安装源码环境
@@ -95,6 +96,14 @@ HHTools 提供供脚本使用的严格 JSON CLI，以及供兼容 Agent 使用�
 
 ### 桌面 GUI
 
+按平台下载 **0.1.0 预览版**桌面安装包：
+
+| 平台 | 下载 | 架构 |
+|------|------|------|
+| Windows | [EXE 安装程序](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/v0.1.0%28beta%29/hhtools-0.1.0-x64-setup.exe) | x64 |
+| Linux | [Debian 安装包](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/v0.1.0%28beta%29/hhtools-0.1.0-amd64.deb) | amd64 |
+| macOS 12+ | [DMG 安装包](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/v0.1.0%28beta%29/hhtools-0.1.0-mac-arm64.dmg) | Apple Silicon（arm64） |
+
 Debian 包包含 Electron、精选内置动作与机器人。首次启动页使用同一 deb 内置的 HHTools wheel、
 锁定依赖清单、uv 配置和 uv 二进制安装独立运行环境；推荐的当前用户安装不需要管理员密码，
 所有用户安装则使用操作系统认证窗口：
@@ -105,7 +114,20 @@ hhtools-desktop
 ```
 
 Windows 安装程序会直接打包 Python runtime 与应用源码，不需要目标机器另行准备 checkout 或
-系统 Python。两端都不默认打包 GVHMR 和受单独许可约束的 SMPL 系权重。构建说明见
+系统 Python。
+
+**macOS 安装步骤：**
+
+1. 下载并打开上方 DMG，将 **Human-Humanoid Tools** 拖入 **Applications（应用程序）**。
+2. 从“应用程序”启动。此预览版使用 ad-hoc 签名，尚未经过 Apple 公证；若被 macOS 阻止，
+   请在 **系统设置 → 隐私与安全性 → 仍要打开** 中允许启动此应用。
+3. 按首次启动页提示完成安装，下载独立 Python 3.12 环境期间请保持联网。无需预装 Python、
+   源码仓库或 Homebrew；运行环境仅安装到当前用户目录，不需要管理员密码。
+
+macOS 包与其他桌面版一样，包含 30 个内置动作和 6 款机器人。
+Warp 重定向使用 CPU；不支持 Intel Mac 或本机 GVHMR 的 NVIDIA GPU 流程。
+
+三端都不默认打包 GVHMR 和受单独许可约束的 SMPL 系权重。构建说明见
 [`desktop/README.md`](desktop/README.md#desktop-packages)。
 
 ### 前端开发

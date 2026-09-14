@@ -10,6 +10,7 @@ function escapeHtml(value: string): string {
 export function installerDataUrl(details: {
   version: string
   reason: string
+  allowSystemInstall?: boolean
 }): string {
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
@@ -38,7 +39,7 @@ button{border:1px solid #455166;background:#252c37;color:#eaf0f8;border-radius:7
 <section class="panel"><div class="reason" data-copy="reason" title="${escapeHtml(details.reason)}">The local runtime for this app version is not installed yet.</div><h2 data-copy="scope">Installation scope</h2>
 <div class="modes">
 <label class="mode"><input type="radio" name="mode" value="user" checked><strong data-copy="userTitle">Current user · Recommended</strong><small data-copy="userDetail">Installs under your user data directory. No administrator password is needed.</small></label>
-<label class="mode"><input type="radio" name="mode" value="system"><strong data-copy="systemTitle">All users · Administrator</strong><small data-copy="systemDetail">Uses the operating system authentication dialog. HHTools never receives your password.</small></label>
+${details.allowSystemInstall === false ? '' : '<label class="mode"><input type="radio" name="mode" value="system"><strong data-copy="systemTitle">All users · Administrator</strong><small data-copy="systemDetail">Uses the operating system authentication dialog. HHTools never receives your password.</small></label>'}
 </div>
 <div class="components"><div class="component"><b data-copy="runtime">Python runtime</b><span data-copy="runtimeDetail">Isolated and versioned</span></div><div class="component"><b>HHTools</b><span data-copy="deps">Web, retarget and Agent dependencies</span></div><div class="component"><b data-copy="assets">Built-in assets</b><span data-copy="assetsDetail">30 motions and 6 robots</span></div></div>
 <label class="license"><input id="license" type="checkbox"><span data-copy="license">I agree to install HHTools and its runtime dependencies. I understand that third-party components remain subject to their own licenses, and optional GVHMR and SMPL-family weights are not installed automatically.</span></label>

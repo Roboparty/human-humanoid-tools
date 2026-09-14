@@ -21,6 +21,21 @@ function installerFixture(): { root: string; script: string } {
 }
 
 describe('runtime installer', () => {
+  it('installs on macOS without elevation and rejects system installation', () => {
+    const { script } = installerFixture()
+    expect(runtimeInstallCommand('user', script, 'darwin')).toEqual({
+      command: '/bin/sh', args: [script]
+    })
+    expect(() => runtimeInstallCommand('system', script, 'darwin')).toThrow('current-user')
+
+    const url = installerDataUrl({
+      version: '0.1.0', reason: 'Runtime required', allowSystemInstall: false
+    })
+    const html = decodeURIComponent(url.slice(url.indexOf(',') + 1))
+    expect(html).toContain('value="user" checked')
+    expect(html).not.toContain('value="system"')
+  })
+
   it('uses a normal shell for user installs and an OS-owned prompt for system installs', () => {
     const { script } = installerFixture()
 
@@ -64,7 +79,7 @@ describe('runtime installer', () => {
     const installer = new RuntimeInstaller({
       scriptPath: script,
       platform: 'linux',
-      env: { HOME: '/home/test', SECRET_TOKEN: 'never-forward' },
+      env: { HOME: '/home/test', HHTOOLS_INSTALL_ROOT: '/custom/runtime', SECRET_TOKEN: 'never-forward' },
       spawnProcess,
       onProgress: (update) => progress.push(update)
     })
@@ -79,7 +94,9 @@ describe('runtime installer', () => {
       message: 'HHTools runtime installed successfully. Restarting…'
     })
     expect(progress.at(-1)?.phase).toBe('completed')
-    expect(spawnProcess.mock.calls[0]?.[2].env).toEqual({ HOME: '/home/test' })
+    expect(spawnProcess.mock.calls[0]?.[2].env).toEqual({
+      HOME: '/home/test', HHTOOLS_INSTALL_ROOT: '/custom/runtime'
+    })
   })
 
   it('treats a dismissed system authentication dialog as cancellation', async () => {
