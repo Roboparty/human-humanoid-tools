@@ -678,29 +678,81 @@ def _load_npz_trajectory(
     data = np.load(path, allow_pickle=True)
     keys = set(data.files)
     jq_key = next((k for k in ("joint_q", "qpos", "q") if k in keys), None)
-    if jq_key is None:
+    if jq_key is not None:
+        joint_q = np.asarray(data[jq_key], dtype=np.float32)
+        if "dof_names" in keys:
+            dof_names = tuple(str(n) for n in data["dof_names"].tolist())
+        else:
+            dof_names = _align_trajectory_dof_names(
+                joint_q.shape[1] - 7, fallback_dof_names,
+            )
+        declared = None
+        for k in ("sample_rate", "fps", "framerate"):
+            if k in keys:
+                declared = float(np.asarray(data[k]).reshape(-1)[0])
+                break
+        fps = _resolve_source_framerate(declared, source_fps)
+        quat_fmt = "xyzw"
+        if "root_quat_format" in keys:
+            quat_fmt = str(data["root_quat_format"]).lower()
+        if quat_fmt == "wxyz":
+            joint_q = _wxyz_to_xyzw(joint_q)
+        return SourceTrajectory(joint_q=joint_q, dof_names=dof_names, framerate=fps, meta={})
+
+    isaaclab_keys = {"joint_names", "joint_pos", "base_pos_w", "base_quat_w"}
+    if not isaaclab_keys.issubset(keys):
         raise ValueError(
-            f"{path}: npz has no joint_q/qpos array (keys: {sorted(keys)})"
+            f"{path}: npz has neither joint_q/qpos/q nor the IsaacLab training-convention "
+            f"schema (keys: {sorted(keys)})"
         )
-    joint_q = np.asarray(data[jq_key], dtype=np.float32)
-    if "dof_names" in keys:
-        dof_names = tuple(str(n) for n in data["dof_names"].tolist())
-    else:
-        dof_names = _align_trajectory_dof_names(
-            joint_q.shape[1] - 7, fallback_dof_names,
+
+    joint_names_raw = np.asarray(data["joint_names"])
+    joint_pos = np.asarray(data["joint_pos"], dtype=np.float32)
+    base_pos = np.asarray(data["base_pos_w"], dtype=np.float32)
+    base_quat_wxyz = np.asarray(data["base_quat_w"], dtype=np.float32)
+    if (
+        joint_names_raw.ndim != 1
+        or joint_pos.ndim != 2
+        or base_pos.ndim != 2
+        or base_quat_wxyz.ndim != 2
+        or joint_pos.shape[0] < 1
+        or joint_pos.shape[1] < 1
+        or joint_names_raw.shape[0] != joint_pos.shape[1]
+        or base_pos.shape != (joint_pos.shape[0], 3)
+        or base_quat_wxyz.shape != (joint_pos.shape[0], 4)
+    ):
+        raise ValueError(
+            f"{path}: invalid IsaacLab training-convention shapes: joint_names "
+            f"{joint_names_raw.shape}, joint_pos {joint_pos.shape}, base_pos_w "
+            f"{base_pos.shape}, base_quat_w {base_quat_wxyz.shape}"
         )
+
+    def _joint_name(value: object) -> str:
+        if isinstance(value, bytes):
+            return value.decode("utf-8")
+        return str(value)
+
+    dof_names = tuple(_joint_name(name) for name in joint_names_raw.tolist())
+    if not all(dof_names):
+        raise ValueError(f"{path}: IsaacLab joint_names contains an empty name")
+    # IsaacLab's training convention stores ``base_quat_w`` as wxyz; hhtools
+    # uses xyzw in its 7 + N robot-trajectory layout.
+    root_xyzw = np.concatenate(
+        (base_pos, base_quat_wxyz[:, 1:], base_quat_wxyz[:, :1]), axis=1,
+    )
+    joint_q = np.concatenate((root_xyzw, joint_pos), axis=1)
     declared = None
     for k in ("sample_rate", "fps", "framerate"):
         if k in keys:
             declared = float(np.asarray(data[k]).reshape(-1)[0])
             break
     fps = _resolve_source_framerate(declared, source_fps)
-    quat_fmt = "xyzw"
-    if "root_quat_format" in keys:
-        quat_fmt = str(data["root_quat_format"]).lower()
-    if quat_fmt == "wxyz":
-        joint_q = _wxyz_to_xyzw(joint_q)
-    return SourceTrajectory(joint_q=joint_q, dof_names=dof_names, framerate=fps, meta={})
+    return SourceTrajectory(
+        joint_q=joint_q,
+        dof_names=dof_names,
+        framerate=fps,
+        meta={"source_format": "isaaclab_training_convention_npz"},
+    )
 
 
 def load_source_trajectory(
