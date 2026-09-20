@@ -124,7 +124,40 @@ def _joint_q_width_from_pkl(path: Path) -> int:
     return int(jq.shape[1])
 
 
+def _isaaclab_training_npz_width(data, keys: set[str]) -> int:
+    """Return the root-plus-DoF width for the IsaacLab training NPZ layout."""
+    required = {"joint_names", "joint_pos", "base_pos_w", "base_quat_w"}
+    if not required.issubset(keys):
+        return 0
+    try:
+        joint_names = np.asarray(data["joint_names"])
+        joint_pos = np.asarray(data["joint_pos"])
+        base_pos = np.asarray(data["base_pos_w"])
+        base_quat = np.asarray(data["base_quat_w"])
+    except Exception:
+        return 0
+    if (
+        joint_names.ndim != 1
+        or joint_pos.ndim != 2
+        or base_pos.ndim != 2
+        or base_quat.ndim != 2
+        or joint_pos.shape[0] < 1
+        or joint_pos.shape[1] < 1
+        or joint_names.shape[0] != joint_pos.shape[1]
+        or base_pos.shape != (joint_pos.shape[0], 3)
+        or base_quat.shape != (joint_pos.shape[0], 4)
+    ):
+        return 0
+    return int(7 + joint_pos.shape[1])
+
+
 def _joint_q_width_from_npz(path: Path) -> int:
+    """Return the root-plus-DoF width for supported robot NPZ schemas.
+
+    Besides hhtools exports (``joint_q`` / ``qpos`` / ``q``), accept the
+    IsaacLab training-convention layout: ``base_pos_w`` + ``base_quat_w``
+    (wxyz) + ``joint_pos`` + ``joint_names``.
+    """
     try:
         data = np.load(path, allow_pickle=True)
     except Exception:
@@ -132,7 +165,7 @@ def _joint_q_width_from_npz(path: Path) -> int:
     keys = set(data.files)
     jq_key = next((k for k in ("joint_q", "qpos", "q") if k in keys), None)
     if jq_key is None:
-        return 0
+        return _isaaclab_training_npz_width(data, keys)
     try:
         jq = np.asarray(data[jq_key])
     except Exception:
