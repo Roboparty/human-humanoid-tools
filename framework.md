@@ -132,7 +132,7 @@ Web UI 根据动作是否携带 `objects` / `terrain` 自动推荐后端；用�
 
 ## 5. Newton IK 引擎（`newton_basic`）
 
-> 改编自 NVIDIA [SOMA-Retargeter](https://github.com/NVlabs/SOMA-Retargeter)（Apache-2.0）。
+> 改编自 NVIDIA [SOMA-Retargeter](https://github.com/NVIDIA/SOMA-Retargeter)（Apache-2.0）。
 
 ### 5.1 管线概览
 
@@ -183,7 +183,7 @@ RetargetedMotion
 
 ## 6. MPC/SQP 引擎（`interaction_mesh`）
 
-> 拉普拉斯交互网格思路参考 [holosoma](https://github.com/NVIDIA-Omniverse/holosoma) interaction-mesh retargeting（Apache-2.0）。
+> 拉普拉斯交互网格思路参考 [holosoma](https://github.com/amazon-far/holosoma) interaction-mesh retargeting（Apache-2.0）。
 
 ### 6.1 为何需要第二套引擎
 
@@ -313,8 +313,8 @@ J_L = \mathrm{kron}(L, I_3) \cdot J_V, \quad
 
 | 上游 | 许可 | 本仓库使用 |
 |------|------|-----------|
-| [SOMA-Retargeter](https://github.com/NVlabs/SOMA-Retargeter) | Apache-2.0 | Newton IK 管线、Scaler、FeetStabilizer |
-| [holosoma](https://github.com/NVIDIA-Omniverse/holosoma) | Apache-2.0 | 拉普拉斯交互网格、MPC/SQP 公式 |
+| [SOMA-Retargeter](https://github.com/NVIDIA/SOMA-Retargeter) | Apache-2.0 | Newton IK 管线、Scaler、FeetStabilizer |
+| [holosoma](https://github.com/amazon-far/holosoma) | Apache-2.0 | 拉普拉斯交互网格、MPC/SQP 公式 |
 | [ai4animationpy](https://github.com/facebookresearch/ai4animationpy) | Apache-2.0 | NPZ schema 与 API 形态参考（代码全新编写） |
 | [Newton](https://github.com/newton-physics/newton) | Apache-2.0 | IK 求解器 |
 | [NVIDIA Warp](https://github.com/NVIDIA/warp) | Apache-2.0 | GPU 加速 |
@@ -341,7 +341,7 @@ J_L = \mathrm{kron}(L, I_3) \cdot J_V, \quad
 | OmniContact-Dataset | [lightcone02/OmniContact-Dataset](https://huggingface.co/datasets/lightcone02/OmniContact-Dataset) | 光学动捕 HOI（raw_mocap BVH + 物体 CSV） |
 | PHUMA | [DAVIAN-Robotics/PHUMA](https://github.com/DAVIAN-Robotics/PHUMA) | 精选人体动作 |
 | GVHMR | [zju3dv/GVHMR](https://github.com/zju3dv/GVHMR) | 视频单目 HMR |
-| meshmimic / holosoma | [NVIDIA-Omniverse/holosoma](https://github.com/NVIDIA-Omniverse/holosoma) | 跑酷地形片段 |
+| meshmimic / holosoma | [amazon-far/holosoma](https://github.com/amazon-far/holosoma) | 跑酷地形片段 |
 | LAFAN1 | [ubisoft/ubisoft-laforge-animation-dataset](https://github.com/ubisoft/ubisoft-laforge-animation-dataset) | BVH 动捕 |
 | PARC MS | holosoma 生态 | 地形+动作 pickle |
 

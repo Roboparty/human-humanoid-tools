@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Portions adapted from soma-retargeter (Apache-2.0).
-# See https://github.com/NVlabs/SOMA-Retargeter and the project root NOTICE.
+# See https://github.com/NVIDIA/SOMA-Retargeter and the project root NOTICE.
 """Newton-model construction from hhtools robot presets.
 
 The stage-2 IK pipeline consumes Newton :class:`newton.Model` objects rather

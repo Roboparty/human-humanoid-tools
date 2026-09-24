@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Portions adapted from soma-retargeter (Apache-2.0).
-# See https://github.com/NVlabs/SOMA-Retargeter and the project root NOTICE.
+# See https://github.com/NVIDIA/SOMA-Retargeter and the project root NOTICE.
 """Newton-based IK retargeting pipeline (stage 2).
 
 This is the hhtools port of ``soma_retargeter.pipelines.newton_pipeline`` —
