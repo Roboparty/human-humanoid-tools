@@ -1,0 +1,4 @@
+# chumpy 0.70 imports pip from its legacy setup.py without declaring it as a
+# build dependency. Release installs need the same isolated-build augmentation
+# as source checkouts.
+extra-build-dependencies = { chumpy = ["pip", "setuptools", "wheel"] }

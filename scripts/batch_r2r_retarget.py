@@ -171,7 +171,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def _expected_csv(out_root: Path, in_root: Path, traj_path: Path, *, has_scene: bool) -> Path:
-    from hhtools.web.r2r_upload_resolve import export_subdir_for_r2r_clip
+    from hhtools.web.library.r2r_upload_resolve import export_subdir_for_r2r_clip
 
     stem = traj_path.stem
     sub = export_subdir_for_r2r_clip(in_root, traj_path)
@@ -368,7 +368,7 @@ def _resolve_profile_scene(
     prof = profile if profile is not None else cfg.profile
     scene = bool(has_scene) if has_scene is not None else False
     if has_scene is None and cfg.profile in ("auto", "meshmimic", "intermimic"):
-        from hhtools.web.r2r_upload_resolve import enumerate_r2r_clips
+        from hhtools.web.library.r2r_upload_resolve import enumerate_r2r_clips
 
         refs = {
             str(r.path.resolve()): r
@@ -422,7 +422,7 @@ def _prepare_source_motion(
         name=traj_path.stem,
     )
     if backend == "interaction_mesh" and has_scene:
-        from hhtools.web.r2r_scene import attach_r2r_clip_scene_to_motion
+        from hhtools.web.output.r2r_scene import attach_r2r_clip_scene_to_motion
 
         motion = attach_r2r_clip_scene_to_motion(
             motion,
@@ -443,9 +443,9 @@ def _export_retargeted(
     profile: str,
     has_scene: bool,
 ) -> Path:
-    from hhtools.web.export_bundle import identity_resample
-    from hhtools.web.r2r_export_bundle import write_r2r_export_bundle
-    from hhtools.web.r2r_upload_resolve import export_subdir_for_r2r_clip
+    from hhtools.web.output.export_bundle import identity_resample
+    from hhtools.web.output.r2r_export_bundle import write_r2r_export_bundle
+    from hhtools.web.library.r2r_upload_resolve import export_subdir_for_r2r_clip
 
     stem = traj_path.stem
     sub = export_subdir_for_r2r_clip(cfg.in_root, traj_path)
@@ -963,7 +963,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from hhtools.robot.registry import get as get_preset
     from hhtools.robot.registry import refresh
-    from hhtools.web.r2r_upload_resolve import enumerate_r2r_clips
+    from hhtools.web.library.r2r_upload_resolve import enumerate_r2r_clips
 
     if not cfg.in_root.is_dir():
         _log.error("input root not found: %s", cfg.in_root)

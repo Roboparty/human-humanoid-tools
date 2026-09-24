@@ -1,6 +1,6 @@
 """Shared helpers for offline batch retarget scripts.
 
-Mirrors Web export contents via :func:`hhtools.web.export_bundle.write_retarget_export_bundle`
+Mirrors Web export contents via :func:`hhtools.web.output.export_bundle.write_retarget_export_bundle`
 (with ``pack_scene=False`` so scene clips stay as folders, not zips).
 """
 
@@ -106,7 +106,7 @@ def process_sequence(seq_id: str, cfg: BatchClipConfig) -> Path:
     from hhtools.robot.loader import load_robot
     from hhtools.robot.registry import get as get_preset
     from hhtools.robot.registry import refresh
-    from hhtools.web.export_bundle import (
+    from hhtools.web.output.export_bundle import (
         identity_resample,
         motion_has_scene,
         write_retarget_export_bundle,

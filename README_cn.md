@@ -28,27 +28,184 @@
 - **机器人→机器人（R2R）**：已有机器人 CSV/PKL 轨迹重映射到新 URDF，含 [MotionDecode](https://huggingface.co/datasets/CMRobot/MotionDecode) 的 G1 CSV。
 - **数据集分析**：Web 端扫描、打标、聚类、子集推荐。
 
-**环境：** Linux，Python 3.12+；预览 CPU 即可，重映射需 **NVIDIA GPU（CUDA 12）**。
+**环境：** Python 3.12+；Linux / Windows 支持 **NVIDIA GPU（CUDA 12）** 加速，
+Apple Silicon macOS 桌面版使用 CPU 重定向。桌面打包要求见下方说明。
+视频转动作还需要一套单独安装、可使用 CUDA 的 GVHMR 环境。
 
 ---
 
-## 快速开始
+## 安装与启动
+
+hhtools 有三种交互式运行方式，另提供一个 Agent 自动化接口。它们共享同一套动作、机器人与
+重映射核心，但安装和启动入口彼此独立：
+
+| 方式 | 适用场景 | 启动入口 |
+|------|----------|----------|
+| **终端（CLI/TUI 工作流）** | 批处理、服务器、SSH 与自动化 | `uv run hhtools ...` |
+| **WebUI** | 浏览器中的可视化与交互工作流 | `uv run hhtools web` |
+| **桌面 GUI** | Windows 独立应用、Linux / macOS 首次启动安装 | 应用菜单、Mac 应用程序或 `hhtools-desktop` |
+| **Agent（JSON CLI / MCP）** | 带版本契约的 H2R、无场景 R2R 与可扩展 Batch 自动化 | [`hhtools agent` / `hhtools-mcp`](docs/agent.md) |
+
+### 推荐：使用 uv 安装源码环境
+
+先按照 [`uv` 官方说明](https://docs.astral.sh/uv/getting-started/installation/)安装 uv，再克隆
+仓库。HHTools 支持 Python 3.12 或更高版本；uv 会选择兼容解释器，也可以在本机缺少时安装一个：
 
 ```bash
 git clone https://github.com/Roboparty/human-humanoid-tools.git
 cd human-humanoid-tools
-curl -LsSf https://astral.sh/uv/install.sh | sh   # 若未安装
-uv sync --extra all
+# 仅在本机没有兼容 Python 时需要：
+uv python install 3.12
+```
+
+需要格式、机器人、重映射、WebUI 与 Agent/MCP 全部功能时，使用项目维护的 `all` extra：
+
+```bash
+uv sync --locked --extra all
+uv run hhtools --help
 uv run hhtools web
 ```
 
-浏览器打开 `http://127.0.0.1:8009`。
+浏览器打开 `http://127.0.0.1:8009`。GVHMR 与受单独许可约束的 SMPL 系模型权重仍由用户
+独立准备；`all` 安装的是对应 Python 集成库，不包含这些模型文件。
+
+如果希望环境更小，可以只安装实际工作流。核心终端命令不需要 extra：
+
+```bash
+uv sync --locked
+uv run hhtools --help
+```
+
+需要 WebUI 预览和 Newton 重映射时：
+
+```bash
+uv sync --locked --extra web --extra retarget
+uv run hhtools web
+```
+
+如果只需要预览，可省略 `--extra retarget`。缺少必需包时，启动程序会列出缺失包及准确的
+修复命令，不再直接显示 Python import traceback。
+
+### Agent 与 MCP
+
+HHTools 提供供脚本使用的严格 JSON CLI，以及供兼容 Agent 使用的本机 stdio MCP server。
+当前 Agent 接口覆盖经过 preflight 的安全 H2R、无场景 R2R、可扩展 H2R/R2R Batch 任务、
+内容寻址的标定辅助、供 GPT 视觉检查的前/侧视预览，以及验证后的静默保存和产物导出，
+尚未覆盖 WebUI 的全部功能。安装方式、能力边界、smoke-first 流程、
+运行时目录所有权和仓库自带的 Codex 项目配置见 [Agent interfaces](docs/agent.md)。
+
+### 桌面 GUI
+
+按平台下载 **0.1.0 预览版**桌面安装包：
+
+| 平台 | 下载 | 架构 |
+|------|------|------|
+| Windows | [EXE 安装程序](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/v0.1.0%28beta%29/hhtools-0.1.0-x64-setup.exe) | x64 |
+| Linux | [Debian 安装包](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/v0.1.0%28beta%29/hhtools-0.1.0-amd64.deb) | amd64 |
+| macOS 12+ | [DMG 安装包](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/v0.1.0%28beta%29/hhtools-0.1.0-mac-arm64.dmg) | Apple Silicon（arm64） |
+
+Debian 包包含 Electron、精选内置动作与机器人。首次启动页使用同一 deb 内置的 HHTools wheel、
+锁定依赖清单、uv 配置和 uv 二进制安装独立运行环境；推荐的当前用户安装不需要管理员密码，
+所有用户安装则使用操作系统认证窗口：
+
+```bash
+sudo apt install ./hhtools-0.1.0-amd64.deb
+hhtools-desktop
+```
+
+Windows 安装程序会直接打包 Python runtime 与应用源码，不需要目标机器另行准备 checkout 或
+系统 Python。
+
+**macOS 安装步骤：**
+
+1. 下载并打开上方 DMG，将 **Human-Humanoid Tools** 拖入 **Applications（应用程序）**。
+2. 从“应用程序”启动。此预览版使用 ad-hoc 签名，尚未经过 Apple 公证；若被 macOS 阻止，
+   请在 **系统设置 → 隐私与安全性 → 仍要打开** 中允许启动此应用。
+3. 按首次启动页提示完成安装，下载独立 Python 3.12 环境期间请保持联网。无需预装 Python、
+   源码仓库或 Homebrew；运行环境仅安装到当前用户目录，不需要管理员密码。
+
+macOS 包与其他桌面版一样，包含 30 个内置动作和 6 款机器人。
+Warp 重定向使用 CPU；不支持 Intel Mac 或本机 GVHMR 的 NVIDIA GPU 流程。
+
+三端都不默认打包 GVHMR 和受单独许可约束的 SMPL 系权重。构建说明见
+[`desktop/README.md`](desktop/README.md#desktop-packages)。
+
+### 前端开发
+
+WebUI 与 Electron GUI 共用 `hhtools/web/frontend` 中同一套 React + TypeScript renderer；
+Electron 通过本机 FastAPI sidecar 加载同一个页面，不维护第二套 GUI renderer。视频转动作是
+新壳层中第一个完整工作流。Tailwind CSS 已接入构建；shadcn/ui 基础组件只在真实页面需要时
+逐个复制进项目。舞台控制已经存在，新 renderer 仍在接入中。
+
+```bash
+cd hhtools/web/frontend
+npm install
+npm run typecheck
+npm test
+npm run build
+```
+
+生产构建写入 `hhtools/web/static`，FastAPI 与 Electron 原样复用这份产物。
+
+Web 后台任务默认不限制并发。共享服务器或显存紧张时，可以显式启用 FIFO 调度：
+
+```bash
+uv run hhtools web --max-running-jobs 1 --max-queued-jobs 32
+```
+
+两个参数的 `0` 都表示不限；只有运行并发为正数时，等待队列设置才生效。也可以使用
+Agent Batch 的条目数和总帧数默认也不设上限；只有把 `--max-batch-items` 或
+`--max-batch-total-frames` 设为正数时才启用部署侧保护，设回 `0` 即恢复不限。对应环境变量为
+`HHTOOLS_MAX_RUNNING_JOBS`、`HHTOOLS_MAX_QUEUED_JOBS`、`HHTOOLS_MAX_BATCH_ITEMS` 和
+`HHTOOLS_MAX_BATCH_TOTAL_FRAMES`，Electron sidecar 与 MCP server 同样支持。
+也可以从本机 Web/Electron 或 SSH 本地回环隧道，在 **设置 → 后台任务调度** 中直接修改；
+在未实现远程管理鉴权前，普通远程浏览器会显示为只读。保存会热更新调度器，无需重启 Python 或
+Electron：降低并发不会中断正在运行的任务，提高上限会立即按 FIFO 补跑等待任务。后端会将
+配置写入平台用户配置目录，也可用 `HHTOOLS_WEB_SETTINGS_PATH` 指定文件。显式 CLI/环境变量
+仍是启动覆盖项，只要保留这些覆盖项，下次启动时就会再次覆盖 GUI 保存值。
+并发上限只约束调度器管理的 Web Job，不包含选择机器人时可选的 Warp/Newton 预热线程，
+因此它是任务准入控制，并非整个进程的严格 GPU 并发上限。
 
 | 面板 | 流程 |
 |------|------|
+| **视频 → 动作** | 上传单个视频 → 使用 GVHMR 官方权重推理 → 登记到 Motion Library |
 | **Motion → Robot** | 加载动作 → 选机器人 → 标定（首次）→ Retarget → 下载 CSV/ZIP |
 | **Robot → Robot** | 源机器人 + 轨迹 → 目标 URDF → 标定 → 单条/批量导出 |
 | **数据集可视化分析** | 拖入文件夹 → 分析 → 标签/散点探索 → 导出子集 |
+
+### GVHMR 视频转动作
+
+请按照 [GVHMR 上游说明](https://github.com/zju3dv/GVHMR)单独安装。hhtools 不捆绑其源码、
+官方 checkpoint 或 Python 环境；本机 desktop 构建可以带入 `SMPLX_NEUTRAL.npz`，源码与 WebUI
+仍使用本机模型目录。**视频 → 动作** 只使用官方发布
+权重完成推理，并将生成的 `hmr4d_results.pt` 登记到 Motion Library；不提供自定义权重或训练入口。
+
+Linux 端会用独立子进程直接启动已经安装好的 GVHMR Python 环境：
+
+```bash
+export HHTOOLS_GVHMR_ROOT=/path/to/GVHMR
+export HHTOOLS_GVHMR_PYTHON=/path/to/gvhmr/environment/bin/python
+uv run hhtools web
+```
+
+checkout 需要保留上游的 `inputs/checkpoints` 布局，其中包括已获得授权的
+`inputs/checkpoints/body_models/smplx/SMPLX_NEUTRAL.npz`。所选环境必须具备 GVHMR 依赖与
+CUDA，`ffmpeg` 必须位于 `PATH`。程序会尝试发现 `~/GVHMR`、仓库内 `.venv`/`venv` 以及常见
+位置中名为 `gvhmr` 的 Conda 环境，但显式路径最可靠。可用 `HHTOOLS_GVHMR_TIMEOUT_SECONDS`
+调整默认两小时的推理超时。
+
+Windows 端仍是可选的 Docker 组件。用 `HHTOOLS_GVHMR_ROOT` 指向官方 checkout，
+`HHTOOLS_GVHMR_IMAGE` 指向已准备好的镜像；如授权模型单独存放，可用
+`HHTOOLS_GVHMR_BODY_MODELS` 挂载。hhtools 不会安装或下载这些资源。
+
+已有的 GVHMR 结果仍可拖入 **Motion** 导入。转换过程需要本地已授权的 SMPL 系人体模型；
+如果它不在 hhtools 默认搜索路径中，请用 `HHTOOLS_BODY_MODELS` 指向该目录。
+
+纯命令行用户也可直接将 GVHMR 输出目录转成 hhtools 统一 Motion 格式：
+
+```bash
+hhtools import run --dataset gvhmr --root /path/to/gvhmr/output --out /path/to/motions
+```
 
 参数调优：改 [`configs/robots/unitree_g1/`](configs/robots/unitree_g1/) 或 `~/.config/hhtools/robots/<名称>/robot.yaml`，运行 `hhtools robot validate <名称>`。原理见 [framework.md](framework.md)。
 
@@ -58,6 +215,7 @@ uv run hhtools web
 
 | 命令 | 作用 |
 |------|------|
+| `hhtools doctor` | 检查本机 Web、机器人、重映射、MCP、Body Model 与 GVHMR 就绪状态 |
 | `hhtools convert run` | BVH / GLB → 统一 NPZ |
 | `hhtools import list` / `import run` | 列出适配器；数据集根目录 → NPZ |
 | `hhtools bodymodel check` / `setup` | SMPL 系权重路径 / 下载说明 |
@@ -66,7 +224,6 @@ uv run hhtools web
 | `hhtools retarget interaction-mesh run` | Interaction-mesh（地形/物体）→ CSV |
 | `hhtools retarget interaction-mesh precompute-laplacian` | 预计算 Laplacian 目标（`.npz`） |
 | `hhtools web` | HTML / three.js UI（默认 `127.0.0.1:8009`） |
-| `hhtools ui` | 旧版 Viser 查看器 |
 
 **转换与导入**
 
@@ -88,13 +245,23 @@ uv run hhtools import run --dataset omnicontact \
 **机器人**
 
 ```bash
+# 将六个精选机器人安装到 ~/.config/hhtools/robots。
+uv run python scripts/install_builtin_robots.py
+# 也可以只安装一个；重复 --only 可选择多个。
+uv run python scripts/install_builtin_robots.py --only g1_29dof
+
 uv run hhtools robot list
-uv run hhtools robot info unitree_g1__g1_29dof --no-mjcf
-uv run hhtools robot schema unitree_g1__g1_29dof -o /tmp/g1_header.csv
-uv run hhtools robot validate unitree_g1__g1_29dof
+uv run hhtools robot info g1_29dof --no-mjcf
+uv run hhtools robot schema g1_29dof -o /tmp/g1_header.csv
+uv run hhtools robot validate g1_29dof
 uv run hhtools robot scaffold unitree_g1          # 已有 yaml 则跳过
 # uv run hhtools robot add /path/to/urdf_or_dir  # 写入 configs/robots/
 ```
+
+安装器下载固定提交的官方归档（合计约 772 MiB），只保留约 237 MiB 的引用
+文件；每个预设都会保留上游许可证和带校验和的 `SOURCE.json`。`--replace`
+会原子替换所选预设的本地修改。桌面包可用 `HHTOOLS_BUNDLED_ROBOT_DIR`
+指向审核后的 Robot Library。
 
 **重映射（可用 `--limit-frames` 冒烟）**
 
@@ -247,4 +414,5 @@ smooth_joint_filter_masks:
 
 - **代码：** [Apache-2.0](LICENSE) · 第三方：[NOTICE](NOTICE)
 - **SMPL 系权重：** 不随仓库分发，需自行从 MPI 下载并放入 `configs/body_models/` — 见 [configs/body_models/README.md](configs/body_models/README.md)
+- 没有这些权重时，Motion Library 的参数动作仍会以 NumPy 骨架代理正常加载和播放；真实身体网格与精确关节回归仍需要本地授权权重。
 - **更多文档：** [framework.md](framework.md) · [CONTRIBUTING.md](CONTRIBUTING.md)

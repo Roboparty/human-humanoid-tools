@@ -32,9 +32,8 @@ Optional ``meta_json`` keys consumed by terrain loaders:
 
 Rendering hints (``SceneObject.opacity`` / ``color``) are **not** persisted: the NPZ
 is purely a trajectory + topology artifact. Visual policy (terrain slate-gray, prop
-orange, …) is applied at render time in :class:`hhtools.viewer.renderers.objects.ObjectsRenderer`
-based on the object's ``name`` so saved bundles still render consistently without
-having to carry viz metadata in the data file.
+orange, …) is applied by the Web Stage from the object's ``name`` so saved
+bundles still render consistently without carrying UI metadata in the data file.
 
 A few optional side arrays (``root_translation``, ``skinned_mesh_vertices`` ...) may be stored by
 higher-level exporters; they are ignored by the loader unless explicitly requested.
@@ -44,6 +43,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 

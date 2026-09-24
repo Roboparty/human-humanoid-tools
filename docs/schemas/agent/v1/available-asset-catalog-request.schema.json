@@ -1,0 +1,88 @@
+{
+  "$defs": {
+    "AssetKind": {
+      "description": "Logical type of a registered asset.",
+      "enum": [
+        "motion_bundle",
+        "robot_trajectory_bundle",
+        "robot_bundle",
+        "calibration_bundle",
+        "dataset_bundle",
+        "video"
+      ],
+      "title": "AssetKind",
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Bounded filters for discovering registerable assets below configured roots.",
+  "properties": {
+    "kind": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AssetKind"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "limit": {
+      "default": 100,
+      "maximum": 500,
+      "minimum": 1,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "offset": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Offset",
+      "type": "integer"
+    },
+    "query": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Query"
+    },
+    "root_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Root Id"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    }
+  },
+  "title": "AvailableAssetCatalogRequest",
+  "type": "object"
+}

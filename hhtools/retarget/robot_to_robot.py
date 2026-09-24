@@ -29,9 +29,16 @@ and :func:`~hhtools.retarget.calibration.calibration.derive_calibration_params`.
 from __future__ import annotations
 
 import csv
+import errno
+import hashlib
+import math
+import os
 import pickle
+import re
+import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import numpy as np
 from numpy.typing import NDArray
@@ -60,8 +67,12 @@ __all__ = [
     "SourceTrajectory",
     "build_source_reference_pose",
     "load_r2r_calibration",
+    "load_r2r_calibration_file",
+    "load_r2r_calibration_record_file",
     "load_source_trajectory",
     "r2r_calibration_path",
+    "r2r_user_calibration_path",
+    "resolve_r2r_calibration_file",
     "retarget_robot_to_robot",
     "save_r2r_calibration",
     "align_retargeted_ankles_to_scaled_source",
@@ -122,7 +133,7 @@ def _canonical_keypoints(
     link_tx: dict[str, NDArray],
     ik_pairs: list[tuple[str, str]],
     *,
-    T_root: NDArray | None = None,
+    t_root: NDArray | None = None,
 ) -> dict[str, tuple[NDArray, NDArray]]:
     """Map ik-mapped links → ``{canonical: (pos(3), quat_xyzw(4))}`` (world)."""
     out: dict[str, tuple[NDArray, NDArray]] = {}
@@ -131,8 +142,8 @@ def _canonical_keypoints(
         if T is None:
             continue
         T = np.asarray(T, dtype=np.float64)
-        if T_root is not None:
-            T = T_root @ T
+        if t_root is not None:
+            T = t_root @ T
         pos = T[:3, 3].astype(np.float32)
         quat = _rotmat_to_xyzw(T[:3, :3]).astype(np.float32)
         out[canonical] = (pos, quat)
@@ -148,12 +159,11 @@ def _augment_upper_chain(kp: dict[str, tuple[NDArray, NDArray]]) -> None:
     ``missing canonical`` guard never trips; their tracking weight is typically
     low, so the approximation does not meaningfully degrade the solve.
     """
+
     def pos(name: str) -> NDArray | None:
         return kp[name][0] if name in kp else None
 
-    chest_q = kp["chest"][1] if "chest" in kp else (
-        kp["hips"][1] if "hips" in kp else _IDENTITY_Q
-    )
+    chest_q = kp["chest"][1] if "chest" in kp else (kp["hips"][1] if "hips" in kp else _IDENTITY_Q)
     hips_p = pos("hips")
     chest_p = pos("chest")
     lsh = pos("left_shoulder")
@@ -292,7 +302,7 @@ def source_trajectory_to_motion(
     try:
         cfg0 = {n: float(joint_q[0, 7 + i]) for i, n in enumerate(dof_names) if n in model_dof}
         link_tx0 = _collect_link_transforms_at_q(source_model, cfg0)
-        kp0 = _canonical_keypoints(link_tx0, ik_pairs, T_root=_root_matrix(joint_q[0]))
+        kp0 = _canonical_keypoints(link_tx0, ik_pairs, t_root=_root_matrix(joint_q[0]))
         _augment_upper_chain(kp0)
         hier = _build_canonical_hierarchy(list(kp0.keys()))
         names = list(hier.bone_names)
@@ -313,7 +323,7 @@ def source_trajectory_to_motion(
         for f in range(num_frames):
             cfg = {n: float(joint_q[f, 7 + i]) for i, n in enumerate(dof_names) if n in model_dof}
             link_tx = _collect_link_transforms_at_q(source_model, cfg)
-            kp = _canonical_keypoints(link_tx, ik_pairs, T_root=_root_matrix(joint_q[f]))
+            kp = _canonical_keypoints(link_tx, ik_pairs, t_root=_root_matrix(joint_q[f]))
             _augment_upper_chain(kp)
             for j, nm in enumerate(names):
                 p, q = kp.get(nm, (positions[f, j], quaternions[f, j]))
@@ -321,7 +331,9 @@ def source_trajectory_to_motion(
                 quaternions[f, j] = q
             if foot_parts:
                 sole_z = _frame_min_foot_world_z(
-                    source_model, joint_q[f, :7], foot_parts=foot_parts,
+                    source_model,
+                    joint_q[f, :7],
+                    foot_parts=foot_parts,
                 )
                 if sole_z is not None and (sole_z_min is None or sole_z < sole_z_min):
                     sole_z_min = float(sole_z)
@@ -393,9 +405,7 @@ def _align_trajectory_dof_names(
         return fallback_dof_names
     if len(fallback_dof_names) > n_dof_cols:
         return fallback_dof_names[:n_dof_cols]
-    extra = tuple(
-        f"dof_{i}" for i in range(len(fallback_dof_names), n_dof_cols)
-    )
+    extra = tuple(f"dof_{i}" for i in range(len(fallback_dof_names), n_dof_cols))
     return fallback_dof_names + extra
 
 
@@ -410,8 +420,13 @@ def _normalized_csv_column(name: str) -> str:
 
 def _motiondecode_running_root_columns(header: list[str]) -> bool:
     return tuple(_normalized_csv_column(col) for col in header[:7]) == (
-        "root_pos_x_m", "root_pos_y_m", "root_pos_z_m",
-        "root_rot_w", "root_rot_x", "root_rot_y", "root_rot_z",
+        "root_pos_x_m",
+        "root_pos_y_m",
+        "root_pos_z_m",
+        "root_rot_w",
+        "root_rot_x",
+        "root_rot_y",
+        "root_rot_z",
     )
 
 
@@ -444,9 +459,7 @@ def _load_motiondecode_running_csv(
         joint_q = np.zeros((0, len(header)), dtype=np.float32)
 
     declared_dof_names = tuple(
-        col[len("dof_"):].split("(", 1)[0].strip()
-        for col in header[7:]
-        if col.startswith("dof_")
+        col[len("dof_") :].split("(", 1)[0].strip() for col in header[7:] if col.startswith("dof_")
     )
     n_dof_cols = max(joint_q.shape[1] - 7, 0)
     dof_names = (
@@ -478,7 +491,13 @@ def _load_header_only_robot_csv(
     header = [str(cell).strip() for cell in rows[0]]
     norm = [_normalized_csv_column(col) for col in header]
     root_aliases = (
-        "root_x", "root_y", "root_z", "root_qx", "root_qy", "root_qz", "root_qw",
+        "root_x",
+        "root_y",
+        "root_z",
+        "root_qx",
+        "root_qy",
+        "root_qz",
+        "root_qw",
     )
     if _motiondecode_running_root_columns(header):
         return _load_motiondecode_running_csv(
@@ -500,9 +519,7 @@ def _load_header_only_robot_csv(
         joint_q = arr.astype(np.float32, copy=False)
 
     declared_dof_names = tuple(
-        col[len("dof_"):].split("(", 1)[0].strip()
-        for col in header[7:]
-        if col.startswith("dof_")
+        col[len("dof_") :].split("(", 1)[0].strip() for col in header[7:] if col.startswith("dof_")
     )
     n_dof_cols = max(joint_q.shape[1] - 7, 0)
     dof_names = (
@@ -555,20 +572,19 @@ def _load_csv_trajectory(
                     continue
                 rows.append(raw.split(","))
         if not rows:
-            raise ValueError(f"{path}: no numeric rows found")
+            raise ValueError(f"{path}: no numeric rows found") from None
         arr = np.asarray(rows, dtype=np.float64)
         times = arr[:, 0]
         joint_q = arr[:, 1:].astype(np.float32)
         n_dof_cols = joint_q.shape[1] - 7
         dof_names = _align_trajectory_dof_names(n_dof_cols, fallback_dof_names)
-        declared = (
-            float(1.0 / max(times[1] - times[0], 1e-6))
-            if times.shape[0] > 1
-            else None
-        )
+        declared = float(1.0 / max(times[1] - times[0], 1e-6)) if times.shape[0] > 1 else None
         fps = _resolve_source_framerate(declared, source_fps)
         return SourceTrajectory(
-            joint_q=joint_q, dof_names=dof_names, framerate=fps, meta={},
+            joint_q=joint_q,
+            dof_names=dof_names,
+            framerate=fps,
+            meta={},
         )
 
 
@@ -582,7 +598,7 @@ def _extract_robot_trajectory_block(blob: object, *, path: Path | None = None) -
         return robot
     if "joint_q" in blob:
         return blob
-    keys = sorted(str(k) for k in blob.keys())
+    keys = sorted(str(k) for k in blob)
     raise ValueError(
         f"{label}: no robot joint_q trajectory (keys: {keys}); "
         "expected hhtools robot export with robot.joint_q"
@@ -665,7 +681,10 @@ def _load_pkl_trajectory(
     if str(robot.get("root_quat_format", "xyzw")).lower() == "wxyz":
         joint_q = _wxyz_to_xyzw(joint_q)
     return SourceTrajectory(
-        joint_q=joint_q, dof_names=dof_names, framerate=fps, meta=dict(robot.get("meta", {})),
+        joint_q=joint_q,
+        dof_names=dof_names,
+        framerate=fps,
+        meta=dict(robot.get("meta", {})),
     )
 
 
@@ -675,29 +694,28 @@ def _load_npz_trajectory(
     fallback_dof_names: tuple[str, ...] | None,
     source_fps: float | None = None,
 ) -> SourceTrajectory:
-    data = np.load(path, allow_pickle=True)
-    keys = set(data.files)
-    jq_key = next((k for k in ("joint_q", "qpos", "q") if k in keys), None)
-    if jq_key is None:
-        raise ValueError(
-            f"{path}: npz has no joint_q/qpos array (keys: {sorted(keys)})"
-        )
-    joint_q = np.asarray(data[jq_key], dtype=np.float32)
-    if "dof_names" in keys:
-        dof_names = tuple(str(n) for n in data["dof_names"].tolist())
-    else:
-        dof_names = _align_trajectory_dof_names(
-            joint_q.shape[1] - 7, fallback_dof_names,
-        )
-    declared = None
-    for k in ("sample_rate", "fps", "framerate"):
-        if k in keys:
-            declared = float(np.asarray(data[k]).reshape(-1)[0])
-            break
-    fps = _resolve_source_framerate(declared, source_fps)
-    quat_fmt = "xyzw"
-    if "root_quat_format" in keys:
-        quat_fmt = str(data["root_quat_format"]).lower()
+    with np.load(path, allow_pickle=False) as data:
+        keys = set(data.files)
+        jq_key = next((k for k in ("joint_q", "qpos", "q") if k in keys), None)
+        if jq_key is None:
+            raise ValueError(f"{path}: npz has no joint_q/qpos array (keys: {sorted(keys)})")
+        joint_q = np.asarray(data[jq_key], dtype=np.float32)
+        if "dof_names" in keys:
+            dof_names = tuple(str(n) for n in data["dof_names"].tolist())
+        else:
+            dof_names = _align_trajectory_dof_names(
+                joint_q.shape[1] - 7,
+                fallback_dof_names,
+            )
+        declared = None
+        for k in ("sample_rate", "fps", "framerate"):
+            if k in keys:
+                declared = float(np.asarray(data[k]).reshape(-1)[0])
+                break
+        fps = _resolve_source_framerate(declared, source_fps)
+        quat_fmt = "xyzw"
+        if "root_quat_format" in keys:
+            quat_fmt = str(data["root_quat_format"]).lower()
     if quat_fmt == "wxyz":
         joint_q = _wxyz_to_xyzw(joint_q)
     return SourceTrajectory(joint_q=joint_q, dof_names=dof_names, framerate=fps, meta={})
@@ -725,30 +743,36 @@ def load_source_trajectory(
     fallback = tuple(source_model.dof_names()) if source_model is not None else None
     if suffix == ".csv":
         traj = _load_csv_trajectory(
-            path, fallback_dof_names=fallback, source_fps=source_fps,
+            path,
+            fallback_dof_names=fallback,
+            source_fps=source_fps,
         )
     elif suffix in (".pkl", ".pickle"):
         traj = _load_pkl_trajectory(
-            path, fallback_dof_names=fallback, source_fps=source_fps,
+            path,
+            fallback_dof_names=fallback,
+            source_fps=source_fps,
         )
     elif suffix == ".npz":
         traj = _load_npz_trajectory(
-            path, fallback_dof_names=fallback, source_fps=source_fps,
+            path,
+            fallback_dof_names=fallback,
+            source_fps=source_fps,
         )
     else:
         raise ValueError(
-            f"unsupported source trajectory format {suffix!r}; expected "
-            f".csv / .pkl / .npz"
+            f"unsupported source trajectory format {suffix!r}; expected .csv / .pkl / .npz"
         )
     if traj.joint_q.ndim != 2 or traj.joint_q.shape[1] < 8:
-        raise ValueError(
-            f"{path}: parsed joint_q shape {traj.joint_q.shape} is not (F, 7+N)"
-        )
+        raise ValueError(f"{path}: parsed joint_q shape {traj.joint_q.shape} is not (F, 7+N)")
     return traj
 
 
 def trajectory_to_retargeted_motion(
-    source_model: URDFRobotModel, traj: SourceTrajectory, *, name: str = "source",
+    source_model: URDFRobotModel,
+    traj: SourceTrajectory,
+    *,
+    name: str = "source",
 ) -> RetargetedMotion:
     """Wrap a parsed source trajectory as a :class:`RetargetedMotion`.
 
@@ -770,9 +794,461 @@ def trajectory_to_retargeted_motion(
 # ---------------------------------------------------------------------------
 
 
+_R2R_CALIBRATION_PREFIX = "r2r_calibration_"
+_R2R_CALIBRATION_SUFFIX = ".yaml"
+_R2R_CALIBRATION_KIND = "robot_to_robot"
+_MAX_R2R_CALIBRATION_BYTES = 1024 * 1024
+_PORTABLE_CALIBRATION_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,126}$")
+_WINDOWS_RESERVED_COMPONENTS = frozenset(
+    {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        *(f"COM{i}" for i in range(1, 10)),
+        *(f"LPT{i}" for i in range(1, 10)),
+    }
+)
+
+
+def _is_windows_reserved_component(value: str) -> bool:
+    return value.rstrip(" .").split(".", 1)[0].upper() in _WINDOWS_RESERVED_COMPONENTS
+
+
+def _validated_robot_identity(value: str, *, field: str) -> str:
+    """Validate a logical robot id without turning it into a filesystem path."""
+
+    if not isinstance(value, str) or not value or len(value) > 512:
+        raise ValueError(f"{field} must be a non-empty string of at most 512 characters")
+    if any(ord(char) < 32 or ord(char) == 127 for char in value):
+        raise ValueError(f"{field} contains a control character")
+    return value
+
+
+def _portable_calibration_component(value: str) -> str:
+    """Return a readable, collision-resistant filename component.
+
+    Registry ids normally fit the portable subset, so names such as
+    ``g1_29dof`` and ``rp1`` keep their historical filenames.  An id containing
+    a separator, drive marker, Unicode, or a Windows device name is represented
+    by a digest instead of lossy character replacement.
+    """
+
+    identity = _validated_robot_identity(value, field="robot identity")
+    if (
+        _PORTABLE_CALIBRATION_COMPONENT.fullmatch(identity)
+        and identity not in {".", ".."}
+        and not identity.endswith(".")
+        and not _is_windows_reserved_component(identity)
+    ):
+        return identity
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+    return f"id-{digest}"
+
+
+def _safe_target_component(name: str) -> str:
+    """Use the same per-preset directory convention as H2R calibration."""
+
+    value = _validated_robot_identity(name, field="target_robot").strip()
+    normalized = value.replace("\\", "/")
+    posix = PurePosixPath(normalized)
+    windows = PureWindowsPath(value)
+    if (
+        not value
+        or posix.is_absolute()
+        or windows.is_absolute()
+        or bool(windows.drive)
+        or len(posix.parts) != 1
+        or posix.name in {"", ".", ".."}
+        or _is_windows_reserved_component(value)
+        or value.endswith((" ", "."))
+        or any(char in '<>:"|?*' for char in value)
+    ):
+        raise ValueError(f"unsafe target_robot for calibration storage: {name!r}")
+    return posix.name
+
+
+def _calibration_filename(source_name: str) -> str:
+    return (
+        f"{_R2R_CALIBRATION_PREFIX}"
+        f"{_portable_calibration_component(source_name)}"
+        f"{_R2R_CALIBRATION_SUFFIX}"
+    )
+
+
+def _user_robot_root(user_root: str | Path | None) -> Path:
+    if user_root is not None:
+        return Path(user_root).expanduser()
+    from hhtools.utils.paths import user_robot_dir
+
+    return user_robot_dir()
+
+
+def _path_below(root: Path, relative: str) -> Path:
+    """Join one generated child and prove that it remains below ``root``."""
+
+    resolved_root = root.expanduser().resolve(strict=False)
+    candidate = (resolved_root / relative).resolve(strict=False)
+    try:
+        candidate.relative_to(resolved_root)
+    except ValueError as err:  # defensive: components above are already encoded
+        raise ValueError("calibration path escapes its storage root") from err
+    return candidate
+
+
 def r2r_calibration_path(target_dir: str | Path, source_name: str) -> Path:
-    safe = source_name.replace("/", "_").replace(":", "_")
-    return Path(target_dir) / f"r2r_calibration_{safe}.yaml"
+    """Return the legacy/bundled calibration path beside a target URDF.
+
+    Standard registry ids retain the historical filename.  Unsafe ids use a
+    digest; :func:`resolve_r2r_calibration_file` still discovers old sanitized
+    sibling files by inspecting and validating their payload.
+    """
+
+    # The generated filename is one portable component, so joining it cannot
+    # escape ``target_dir``.  Keep the caller's relative/absolute path form for
+    # backwards compatibility with the original public helper.
+    return Path(target_dir).expanduser() / _calibration_filename(source_name)
+
+
+def r2r_user_calibration_path(
+    target_robot: str,
+    source_name: str,
+    *,
+    user_root: str | Path | None = None,
+) -> Path:
+    """Return the writable per-user override path for one robot pair."""
+
+    target_component = _safe_target_component(target_robot)
+    root = _user_robot_root(user_root)
+    target_root = _path_below(root, target_component)
+    return _path_below(target_root, _calibration_filename(source_name))
+
+
+def _validated_joint_q(value: object, *, path: Path | None = None) -> dict[str, float]:
+    where = f"{path}: " if path is not None else ""
+    if not isinstance(value, Mapping) or not value:
+        raise ValueError(f"{where}calibrated_joint_q must be a non-empty mapping")
+    out: dict[str, float] = {}
+    for raw_name, raw_value in value.items():
+        if not isinstance(raw_name, str) or not raw_name:
+            raise ValueError(f"{where}calibrated_joint_q contains an invalid joint name")
+        if any(ord(char) < 32 or ord(char) == 127 for char in raw_name):
+            raise ValueError(
+                f"{where}calibrated_joint_q joint {raw_name!r} contains a control character"
+            )
+        if isinstance(raw_value, bool) or not isinstance(raw_value, int | float):
+            raise ValueError(f"{where}joint {raw_name!r} must contain a numeric angle")
+        angle = float(raw_value)
+        if not math.isfinite(angle):
+            raise ValueError(f"{where}joint {raw_name!r} contains a non-finite angle")
+        out[raw_name] = angle
+    return out
+
+
+def _validated_r2r_payload(
+    value: object,
+    *,
+    source_robot: str,
+    target_robot: str | None,
+    path: Path,
+) -> tuple[str, dict[str, float], str]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{path}: calibration yaml root must be a mapping")
+    if value.get("kind") != _R2R_CALIBRATION_KIND:
+        raise ValueError(f"{path}: calibration kind must be {_R2R_CALIBRATION_KIND!r}")
+    stored_target = value.get("target_robot")
+    stored_source = value.get("source_robot")
+    if not isinstance(stored_target, str):
+        raise ValueError(f"{path}: target_robot must be a string")
+    if not isinstance(stored_source, str):
+        raise ValueError(f"{path}: source_robot must be a string")
+    _validated_robot_identity(stored_target, field="target_robot")
+    _validated_robot_identity(stored_source, field="source_robot")
+    if stored_source != source_robot:
+        raise ValueError(
+            f"{path}: calibration source {stored_source!r} does not match "
+            f"requested source {source_robot!r}"
+        )
+    if target_robot is not None and stored_target != target_robot:
+        raise ValueError(
+            f"{path}: calibration target {stored_target!r} does not match "
+            f"requested target {target_robot!r}"
+        )
+    notes = value.get("notes", "")
+    if not isinstance(notes, str) or len(notes) > 8_192:
+        raise ValueError(f"{path}: calibration notes must be a bounded string")
+    return stored_target, _validated_joint_q(
+        value.get("calibrated_joint_q"),
+        path=path,
+    ), notes
+
+
+def _read_r2r_payload(
+    path: Path,
+    *,
+    source_robot: str,
+    target_robot: str | None,
+) -> tuple[str, dict[str, float], str]:
+    import yaml
+
+    try:
+        stat = path.lstat()
+    except FileNotFoundError:
+        raise
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"{path}: calibration must be a regular non-symlink file")
+    if stat.st_size > _MAX_R2R_CALIBRATION_BYTES:
+        raise ValueError(f"{path}: calibration exceeds {_MAX_R2R_CALIBRATION_BYTES} bytes")
+    try:
+        with path.open("r", encoding="utf-8") as fp:
+            data = yaml.safe_load(fp)
+    except (OSError, UnicodeError, yaml.YAMLError) as err:
+        raise ValueError(f"{path}: calibration could not be parsed: {err}") from err
+    return _validated_r2r_payload(
+        data,
+        source_robot=source_robot,
+        target_robot=target_robot,
+        path=path,
+    )
+
+
+def _legacy_r2r_candidates(directory: Path, *, canonical: Path) -> list[Path]:
+    """Return contained old lossy filenames for read-only compatibility."""
+
+    if not directory.is_dir():
+        return []
+    out: list[Path] = []
+    resolved_directory = directory.resolve(strict=True)
+    for candidate in sorted(directory.glob("r2r_calibration_*.yaml")):
+        try:
+            resolved = candidate.resolve(strict=True)
+            resolved.relative_to(resolved_directory)
+        except (OSError, ValueError):
+            continue
+        if resolved == canonical.resolve(strict=False) or candidate.is_symlink():
+            continue
+        out.append(resolved)
+    return out
+
+
+def _legacy_r2r_path(directory: Path, source_name: str) -> Path | None:
+    """Recreate the historical lossy filename when it is still path-safe."""
+
+    component = source_name.replace("/", "_").replace(":", "_")
+    if _portable_calibration_component(component) != component:
+        return None
+    return directory.resolve(strict=False) / (
+        f"{_R2R_CALIBRATION_PREFIX}{component}{_R2R_CALIBRATION_SUFFIX}"
+    )
+
+
+def _resolve_r2r_calibration(
+    target_dir: str | Path,
+    source_name: str,
+    *,
+    target_robot: str | None,
+    user_root: str | Path | None,
+) -> tuple[Path, dict[str, float]] | None:
+    source = _validated_robot_identity(source_name, field="source_robot")
+    expected_target = (
+        _validated_robot_identity(target_robot, field="target_robot")
+        if target_robot is not None
+        else None
+    )
+    target_path = Path(target_dir).expanduser().resolve(strict=False)
+    inferred_target = expected_target or target_path.name
+    user_path = r2r_user_calibration_path(
+        inferred_target,
+        source,
+        user_root=user_root,
+    )
+    bundled_path = r2r_calibration_path(target_path, source)
+    from hhtools.utils.paths import user_calibration_overlay_dir
+
+    overlay_directory = user_calibration_overlay_dir(
+        _safe_target_component(inferred_target), user_root=user_root
+    )
+    overlay_path = _path_below(overlay_directory, _calibration_filename(source))
+    if overlay_path.exists() or overlay_path.is_symlink():
+        _stored_target, joint_q, _notes = _read_r2r_payload(
+            overlay_path,
+            source_robot=source,
+            target_robot=expected_target,
+        )
+        return overlay_path, joint_q
+
+    # A canonical user override is authoritative.  If it exists but is invalid,
+    # surface that error rather than silently falling back to a bundled default.
+    if user_path.exists() or user_path.is_symlink():
+        _stored_target, joint_q, _notes = _read_r2r_payload(
+            user_path,
+            source_robot=source,
+            target_robot=expected_target,
+        )
+        return user_path, joint_q
+
+    user_legacy_path = _legacy_r2r_path(user_path.parent, source)
+    if (
+        user_legacy_path is not None
+        and user_legacy_path != user_path
+        and (user_legacy_path.exists() or user_legacy_path.is_symlink())
+    ):
+        _stored_target, joint_q, _notes = _read_r2r_payload(
+            user_legacy_path,
+            source_robot=source,
+            target_robot=expected_target,
+        )
+        return user_legacy_path, joint_q
+
+    user_legacy: list[tuple[Path, dict[str, float]]] = []
+    for candidate in _legacy_r2r_candidates(user_path.parent, canonical=user_path):
+        try:
+            _stored_target, joint_q, _notes = _read_r2r_payload(
+                candidate,
+                source_robot=source,
+                target_robot=expected_target,
+            )
+        except ValueError:
+            continue
+        user_legacy.append((candidate, joint_q))
+    if len(user_legacy) > 1:
+        raise ValueError(
+            f"multiple user R2R calibrations match target={inferred_target!r}, source={source!r}"
+        )
+    if user_legacy:
+        return user_legacy[0]
+
+    if bundled_path.exists() or bundled_path.is_symlink():
+        _stored_target, joint_q, _notes = _read_r2r_payload(
+            bundled_path,
+            source_robot=source,
+            target_robot=expected_target,
+        )
+        return bundled_path, joint_q
+
+    bundled_legacy_path = _legacy_r2r_path(target_path, source)
+    if (
+        bundled_legacy_path is not None
+        and bundled_legacy_path != bundled_path
+        and (bundled_legacy_path.exists() or bundled_legacy_path.is_symlink())
+    ):
+        _stored_target, joint_q, _notes = _read_r2r_payload(
+            bundled_legacy_path,
+            source_robot=source,
+            target_robot=expected_target,
+        )
+        return bundled_legacy_path, joint_q
+
+    bundled_legacy: list[tuple[Path, dict[str, float]]] = []
+    for candidate in _legacy_r2r_candidates(target_path, canonical=bundled_path):
+        try:
+            _stored_target, joint_q, _notes = _read_r2r_payload(
+                candidate,
+                source_robot=source,
+                target_robot=expected_target,
+            )
+        except ValueError:
+            continue
+        bundled_legacy.append((candidate, joint_q))
+    if len(bundled_legacy) > 1:
+        raise ValueError(
+            f"multiple bundled R2R calibrations match target={inferred_target!r}, source={source!r}"
+        )
+    return bundled_legacy[0] if bundled_legacy else None
+
+
+def resolve_r2r_calibration_file(
+    target_dir: str | Path,
+    source_name: str,
+    *,
+    target_robot: str | None = None,
+    user_root: str | Path | None = None,
+) -> Path | None:
+    """Resolve a validated R2R calibration, preferring a user override."""
+
+    resolved = _resolve_r2r_calibration(
+        target_dir,
+        source_name,
+        target_robot=target_robot,
+        user_root=user_root,
+    )
+    return resolved[0] if resolved is not None else None
+
+
+def load_r2r_calibration_file(
+    path: str | Path,
+    *,
+    source_robot: str,
+    target_robot: str,
+) -> dict[str, float]:
+    """Load one exact pair-calibration file without performing path discovery."""
+
+    _stored_target, joint_q, _notes = _read_r2r_payload(
+        Path(path),
+        source_robot=_validated_robot_identity(source_robot, field="source_robot"),
+        target_robot=_validated_robot_identity(target_robot, field="target_robot"),
+    )
+    return dict(joint_q)
+
+
+def load_r2r_calibration_record_file(
+    path: str | Path,
+    *,
+    source_robot: str,
+    target_robot: str,
+) -> tuple[dict[str, float], str]:
+    """Load one exact pair pose together with its optional audit note."""
+
+    _stored_target, joint_q, notes = _read_r2r_payload(
+        Path(path),
+        source_robot=_validated_robot_identity(source_robot, field="source_robot"),
+        target_robot=_validated_robot_identity(target_robot, field="target_robot"),
+    )
+    return dict(joint_q), notes
+
+
+def _atomic_write_r2r_payload(path: Path, payload: Mapping[str, object]) -> None:
+    import yaml
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            dir=path.parent,
+            delete=False,
+        ) as fp:
+            temporary = Path(fp.name)
+            yaml.safe_dump(payload, fp, sort_keys=True, default_flow_style=False)
+            fp.flush()
+            os.fsync(fp.fileno())
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def _is_readonly_write_error(error: OSError) -> bool:
+    return isinstance(error, PermissionError) or error.errno in {
+        errno.EACCES,
+        errno.EPERM,
+        errno.EROFS,
+    }
+
+
+def _user_r2r_override_exists(user_path: Path) -> bool:
+    """Whether this target preset has adopted user-layer R2R storage."""
+
+    if user_path.exists() or user_path.is_symlink():
+        return True
+    try:
+        return any(user_path.parent.glob("r2r_calibration_*.yaml"))
+    except OSError:
+        return False
 
 
 def save_r2r_calibration(
@@ -781,38 +1257,82 @@ def save_r2r_calibration(
     target_robot: str,
     source_robot: str,
     calibrated_joint_q: dict[str, float],
+    user_root: str | Path | None = None,
+    prefer_user_overlay: bool = False,
+    notes: str = "",
 ) -> Path:
-    import yaml
+    """Atomically save a pair pose, optionally forcing managed user storage."""
 
-    path = r2r_calibration_path(target_dir, source_robot)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    target = _validated_robot_identity(target_robot, field="target_robot")
+    source = _validated_robot_identity(source_robot, field="source_robot")
+    joint_q = _validated_joint_q(calibrated_joint_q)
+    if not isinstance(notes, str) or len(notes) > 8_192:
+        raise ValueError("calibration notes must be a bounded string")
     payload = {
-        "kind": "robot_to_robot",
-        "target_robot": target_robot,
-        "source_robot": source_robot,
-        "calibrated_joint_q": {
-            k: float(v) for k, v in sorted(calibrated_joint_q.items())
-        },
+        "kind": _R2R_CALIBRATION_KIND,
+        "target_robot": target,
+        "source_robot": source,
+        "calibrated_joint_q": {k: joint_q[k] for k in sorted(joint_q)},
     }
-    with path.open("w", encoding="utf-8") as fp:
-        yaml.safe_dump(payload, fp, sort_keys=True, default_flow_style=False)
-    return path
+    if notes:
+        payload["notes"] = notes
+    sibling = r2r_calibration_path(target_dir, source)
+    user_path = r2r_user_calibration_path(target, source, user_root=user_root)
+    from hhtools.utils.paths import user_calibration_overlay_dir
+
+    overlay_directory = user_calibration_overlay_dir(
+        _safe_target_component(target), user_root=user_root
+    )
+    overlay_path = _path_below(overlay_directory, _calibration_filename(source))
+    bundled_directory = Path(target_dir).expanduser().resolve(strict=False)
+    overlaps_bundle = (
+        user_path.parent.is_relative_to(bundled_directory)
+        or bundled_directory.is_relative_to(user_path.parent)
+    )
+    if _user_r2r_override_exists(overlay_path) or (prefer_user_overlay and overlaps_bundle):
+        if overlay_directory.is_relative_to(bundled_directory):
+            raise ValueError("calibration overlay must be outside the registered robot bundle")
+        _atomic_write_r2r_payload(overlay_path, payload)
+        return overlay_path
+
+    # Once a user override exists it remains authoritative, even in a source
+    # checkout whose sibling directory becomes writable again.
+    same_storage_path = sibling.resolve(strict=False) == user_path.resolve(strict=False)
+    if prefer_user_overlay or _user_r2r_override_exists(user_path) or same_storage_path:
+        _atomic_write_r2r_payload(user_path, payload)
+        return user_path
+
+    try:
+        _atomic_write_r2r_payload(sibling, payload)
+        return sibling
+    except OSError as err:
+        if not _is_readonly_write_error(err):
+            raise
+    _atomic_write_r2r_payload(user_path, payload)
+    return user_path
 
 
 def load_r2r_calibration(
-    target_dir: str | Path, source_name: str
+    target_dir: str | Path,
+    source_name: str,
+    *,
+    target_robot: str | None = None,
+    user_root: str | Path | None = None,
 ) -> dict[str, float] | None:
-    import yaml
+    """Load one validated R2R calibration with user-over-bundled precedence.
 
-    path = r2r_calibration_path(target_dir, source_name)
-    if not path.is_file():
-        return None
-    with path.open("r", encoding="utf-8") as fp:
-        data = yaml.safe_load(fp) or {}
-    jq = data.get("calibrated_joint_q") or {}
-    if not isinstance(jq, dict):
-        return None
-    return {str(k): float(v) for k, v in jq.items()}
+    ``target_robot`` remains optional for source compatibility.  New callers
+    should pass it so a copied calibration cannot be applied to another target
+    preset that happens to share the same directory.
+    """
+
+    resolved = _resolve_r2r_calibration(
+        target_dir,
+        source_name,
+        target_robot=target_robot,
+        user_root=user_root,
+    )
+    return dict(resolved[1]) if resolved is not None else None
 
 
 # ---------------------------------------------------------------------------
@@ -896,7 +1416,7 @@ def align_retargeted_ankles_to_scaled_source(
     """
     from dataclasses import replace
 
-    from hhtools.viewer.anatomy import motion_has_interaction_scene
+    from hhtools.core.anatomy import motion_has_interaction_scene
 
     if motion_has_interaction_scene(source_motion):
         return retargeted
@@ -910,13 +1430,14 @@ def align_retargeted_ankles_to_scaled_source(
 
     cfg, ref = _build_scaler_config(source_model, target_model, calibrated_joint_q)
     ik_canons = (
-        frozenset(target_model.preset.ik_map.keys())
-        if target_model.preset.ik_map
-        else frozenset()
+        frozenset(target_model.preset.ik_map.keys()) if target_model.preset.ik_map else frozenset()
     )
     ratio = float(
         uniform_overlay_scale_for_motion(
-            cfg, float(ref.height_m), source_motion, ik_map_keys=ik_canons,
+            cfg,
+            float(ref.height_m),
+            source_motion,
+            ik_map_keys=ik_canons,
         )
     )
     names = list(source_motion.hierarchy.bone_names)
@@ -927,19 +1448,21 @@ def align_retargeted_ankles_to_scaled_source(
     if yellow_z is None:
         return retargeted
 
-    from hhtools.web.serialize import (
-        _apply_retarget_dof,
-        _lowest_ankle_z,
-        _quat_xyzw_to_rotmat,
+    from hhtools.robot.foot_geometry import (
+        apply_retarget_dof,
+        lowest_ankle_z,
+        quat_xyzw_to_rotmat,
     )
 
     f_ret = int(np.clip(f0, 0, q.shape[0] - 1))
     root = np.asarray(retargeted.root_trajectory[f_ret], dtype=np.float64)
     dof = np.asarray(retargeted.dof_trajectory[f_ret], dtype=np.float64)
-    _apply_retarget_dof(target_model, list(retargeted.dof_names), dof)
+    apply_retarget_dof(target_model, list(retargeted.dof_names), dof)
     ik_map = dict(target_model.preset.ik_map) if target_model.preset.ik_map else {}
-    ankle_local = _lowest_ankle_z(
-        target_model, ik_map, _quat_xyzw_to_rotmat(root[3:7]),
+    ankle_local = lowest_ankle_z(
+        target_model,
+        ik_map,
+        quat_xyzw_to_rotmat(root[3:7]),
     )
     if ankle_local is None:
         return retargeted
@@ -953,6 +1476,34 @@ def align_retargeted_ankles_to_scaled_source(
     meta = dict(getattr(retargeted, "meta", {}) or {})
     meta["r2r_yellow_ankle_align_m"] = float(delta)
     return replace(retargeted, joint_q=out, meta=meta)
+
+
+def r2r_scene_scale_ratio(
+    source_model,
+    target_model,
+    motion,
+    calibrated_joint_q: dict[str, float],
+) -> float:
+    """Return the source-to-target scene scale used by R2R preview and export."""
+
+    from hhtools.retarget.calibration.calibration import uniform_overlay_scale_for_motion
+
+    config, reference = _build_scaler_config(
+        source_model,
+        target_model,
+        calibrated_joint_q,
+    )
+    ik_canonicals = (
+        frozenset(target_model.preset.ik_map.keys()) if target_model.preset.ik_map else frozenset()
+    )
+    return float(
+        uniform_overlay_scale_for_motion(
+            config,
+            float(reference.height_m),
+            motion,
+            ik_map_keys=ik_canonicals,
+        )
+    )
 
 
 def suggested_r2r_backend(profile: str, *, has_scene: bool = False) -> str:
@@ -981,7 +1532,7 @@ def retarget_robot_to_robot(
     ``backend`` is ``"newton"`` (GPU IK) or ``"interaction_mesh"`` (MPC on
     terrain / interaction objects).  For the latter, attach scene data to
     ``source_motion`` before calling (see
-    :func:`~hhtools.web.r2r_scene.attach_r2r_clip_scene_to_motion`).
+    :func:`~hhtools.io.r2r_scene.attach_r2r_clip_scene_to_motion`).
     """
     cfg, ref = _build_scaler_config(source_model, target_model, calibrated_joint_q)
     reference_key = f"robot_{source_model.preset.name}"
@@ -994,7 +1545,9 @@ def retarget_robot_to_robot(
         from hhtools.retarget.newton_basic.scaler import HumanToRobotScaler
 
         scaler = HumanToRobotScaler(
-            source_motion.hierarchy, cfg, human_height=float(ref.height_m),
+            source_motion.hierarchy,
+            cfg,
+            human_height=float(ref.height_m),
         )
         pipe = InteractionMeshPipeline(
             robot=target_model,
@@ -1043,13 +1596,17 @@ def retarget_robot_to_robot(
 
     configure_warp()
     feet_cfg = build_feet_stabilizer_config(
-        target_model.preset, reference_key, model=target_model,
+        target_model.preset,
+        reference_key,
+        model=target_model,
     )
     pipeline = NewtonBasicPipeline(
         target_model,
         scaler_config=cfg,
         pipeline_config=build_pipeline_config_for_preset(
-            target_model.preset, reference_key, ik_iterations=ik_iterations,
+            target_model.preset,
+            reference_key,
+            ik_iterations=ik_iterations,
         ),
         feet_stabilizer_config=feet_cfg,
         human_height=float(ref.height_m),

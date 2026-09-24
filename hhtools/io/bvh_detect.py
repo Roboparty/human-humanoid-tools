@@ -7,13 +7,18 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 
+from hhtools.io.dataset_naming import (
+    DATASET_DIR_TO_ADAPTER as _DIR_TO_ADAPTER,
+)
+from hhtools.io.dataset_naming import (
+    normalize_dataset_dirname as _normalise_dirname,
+)
 from hhtools.retarget.newton_basic.human_aliases import (
     is_mixamo_cmu_like,
     is_mocap_spine3_bvh_like,
     is_soma_bvh_like,
     is_xsens_mocap_like,
 )
-from hhtools.viewer.library import _DIR_TO_ADAPTER, _normalise_dirname
 
 _BVH_DATASET_HINTS = frozenset({"soma", "lafan", "mocap", "xsens_mocap"})
 

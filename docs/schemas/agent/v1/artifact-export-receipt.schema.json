@@ -1,0 +1,104 @@
+{
+  "$defs": {
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Host-independent identity for one file copied to the configured export root.",
+  "properties": {
+    "artifact_id": {
+      "description": "Artifact id with a stable kind namespace.",
+      "pattern": "^artifact:[a-z][a-z0-9_-]*:[A-Za-z0-9._~-]+$",
+      "title": "Artifact Id",
+      "type": "string"
+    },
+    "format": {
+      "anyOf": [
+        {
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,31}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Format"
+    },
+    "job_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^job:[A-Za-z0-9][A-Za-z0-9._~-]{0,251}$",
+      "title": "Job Id",
+      "type": "string"
+    },
+    "kind": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[a-z][a-z0-9_-]{0,127}$",
+      "title": "Kind",
+      "type": "string"
+    },
+    "media_type": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+/[!#$%&'*+.^_`|~0-9A-Za-z-]+(?:[ \\t]*;[^\\r\\n\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]+)*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Media Type"
+    },
+    "relative_path": {
+      "description": "Portable path below the server-configured agent export root.",
+      "maxLength": 1024,
+      "minLength": 1,
+      "pattern": "^jobs/[0-9a-f]{64}/[0-9a-f]{64}\\.[a-z0-9][a-z0-9._+-]{0,31}$",
+      "title": "Relative Path",
+      "type": "string"
+    },
+    "root_id": {
+      "const": "agent-exports",
+      "default": "agent-exports",
+      "title": "Root Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    },
+    "sha256": {
+      "description": "Lower-case SHA-256 content digest.",
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Sha256",
+      "type": "string"
+    },
+    "size_bytes": {
+      "minimum": 0,
+      "title": "Size Bytes",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "relative_path",
+    "job_id",
+    "artifact_id",
+    "kind",
+    "size_bytes",
+    "sha256"
+  ],
+  "title": "ArtifactExportReceipt",
+  "type": "object"
+}

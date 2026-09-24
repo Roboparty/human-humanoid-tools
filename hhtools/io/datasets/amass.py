@@ -24,7 +24,7 @@ import numpy as np
 
 from hhtools.bodymodels.params import SmplMotionParams
 from hhtools.core.motion import Motion
-from hhtools.io.datasets._engine_cache import engine_for_params
+from hhtools.io.datasets._engine_cache import motion_from_params
 from hhtools.io.datasets.base import DatasetAdapter, register_dataset
 
 
@@ -67,8 +67,7 @@ class AmassAdapter(DatasetAdapter):
         with_mesh = bool(kwargs.pop("with_mesh", False))
         progress_callback = kwargs.pop("progress_callback", None)
         params = self.load_params(sequence_id)
-        engine = engine_for_params(params)
-        return engine.to_motion(
+        return motion_from_params(
             params,
             name=Path(sequence_id).stem,
             source_format=f"amass/{params.surface_model}",
@@ -207,9 +206,7 @@ def is_amass_motion_file(path: Path | str) -> bool:
     if p.suffix.lower() != ".npz":
         return True
     stem = p.stem.lower()
-    if stem.endswith("_stagei"):
-        return False
-    return True
+    return not stem.endswith("_stagei")
 
 
 __all__ = ["AmassAdapter", "is_amass_motion_file"]

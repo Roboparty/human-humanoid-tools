@@ -1,0 +1,33 @@
+{
+  "$defs": {
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Create a child attempt without mutating the terminal parent job.",
+  "properties": {
+    "idempotency_key": {
+      "description": "Caller-generated key binding one logical job submission.",
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~:-]{0,255}$",
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    }
+  },
+  "required": [
+    "idempotency_key"
+  ],
+  "title": "JobRetryRequest",
+  "type": "object"
+}

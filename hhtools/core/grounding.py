@@ -23,7 +23,7 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from hhtools.core.motion import Motion
 
-# Meshmimic MoCap export tree (see ``hhtools.viewer.library``).
+# Meshmimic MoCap export tree (see ``hhtools.services.motion_library``).
 _SPLIT_GROUNDING_FOLDER_LABEL = "20260429_mocap"
 
 _FOOT_NAME_RE = re.compile(

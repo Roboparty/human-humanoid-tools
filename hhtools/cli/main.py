@@ -1,7 +1,7 @@
 """``hhtools`` Typer application.
 
 Sub-commands are registered lazily from ``sys.argv`` so ``hhtools web`` does not
-import Viser / Newton / robot CLI modules (and their heavy deps) at startup.
+import Newton / robot CLI modules (and their heavy deps) at startup.
 """
 
 from __future__ import annotations
@@ -12,6 +12,11 @@ import sys
 import typer
 
 from hhtools._version import __version__
+from hhtools.cli._stdio import configure_utf8_stdio
+
+# Configure streams before importing a selected subcommand. Rich consoles created by
+# those modules then inherit UTF-8 instead of a locale-dependent Windows code page.
+configure_utf8_stdio()
 
 app = typer.Typer(
     help="hhtools - Human-to-Humanoid Tools.",
@@ -33,23 +38,34 @@ _SUBCOMMANDS: list[tuple[str, str, str]] = [
         "hhtools.cli.bodymodel",
         "Manage SMPL / SMPL-H / SMPL-X body model weights.",
     ),
+    ("doctor", "hhtools.cli.doctor", "Check local runtime readiness without running jobs."),
     ("robot", "hhtools.cli.robot", "List or add humanoid robot presets."),
     ("retarget", "hhtools.cli.retarget", "Retarget an NPZ motion to a humanoid robot."),
-    ("ui", "hhtools.cli.ui", "Launch the Viser-based web viewer (legacy)."),
     ("web", "hhtools.cli.web", "Launch the HTML / three.js web UI (recommended)."),
 ]
 
 
 def _attach(name: str, module_path: str, help_text: str) -> None:
     module = importlib.import_module(module_path)
-    app.add_typer(getattr(module, "app"), name=name, help=help_text)
+    app.add_typer(module.app, name=name, help=help_text)
 
 
 def _subcommands_for_argv() -> list[tuple[str, str, str]]:
-    """Load only the invoked subcommand (or all for top-level help)."""
+    """Load only the invoked subcommand, or all for explicit top-level help."""
     if len(sys.argv) < 2:
-        return _SUBCOMMANDS
+        # The landing page is deliberately cheap and does not need to import
+        # every command tree merely to advertise stable entry points.
+        return []
     arg = sys.argv[1]
+    if arg == "agent":
+        # The strict Agent command is registered directly below and lazily
+        # imports its transport adapter.  Do not import unrelated solver/UI
+        # command trees for a lightweight JSON request.
+        return []
+    if arg in {"--version", "-V"}:
+        # Version reporting must stay instant and must not initialize optional
+        # viewer, solver, or GPU-related command modules.
+        return []
     if arg.startswith("-"):
         return _SUBCOMMANDS
     for name, path, help_text in _SUBCOMMANDS:
@@ -60,6 +76,25 @@ def _subcommands_for_argv() -> list[tuple[str, str, str]]:
 
 for _name, _path, _help in _subcommands_for_argv():
     _attach(_name, _path, _help)
+
+
+@app.command(
+    "agent",
+    context_settings={
+        "allow_extra_args": True,
+        "ignore_unknown_options": True,
+        "help_option_names": [],
+    },
+)
+def _agent(ctx: typer.Context) -> None:
+    """Call the resident Agent REST service with strict JSON input/output."""
+
+    # One passthrough Click command is deliberate: argparse inside the JSON
+    # adapter converts *all* malformed or unknown tails into ApiError stdout,
+    # instead of allowing Click/Rich to emit a second, non-JSON document.
+    from hhtools.cli.agent import run
+
+    raise typer.Exit(code=run(ctx.args))
 
 
 @app.callback(invoke_without_command=True)
@@ -73,7 +108,9 @@ def _root(
         typer.echo(f"hhtools {__version__}")
         raise typer.Exit(code=0)
     if ctx.invoked_subcommand is None:
-        typer.echo(ctx.get_help())
+        from hhtools.cli.home import print_homepage
+
+        print_homepage(version=__version__)
 
 
 if __name__ == "__main__":

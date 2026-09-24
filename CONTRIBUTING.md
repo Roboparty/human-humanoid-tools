@@ -6,7 +6,7 @@ and pull requests are all welcome.
 ## Development setup
 
 ```bash
-git clone https://github.com/REPLACE_ORG/human-humanoid-tools
+git clone https://github.com/Roboparty/human-humanoid-tools
 cd human-humanoid-tools
 uv sync --extra all --extra dev
 ```

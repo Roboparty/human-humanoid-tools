@@ -1,0 +1,373 @@
+{
+  "$defs": {
+    "BatchPlanItem": {
+      "additionalProperties": false,
+      "description": "Public projection of one immutable child plan in execution order.",
+      "properties": {
+        "backend": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Backend",
+          "type": "string"
+        },
+        "calibration_digest": {
+          "anyOf": [
+            {
+              "description": "Lower-case SHA-256 content digest.",
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calibration Digest"
+        },
+        "calibration_id": {
+          "anyOf": [
+            {
+              "description": "Content-addressed calibration id.",
+              "pattern": "^cal:sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calibration Id"
+        },
+        "estimated_frames": {
+          "minimum": 1,
+          "title": "Estimated Frames",
+          "type": "integer"
+        },
+        "index": {
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "input_asset_id": {
+          "description": "Content-addressed asset id.",
+          "pattern": "^asset:sha256:[0-9a-f]{64}$",
+          "title": "Input Asset Id",
+          "type": "string"
+        },
+        "input_digest": {
+          "description": "Lower-case SHA-256 content digest.",
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Input Digest",
+          "type": "string"
+        },
+        "item_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^item-[0-9]+-[0-9a-f]{12}$",
+          "title": "Item Id",
+          "type": "string"
+        },
+        "job_spec_sha256": {
+          "description": "Lower-case SHA-256 content digest.",
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Job Spec Sha256",
+          "type": "string"
+        },
+        "output_format": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Output Format",
+          "type": "string"
+        },
+        "plan_id": {
+          "description": "Content-addressed plan id.",
+          "pattern": "^plan:sha256:[0-9a-f]{64}$",
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "source_robot_asset_id": {
+          "anyOf": [
+            {
+              "description": "Content-addressed asset id.",
+              "pattern": "^asset:sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Robot Asset Id"
+        },
+        "source_robot_digest": {
+          "anyOf": [
+            {
+              "description": "Lower-case SHA-256 content digest.",
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Robot Digest"
+        },
+        "source_robot_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Robot Id"
+        },
+        "target_robot_asset_id": {
+          "description": "Content-addressed asset id.",
+          "pattern": "^asset:sha256:[0-9a-f]{64}$",
+          "title": "Target Robot Asset Id",
+          "type": "string"
+        },
+        "target_robot_digest": {
+          "description": "Lower-case SHA-256 content digest.",
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Target Robot Digest",
+          "type": "string"
+        },
+        "target_robot_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Target Robot Id",
+          "type": "string"
+        },
+        "workflow": {
+          "$ref": "#/$defs/BatchWorkflow"
+        }
+      },
+      "required": [
+        "index",
+        "item_id",
+        "workflow",
+        "plan_id",
+        "input_asset_id",
+        "input_digest",
+        "target_robot_id",
+        "target_robot_asset_id",
+        "target_robot_digest",
+        "backend",
+        "output_format",
+        "estimated_frames",
+        "job_spec_sha256"
+      ],
+      "title": "BatchPlanItem",
+      "type": "object"
+    },
+    "BatchResourceLimits": {
+      "additionalProperties": false,
+      "description": "Optional service caps frozen into a plan; zero means unlimited.",
+      "properties": {
+        "estimated_total_frames": {
+          "minimum": 1,
+          "title": "Estimated Total Frames",
+          "type": "integer"
+        },
+        "execution_concurrency": {
+          "const": 1,
+          "default": 1,
+          "title": "Execution Concurrency",
+          "type": "integer"
+        },
+        "failure_limit": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Failure Limit",
+          "type": "integer"
+        },
+        "item_count": {
+          "minimum": 1,
+          "title": "Item Count",
+          "type": "integer"
+        },
+        "max_items": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Max Items",
+          "type": "integer"
+        },
+        "max_total_frames": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Max Total Frames",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "item_count",
+        "estimated_total_frames"
+      ],
+      "title": "BatchResourceLimits",
+      "type": "object"
+    },
+    "BatchWorkflow": {
+      "enum": [
+        "h2r",
+        "r2r"
+      ],
+      "title": "BatchWorkflow",
+      "type": "string"
+    },
+    "OutputPolicy": {
+      "enum": [
+        "create_new",
+        "fail_if_exists",
+        "overwrite"
+      ],
+      "title": "OutputPolicy",
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Content-addressed ordered collection of ready H2R or R2R child plans.",
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "expires_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Expires At"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/BatchPlanItem"
+      },
+      "minItems": 1,
+      "title": "Items",
+      "type": "array"
+    },
+    "output_policy": {
+      "$ref": "#/$defs/OutputPolicy"
+    },
+    "plan_id": {
+      "description": "Content-addressed plan id.",
+      "pattern": "^plan:sha256:[0-9a-f]{64}$",
+      "title": "Plan Id",
+      "type": "string"
+    },
+    "resource_limits": {
+      "$ref": "#/$defs/BatchResourceLimits"
+    },
+    "run_mode": {
+      "enum": [
+        "smoke",
+        "full"
+      ],
+      "title": "Run Mode",
+      "type": "string"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    },
+    "source_robot_asset_id": {
+      "anyOf": [
+        {
+          "description": "Content-addressed asset id.",
+          "pattern": "^asset:sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Robot Asset Id"
+    },
+    "source_robot_digest": {
+      "anyOf": [
+        {
+          "description": "Lower-case SHA-256 content digest.",
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Robot Digest"
+    },
+    "source_robot_id": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Robot Id"
+    },
+    "target_robot_asset_id": {
+      "description": "Content-addressed asset id.",
+      "pattern": "^asset:sha256:[0-9a-f]{64}$",
+      "title": "Target Robot Asset Id",
+      "type": "string"
+    },
+    "target_robot_digest": {
+      "description": "Lower-case SHA-256 content digest.",
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Target Robot Digest",
+      "type": "string"
+    },
+    "target_robot_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Target Robot Id",
+      "type": "string"
+    },
+    "workflow": {
+      "$ref": "#/$defs/BatchWorkflow"
+    }
+  },
+  "required": [
+    "plan_id",
+    "created_at",
+    "workflow",
+    "run_mode",
+    "items",
+    "target_robot_id",
+    "target_robot_asset_id",
+    "target_robot_digest",
+    "output_policy",
+    "resource_limits"
+  ],
+  "title": "BatchPlan",
+  "type": "object"
+}

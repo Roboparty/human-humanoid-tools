@@ -1,7 +1,7 @@
 """Human mesh utilities: capsule mesh (for bare skeletons), skinned mesh, SMPL surface mesh.
 
 Implementations are added incrementally through milestones M7 and beyond. The module currently
-exposes a capsule mesh generator that is sufficient for the Viser viewer to render any imported
+exposes a capsule mesh generator that is sufficient for the Web Stage to render any imported
 BVH with a playful placeholder body.
 """
 

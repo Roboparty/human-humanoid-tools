@@ -25,7 +25,8 @@ def list_datasets() -> None:
     if not datasets:
         _console.print(
             "[yellow]No dataset adapters have been implemented yet. The concrete adapters "
-            "(AMASS, Motion-X, OMOMO, OmniContact, GRAB, PHUMA, KungFuAthlete, Humanoid-X, GVHMR, LAFAN, SOMA) "
+            "(AMASS, Motion-X, OMOMO, OmniContact, GRAB, PHUMA, KungFuAthlete, "
+            "Humanoid-X, GVHMR, LAFAN, SOMA) "
             "will be added in milestone M6.[/]"
         )
         return
@@ -54,16 +55,29 @@ def run_import(
 
     from hhtools.io import npz
 
+    ok_count = 0
+    skip_count = 0
+    fail_count = 0
     for sid in seq_iter:
         try:
             motion = adapter.load_motion(sid)
             dst = out / f"{motion.name}.npz"
             npz.save_npz(motion, dst)
             _console.print(f"  [green]ok[/] {dst}")
+            ok_count += 1
         except NotImplementedError as exc:
             _console.print(f"  [yellow]skip[/] {sid}: {exc}")
+            skip_count += 1
         except Exception as exc:
             _console.print(f"  [red]fail[/] {sid}: {type(exc).__name__}: {exc}")
+            fail_count += 1
+
+    _console.print(
+        f"Import summary: [green]{ok_count} ok[/], "
+        f"[yellow]{skip_count} skipped[/], [red]{fail_count} failed[/]"
+    )
+    if fail_count:
+        raise typer.Exit(code=1)
 
 
 __all__ = ["app"]

@@ -251,7 +251,7 @@ def fk_global_positions(
 
 
 def heightfield_to_wavefront_obj(hf: TerrainHeightfield, path: str | Path) -> None:
-    """Write a triangle mesh approximating ``hf`` (same grid as Viser uses)."""
+    """Write a triangle mesh approximating ``hf`` for preview and export."""
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
     verts, faces = hf.triangulate()

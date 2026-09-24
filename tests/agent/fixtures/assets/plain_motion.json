@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "asset_id": "asset:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "kind": "motion_bundle",
+  "category": "plain_motion",
+  "display_name": "AMASS walk",
+  "primary_file": "AMASS/walk.npz",
+  "files": [
+    {
+      "role": "motion",
+      "relative_path": "AMASS/walk.npz",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "size_bytes": 4096,
+      "media_type": "application/octet-stream",
+      "required": true
+    }
+  ],
+  "source": {
+    "scheme": "managed_file",
+    "root_id": "motion-library",
+    "registered_at": "2026-08-31T12:00:00Z",
+    "logical_path": "AMASS/walk.npz"
+  },
+  "detected": {
+    "dataset": "amass",
+    "reference": "smpl",
+    "recommended_backend": "newton"
+  },
+  "metadata": {}
+}

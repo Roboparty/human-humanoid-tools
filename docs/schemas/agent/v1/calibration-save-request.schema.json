@@ -1,0 +1,112 @@
+{
+  "$defs": {
+    "CalibrationVisualReview": {
+      "additionalProperties": false,
+      "properties": {
+        "model_hint": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Hint"
+        },
+        "observations": {
+          "items": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Observations",
+          "type": "array"
+        },
+        "reviewer": {
+          "enum": [
+            "gpt_vision",
+            "human"
+          ],
+          "title": "Reviewer",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "verdict": {
+          "$ref": "#/$defs/CalibrationVisualVerdict"
+        }
+      },
+      "required": [
+        "reviewer",
+        "verdict",
+        "summary"
+      ],
+      "title": "CalibrationVisualReview",
+      "type": "object"
+    },
+    "CalibrationVisualVerdict": {
+      "enum": [
+        "pass",
+        "adjust",
+        "reject"
+      ],
+      "title": "CalibrationVisualVerdict",
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "candidate_id": {
+      "description": "Content-addressed immutable calibration candidate id.",
+      "pattern": "^cal-candidate:sha256:[0-9a-f]{64}$",
+      "title": "Candidate Id",
+      "type": "string"
+    },
+    "save_mode": {
+      "enum": [
+        "validated_silent",
+        "gpt_vision_silent"
+      ],
+      "title": "Save Mode",
+      "type": "string"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    },
+    "visual_review": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CalibrationVisualReview"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "candidate_id",
+    "save_mode"
+  ],
+  "title": "CalibrationSaveRequest",
+  "type": "object"
+}

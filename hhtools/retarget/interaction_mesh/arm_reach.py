@@ -14,7 +14,6 @@ shoulder→elbow→wrist chain matches the robot's.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING, Iterable
 
 import numpy as np
@@ -58,15 +57,17 @@ def _resolve_robot_arm_joint_q(
     if joint_q:
         return dict(joint_q)
     try:
-        from hhtools.retarget.calibration import load_calibration, resolve_calibration_file
+        from hhtools.retarget.calibration import (
+            load_calibration,
+            resolve_preset_calibration_file,
+        )
 
         urdf = getattr(robot.preset, "urdf_path", None)
         if urdf is None:
             return None
-        parent = Path(urdf).parent
         # OmniContact / Mixamo use lafan_bvh; fall through common refs.
         for ref in ("lafan_bvh", "smpl", "soma_bvh", "omnicontact_bvh"):
-            path = resolve_calibration_file(parent, ref)
+            path = resolve_preset_calibration_file(robot.preset, ref)
             if path is None:
                 continue
             cal = load_calibration(path)

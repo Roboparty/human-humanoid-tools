@@ -14,9 +14,8 @@ viewer see exactly the same preset list.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import shutil
+from pathlib import Path
 
 import typer
 from rich.console import Console
@@ -102,9 +101,10 @@ def info(
 ) -> None:
     """Load a preset and print topology + DOF summary."""
     refresh()
+    preset = _get_preset(name)
     try:
         model = load_robot(
-            _get_preset(name), compile_mjcf=compile_mjcf,
+            preset, compile_mjcf=compile_mjcf,
         )
     except FileNotFoundError as err:
         _console.print(f"[red]{err}[/]")
@@ -123,7 +123,7 @@ def info(
         f"[bold]joints[/]         {len(model.joints)} ({len(model.actuated_joints)} actuated)",
         f"[bold]up / forward[/]   {preset.up_axis}-up / +{preset.forward_axis}",
         f"[bold]ik_map[/]         {len(preset.ik_map)} entries",
-        f"[bold]MJCF[/]           "
+        "[bold]MJCF[/]           "
         + (
             f"compiled ({len(model.mjcf_xml)} chars)"
             if model.mjcf_xml else "[yellow]unavailable[/]"
@@ -190,9 +190,9 @@ def schema(
     cols = header_columns(model)
     if out is None:
         print(",".join(cols))
-        _console.print(
-            f"[dim]{len(cols)} columns: "
-            f"time, 7 root (xyz+xyzw), {len(cols) - 8} DOF[/]"
+        typer.echo(
+            f"{len(cols)} columns: time, 7 root (xyz+xyzw), {len(cols) - 8} DOF",
+            err=True,
         )
         return
     write_empty_csv(model, out)

@@ -1,0 +1,33 @@
+{
+  "name": "hhtools-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck && node --experimental-strip-types --test tests/*.test.ts",
+    "build": "npm run typecheck && vite build"
+  },
+  "dependencies": {
+    "@radix-ui/react-toggle": "1.1.18",
+    "@radix-ui/react-toggle-group": "1.1.19",
+    "@react-three/fiber": "9.7.0",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tailwind-merge": "3.6.0",
+    "three": "0.185.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "@types/three": "0.185.4",
+    "@vitejs/plugin-react": "6.1.1",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "vite": "8.2.2"
+  }
+}

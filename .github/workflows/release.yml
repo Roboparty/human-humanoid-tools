@@ -1,0 +1,114 @@
+name: Release
+
+"on":
+  push:
+    tags:
+      - "v[0-9]*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux-release:
+    name: Linux wheel and installer
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    env:
+      UV_FROZEN: "1"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Prepare release workspace
+        run: echo "RELEASE_DIR=$RUNNER_TEMP/hhtools-release" >> "$GITHUB_ENV"
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.9"
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync and test the complete runtime
+        run: |
+          uv sync --all-extras --dev
+          uv run --no-sync python -m pytest -q
+
+      - name: Validate tag and build wheel
+        id: package
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          package_version="$(uv run --no-sync python -c 'from hhtools._version import __version__; print(__version__)')"
+          test "$version" = "$package_version"
+
+          mkdir -p "$RELEASE_DIR"
+          uv build --wheel --clear --force-pep517 --out-dir "$RELEASE_DIR"
+          mapfile -t wheels < <(find "$RELEASE_DIR" -maxdepth 1 -type f -name 'hhtools-*.whl')
+          test "${#wheels[@]}" -eq 1
+          wheel_name="$(basename "${wheels[0]}")"
+          uv run --no-sync python scripts/verify_wheel_contents.py "${wheels[0]}"
+
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+          printf 'wheel_name=%s\n' "$wheel_name" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble verified installer assets
+        shell: bash
+        env:
+          VERSION: ${{ steps.package.outputs.version }}
+          WHEEL_NAME: ${{ steps.package.outputs.wheel_name }}
+        run: |
+          uv export \
+            --locked \
+            --extra all \
+            --no-dev \
+            --no-emit-project \
+            --format requirements.txt \
+            --output-file "$RELEASE_DIR/requirements-all.txt"
+          cp packaging/installer/uv.toml "$RELEASE_DIR/installer-uv.toml"
+          sed \
+            -e "s|^embedded_repository=.*$|embedded_repository='$GITHUB_REPOSITORY'|" \
+            -e "s|^embedded_version=.*$|embedded_version='$VERSION'|" \
+            -e "s|^embedded_wheel=.*$|embedded_wheel='$WHEEL_NAME'|" \
+            install.sh > "$RELEASE_DIR/install.sh"
+          chmod +x "$RELEASE_DIR/install.sh"
+          dash -n "$RELEASE_DIR/install.sh"
+
+          (
+            cd "$RELEASE_DIR"
+            sha256sum "$WHEEL_NAME" requirements-all.txt installer-uv.toml > SHA256SUMS
+            sha256sum install.sh > install.sh.sha256
+          )
+
+      - name: Smoke-test the published installation path
+        shell: bash
+        env:
+          HHTOOLS_VERSION: ${{ steps.package.outputs.version }}
+          HHTOOLS_PYTHON: "3.12"
+        run: |
+          smoke_home="$RUNNER_TEMP/hhtools-installer-home"
+          mkdir -p "$smoke_home"
+          HOME="$smoke_home" \
+          HHTOOLS_ASSET_DIR="$RELEASE_DIR" \
+          HHTOOLS_UV_BIN="$(command -v uv)" \
+            sh "$RELEASE_DIR/install.sh"
+          "$smoke_home/.local/bin/hhtools" --version
+          HOME="$smoke_home" \
+            "$smoke_home/.local/bin/hhtools" doctor \
+              --require web --require retarget --require mcp
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.package.outputs.version }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          "$RELEASE_DIR"/*
+          --verify-tag
+          --generate-notes
+          --title "HHTools $VERSION"

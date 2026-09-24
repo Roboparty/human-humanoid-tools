@@ -8,7 +8,7 @@ import pytest
 from hhtools.core.hierarchy import Hierarchy
 from hhtools.core.motion import Motion
 from hhtools.core.scene import TerrainHeightfield
-from hhtools.web.scaled_preview import (
+from hhtools.web.analysis.scaled_preview import (
     _uniform_scaled_joint_positions,
     resolve_scaled_overlay_z_correction,
 )
@@ -94,11 +94,11 @@ def test_scaled_overlay_preserves_foot_terrain_gap() -> None:
         human_source_floor_z_world,
         terrain_heightfield_z_offset_world,
     )
+    from hhtools.retarget.calibration.calibration import uniform_overlay_scale_for_motion
     from hhtools.retarget.newton_basic.config import ScalerConfig
 
     z_floor = 0.05
     motion = _parc_like_motion(z_floor=z_floor)
-    ratio = 0.8
     z_min = float(human_source_floor_z_world(motion))
     z_terrain = float(terrain_heightfield_z_offset_world(motion, z_min))
 
@@ -111,6 +111,7 @@ def test_scaled_overlay_preserves_foot_terrain_gap() -> None:
         root_joint="pelvis",
         joint_scales={"pelvis": 1.0},
     )
+    ratio = uniform_overlay_scale_for_motion(cfg, 1.65, motion)
     pos = _uniform_scaled_joint_positions(
         motion, cfg, 1.65, list(motion.hierarchy.bone_names),
         ik_canons=frozenset(), z_correction=0.0,

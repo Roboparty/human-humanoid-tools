@@ -30,24 +30,20 @@ Rotations policy: ``joint_positions.npy`` holds global joint **positions only**,
 no orientations. We follow the existing hhtools convention established by
 :mod:`hhtools.io.datasets.omomo` — set ``quaternions`` to xyzw identity, flag
 ``meta["rotations_source"] = "none"``, and leave authoritative rotation
-recovery to a future SMPL-H forward pass. Every downstream consumer
-(``SkeletonRenderer``, ``CapsuleMeshRenderer``, analytics, and the eventual
-Newton-mesh retargeter whose Laplacian cost is position-only) ignores global
-bone quaternions, so this loses no information for the current viewer +
-retarget pipelines.
+recovery to a future SMPL-H forward pass. Current Web rendering, analytics,
+and position-only retarget paths ignore global bone quaternions, so this loses
+no information for supported workflows.
 
 Terrain wiring: the per-clip ``terrain.obj`` is surfaced as a single
 :class:`SceneObject` with per-frame translations set to zero and rotations set
 to identity, and ``mesh_path`` pointing at the absolute ``.obj`` path. The
-existing :class:`hhtools.viewer.renderers.ObjectsRenderer` already loads such
-meshes via :func:`trimesh.load` and draws them every frame, so the viewer
-picks up terrain rendering with zero code change. The ``center_motion_root_xy``
-and ``snap_motion_to_ground`` viewer helpers also shift scene objects, so the
-terrain stays attached to the skeleton under those display toggles.
+The Web scene serializer loads these meshes for the Stage. The
+``center_motion_root_xy`` and ``snap_motion_to_ground`` helpers shift scene
+objects as well, preserving terrain/skeleton alignment.
 
-CLI / viewer plumbing:
+CLI / library plumbing:
 
-* ``hhtools/viewer/library.py`` has ``_DIR_TO_ADAPTER["holosoma"] =
+* ``hhtools/services/motion_library.py`` maps ``holosoma`` to
   "meshmimic_holosoma"``, so the ``meshmimic/holosoma/*/<clip>.npy`` files are
   auto-discovered by the viewer library scan.
 * When the viewer calls the adapter it instantiates it rooted at the clip
@@ -167,7 +163,7 @@ def _load_terrain_heightfield(
        persisted** as a sidecar ``.pkl`` so subsequent loads hit case 1.
 
     Returns ``None`` only when neither input is present.  All three
-    downstream consumers (viser, MuJoCo MPC-SQP, PARC export) read from
+    downstream consumers (Web rendering, MuJoCo MPC-SQP, PARC export) read from
     the returned :class:`TerrainHeightfield` directly — the OBJ stays
     on disk as a debugging artefact but never participates in runtime
     flow once the sidecar exists.
@@ -339,8 +335,8 @@ class MeshmimicHolosomaAdapter(DatasetAdapter):
             "notes": (
                 "Raw mocap joint positions in world frame (Z-up, metres). "
                 "Terrain carried on Motion.terrain as a heightfield (single "
-                "source of truth across viser, MPC-SQP, PARC export). "
-                "Viewer center/snap toggles shift terrain and skeleton "
+                "source of truth across Web rendering, MPC-SQP, PARC export). "
+                "Center/snap operations shift terrain and skeleton "
                 "together so alignment is preserved."
             ),
         }

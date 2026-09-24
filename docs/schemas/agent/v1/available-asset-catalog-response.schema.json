@@ -1,0 +1,149 @@
+{
+  "$defs": {
+    "AssetCategory": {
+      "description": "Workflow category used for backend selection.",
+      "enum": [
+        "plain_motion",
+        "object_interaction",
+        "terrain_scene",
+        "robot_trajectory",
+        "robot_model",
+        "calibration"
+      ],
+      "title": "AssetCategory",
+      "type": "string"
+    },
+    "AssetKind": {
+      "description": "Logical type of a registered asset.",
+      "enum": [
+        "motion_bundle",
+        "robot_trajectory_bundle",
+        "robot_bundle",
+        "calibration_bundle",
+        "dataset_bundle",
+        "video"
+      ],
+      "title": "AssetKind",
+      "type": "string"
+    },
+    "AvailableAssetCatalogEntry": {
+      "additionalProperties": false,
+      "description": "Portable registration metadata for one allowlisted, available asset.",
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/AssetCategory"
+        },
+        "dataset": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dataset"
+        },
+        "display_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Display Name",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/AssetKind"
+        },
+        "recursive": {
+          "default": true,
+          "title": "Recursive",
+          "type": "boolean"
+        },
+        "reference": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference"
+        },
+        "relative_path": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Relative Path",
+          "type": "string"
+        },
+        "root_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "title": "Root Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "root_id",
+        "relative_path",
+        "display_name",
+        "kind",
+        "category"
+      ],
+      "title": "AvailableAssetCatalogEntry",
+      "type": "object"
+    },
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Deterministic page of assets that can be registered without host paths.",
+  "properties": {
+    "assets": {
+      "items": {
+        "$ref": "#/$defs/AvailableAssetCatalogEntry"
+      },
+      "title": "Assets",
+      "type": "array"
+    },
+    "limit": {
+      "maximum": 500,
+      "minimum": 1,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "offset": {
+      "minimum": 0,
+      "title": "Offset",
+      "type": "integer"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    },
+    "total": {
+      "minimum": 0,
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "total",
+    "limit",
+    "offset"
+  ],
+  "title": "AvailableAssetCatalogResponse",
+  "type": "object"
+}

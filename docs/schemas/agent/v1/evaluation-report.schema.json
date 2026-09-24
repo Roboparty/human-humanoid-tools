@@ -1,0 +1,79 @@
+{
+  "$defs": {
+    "JobOutcome": {
+      "description": "Semantic result of a completed job.",
+      "enum": [
+        "success",
+        "partial",
+        "review_required",
+        "rejected"
+      ],
+      "title": "JobOutcome",
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Compact quality verdict; large plots and previews remain separate artifacts.",
+  "properties": {
+    "checks": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "maxItems": 256,
+      "title": "Checks",
+      "type": "array"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "job_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Job Id",
+      "type": "string"
+    },
+    "metrics": {
+      "additionalProperties": true,
+      "title": "Metrics",
+      "type": "object"
+    },
+    "outcome": {
+      "$ref": "#/$defs/JobOutcome"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    },
+    "summary": {
+      "anyOf": [
+        {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Summary"
+    }
+  },
+  "required": [
+    "job_id",
+    "outcome",
+    "created_at"
+  ],
+  "title": "EvaluationReport",
+  "type": "object"
+}

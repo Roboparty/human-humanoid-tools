@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0",
+  "asset_id": "asset:sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "kind": "motion_bundle",
+  "category": "object_interaction",
+  "display_name": "OMOMO large box",
+  "primary_file": "OMOMO/sub10/sub10.pkl",
+  "files": [
+    {
+      "role": "motion",
+      "relative_path": "OMOMO/sub10/sub10.pkl",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "size_bytes": 8192,
+      "media_type": "application/octet-stream",
+      "required": true
+    },
+    {
+      "role": "object_mesh",
+      "relative_path": "OMOMO/sub10/largebox_cleaned_simplified.obj",
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "size_bytes": 2048,
+      "media_type": "model/obj",
+      "required": true
+    }
+  ],
+  "source": {
+    "scheme": "managed_file",
+    "root_id": "motion-library",
+    "registered_at": "2026-08-31T12:00:00Z",
+    "logical_path": "OMOMO/sub10"
+  },
+  "detected": {
+    "dataset": "omomo",
+    "reference": "smplx",
+    "recommended_backend": "interaction_mesh"
+  },
+  "metadata": {}
+}

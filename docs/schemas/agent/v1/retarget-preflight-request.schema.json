@@ -1,0 +1,106 @@
+{
+  "$defs": {
+    "OutputPolicy": {
+      "enum": [
+        "create_new",
+        "fail_if_exists",
+        "overwrite"
+      ],
+      "title": "OutputPolicy",
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "User intent that the service resolves into an immutable plan.",
+  "properties": {
+    "backend": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Backend id, or null to request a recommendation.",
+      "title": "Backend"
+    },
+    "calibration_id": {
+      "anyOf": [
+        {
+          "description": "Content-addressed calibration id.",
+          "pattern": "^cal:sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Calibration Id"
+    },
+    "motion_asset_id": {
+      "description": "Content-addressed asset id.",
+      "pattern": "^asset:sha256:[0-9a-f]{64}$",
+      "title": "Motion Asset Id",
+      "type": "string"
+    },
+    "output_format": {
+      "default": "csv",
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Output Format",
+      "type": "string"
+    },
+    "output_policy": {
+      "$ref": "#/$defs/OutputPolicy",
+      "default": "create_new"
+    },
+    "parameters": {
+      "additionalProperties": true,
+      "description": "Backend-independent and namespaced backend parameters.",
+      "title": "Parameters",
+      "type": "object"
+    },
+    "robot_asset_id": {
+      "anyOf": [
+        {
+          "description": "Content-addressed asset id.",
+          "pattern": "^asset:sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Registered RobotBundle identity; required for a runnable plan.",
+      "title": "Robot Asset Id"
+    },
+    "robot_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Robot Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    }
+  },
+  "required": [
+    "motion_asset_id",
+    "robot_id"
+  ],
+  "title": "RetargetPreflightRequest",
+  "type": "object"
+}

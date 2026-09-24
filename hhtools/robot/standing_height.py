@@ -3,9 +3,8 @@
 The yellow skeleton overlay and :class:`~hhtools.retarget.newton_basic.config.ScalerConfig`
 share one definition of robot stature: the vertical span of every loaded
 visual mesh, collision mesh, and (when available) MuJoCo collision geom at
-the pose being calibrated / previewed.  This matches what
-:class:`~hhtools.viewer.renderers.RobotAnimator` shows after ground alignment
-(``max_z − min_z`` over the rendered meshes, feet on ``z = 0``).
+the pose being calibrated / previewed. This matches the Web Stage robot after
+ground alignment (``max_z − min_z`` over rendered meshes, feet on ``z = 0``).
 """
 
 from __future__ import annotations
@@ -110,9 +109,8 @@ def estimate_robot_standing_height(
     the yellow overlay's ``model_height / human_height`` uniform scale.
 
     Returns ``max_z − min_z`` over that union, scaled by
-    ``preset.length_scale``.  This is the same vertical span
-    :class:`~hhtools.viewer.renderers.RobotAnimator` uses after lifting the
-    lowest visual vertex to ``z = 0``.
+    ``preset.length_scale``. This is the same vertical span used by the Web
+    Stage after lifting the lowest visual vertex to ``z = 0``.
     """
     q = dict(joint_q) if joint_q is not None else model.zero_configuration()
     saved_q = model.zero_configuration()

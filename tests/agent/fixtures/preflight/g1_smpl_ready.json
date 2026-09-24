@@ -1,0 +1,71 @@
+{
+  "request": {
+    "schema_version": "1.0",
+    "motion_asset_id": "asset:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "robot_id": "g1_29dof",
+    "robot_asset_id": "asset:sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "backend": null,
+    "calibration_id": "cal:sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "output_format": "csv",
+    "output_policy": "create_new",
+    "parameters": {
+      "run_mode": "smoke",
+      "limit_frames": 30
+    }
+  },
+  "response": {
+    "schema_version": "1.0",
+    "request_id": "request-g1-smpl-ready",
+    "status": "ready",
+    "plan": {
+      "schema_version": "1.0",
+      "plan_id": "plan:sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "created_at": "2026-08-31T12:05:00Z",
+      "expires_at": "2026-08-31T13:05:00Z",
+      "motion_asset_id": "asset:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "robot_id": "g1_29dof",
+      "robot_asset_id": "asset:sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "backend": "newton",
+      "calibration_id": "cal:sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "output_format": "csv",
+      "output_policy": "create_new",
+      "parameters": {
+        "run_mode": "smoke",
+        "limit_frames": 30,
+        "reference": "smpl"
+      },
+      "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "robot_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "calibration_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "checks": [
+      {
+        "code": "INPUT_PARSEABLE",
+        "level": "pass",
+        "message": "Motion input is parseable.",
+        "details": {},
+        "next_action": null
+      },
+      {
+        "code": "CALIBRATION_MATCH",
+        "level": "pass",
+        "message": "The SMPL calibration matches the selected robot.",
+        "details": {},
+        "next_action": null
+      },
+      {
+        "code": "JOB_ADMISSION",
+        "level": "warning",
+        "message": "Job concurrency is configured as unlimited.",
+        "details": {
+          "max_running_jobs": 0,
+          "max_queued_jobs": 0
+        },
+        "next_action": null
+      }
+    ],
+    "recommended_backend": "newton",
+    "required_actions": [],
+    "error": null
+  }
+}

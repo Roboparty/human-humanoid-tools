@@ -66,7 +66,7 @@ class SceneObject:
         if self.opacity is not None:
             self.opacity = float(min(1.0, max(0.0, self.opacity)))
         if self.color is not None:
-            # Accept any iterable of three ints, clip to 0-255 for Viser safety.
+            # Accept any iterable of three ints and clip to the renderer's 8-bit range.
             rgb = tuple(int(max(0, min(255, int(c)))) for c in self.color)
             if len(rgb) != 3:
                 raise ValueError(
@@ -103,7 +103,7 @@ class TerrainHeightfield:
     """Regular 2-D heightfield terrain — the canonical static-environment record.
 
     This is the **single source of truth** for terrain in the hhtools pipeline.
-    All three downstream consumers (viser viewer, MuJoCo MPC-SQP collision,
+    All three downstream consumers (Web renderer, MuJoCo MPC-SQP collision,
     PARC training export) read from the same ``hf`` array, so what the user
     sees on screen is exactly what the optimizer feels and what gets shipped
     for training.
@@ -320,7 +320,7 @@ class TerrainHeightfield:
         """Return ``(vertices, faces)`` triangulating the heightfield.
 
         Each grid cell becomes two triangles, sharing the diagonal from
-        ``(ix, iy)`` to ``(ix+1, iy+1)``.  Used by the viser renderer.
+        ``(ix, iy)`` to ``(ix+1, iy+1)``. Used by renderer and export adapters.
 
         Vertices are produced in row-major (ix, iy) order so
         ``vertex_index = ix * ny + iy``; faces use that linearisation.

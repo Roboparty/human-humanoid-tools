@@ -1,0 +1,347 @@
+{
+  "$defs": {
+    "ApiError": {
+      "additionalProperties": false,
+      "description": "Structured failure that an agent can inspect without parsing prose.",
+      "properties": {
+        "code": {
+          "description": "Stable, English, machine-readable code.",
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Code",
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": true,
+          "description": "Small structured context; large payloads belong in artifacts.",
+          "title": "Details",
+          "type": "object"
+        },
+        "message": {
+          "description": "Human-readable, potentially localized explanation.",
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "next_action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NextAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "retryable": {
+          "default": false,
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "$ref": "#/$defs/SchemaVersion",
+          "default": "1.0"
+        },
+        "stage": {
+          "$ref": "#/$defs/ErrorStage"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "stage"
+      ],
+      "title": "ApiError",
+      "type": "object"
+    },
+    "AssetCategory": {
+      "description": "Workflow category used for backend selection.",
+      "enum": [
+        "plain_motion",
+        "object_interaction",
+        "terrain_scene",
+        "robot_trajectory",
+        "robot_model",
+        "calibration"
+      ],
+      "title": "AssetCategory",
+      "type": "string"
+    },
+    "AssetKind": {
+      "description": "Logical type of a registered asset.",
+      "enum": [
+        "motion_bundle",
+        "robot_trajectory_bundle",
+        "robot_bundle",
+        "calibration_bundle",
+        "dataset_bundle",
+        "video"
+      ],
+      "title": "AssetKind",
+      "type": "string"
+    },
+    "ErrorStage": {
+      "description": "Stable stage in which an API error occurred.",
+      "enum": [
+        "request",
+        "asset_registration",
+        "asset_inspection",
+        "calibration",
+        "preflight",
+        "admission",
+        "execution",
+        "evaluation",
+        "artifact",
+        "internal"
+      ],
+      "title": "ErrorStage",
+      "type": "string"
+    },
+    "InspectionStatus": {
+      "description": "Machine-readable outcome of inspecting an asset.",
+      "enum": [
+        "valid",
+        "valid_with_warnings",
+        "invalid"
+      ],
+      "title": "InspectionStatus",
+      "type": "string"
+    },
+    "NextAction": {
+      "additionalProperties": false,
+      "description": "An explicit recovery or continuation step for an agent or human.",
+      "properties": {
+        "action": {
+          "description": "Stable, English action identifier.",
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Action",
+          "type": "string"
+        },
+        "actor": {
+          "enum": [
+            "agent",
+            "human",
+            "system"
+          ],
+          "title": "Actor",
+          "type": "string"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional human-readable instruction.",
+          "title": "Message"
+        },
+        "parameters": {
+          "additionalProperties": true,
+          "description": "Structured parameters needed to perform the action.",
+          "title": "Parameters",
+          "type": "object"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "pattern": "^(?:(?:/(?:\\?(?:(?:calibrate|panel|robot|view)=[^&#\\s]{0,256}(?:&(?:calibrate|panel|robot|view)=[^&#\\s]{0,256})*)?)?|http://(?:127\\.0\\.0\\.1|localhost|\\[::1\\]):(?:0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])/(?:\\?(?:(?:calibrate|panel|robot|view)=[^&#\\s]{0,256}(?:&(?:calibrate|panel|robot|view)=[^&#\\s]{0,256})*)?)?)|https://(?:\\[(?:(?:(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}|(?:[0-9A-Fa-f]{1,4}:){1,7}:|(?:[0-9A-Fa-f]{1,4}:){1,6}:[0-9A-Fa-f]{1,4}|(?:[0-9A-Fa-f]{1,4}:){1,5}(?::[0-9A-Fa-f]{1,4}){1,2}|(?:[0-9A-Fa-f]{1,4}:){1,4}(?::[0-9A-Fa-f]{1,4}){1,3}|(?:[0-9A-Fa-f]{1,4}:){1,3}(?::[0-9A-Fa-f]{1,4}){1,4}|(?:[0-9A-Fa-f]{1,4}:){1,2}(?::[0-9A-Fa-f]{1,4}){1,5}|[0-9A-Fa-f]{1,4}:(?:(?::[0-9A-Fa-f]{1,4}){1,6})|:(?:(?::[0-9A-Fa-f]{1,4}){1,7}|:)))\\]|[A-Za-z0-9._~-]+)(?::(?:0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?(?:[/?#](?:(?:[A-Za-z0-9._~!$&'()*+,;=:@-]|%[0-9A-Fa-f]{2})|[/?#])*)?)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional allowlisted local calibration UI route or portable HTTPS documentation URL.",
+          "title": "Url"
+        }
+      },
+      "required": [
+        "actor",
+        "action"
+      ],
+      "title": "NextAction",
+      "type": "object"
+    },
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Compact, structured facts discovered without running retargeting.",
+  "properties": {
+    "asset_id": {
+      "description": "Content-addressed asset id.",
+      "pattern": "^asset:sha256:[0-9a-f]{64}$",
+      "title": "Asset Id",
+      "type": "string"
+    },
+    "category": {
+      "$ref": "#/$defs/AssetCategory"
+    },
+    "dataset": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dataset"
+    },
+    "duration_seconds": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Duration Seconds"
+    },
+    "errors": {
+      "items": {
+        "$ref": "#/$defs/ApiError"
+      },
+      "title": "Errors",
+      "type": "array"
+    },
+    "frame_count": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Frame Count"
+    },
+    "frame_rate_hz": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Frame Rate Hz"
+    },
+    "has_object": {
+      "default": false,
+      "title": "Has Object",
+      "type": "boolean"
+    },
+    "has_terrain": {
+      "default": false,
+      "title": "Has Terrain",
+      "type": "boolean"
+    },
+    "joint_count": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Joint Count"
+    },
+    "kind": {
+      "$ref": "#/$defs/AssetKind"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "reference_model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Detected human reference, for example smpl, smplh, or smplx.",
+      "title": "Reference Model"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    },
+    "source_format": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Detected source format.",
+      "title": "Source Format"
+    },
+    "source_robot_id": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Robot Id"
+    },
+    "status": {
+      "$ref": "#/$defs/InspectionStatus"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "asset_id",
+    "status",
+    "kind",
+    "category"
+  ],
+  "title": "AssetInspection",
+  "type": "object"
+}

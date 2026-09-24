@@ -26,17 +26,17 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from hhtools.core.math import quaternion as Q
 from hhtools.core.grounding import (
     human_source_floor_z_world,
     terrain_heightfield_z_offset_world,
     use_split_terrain_grounding,
 )
+from hhtools.core.math import quaternion as Q
 from hhtools.core.motion import Motion
+from hhtools.core.scene import TerrainHeightfield
 from hhtools.retarget.calibration import (
     load_calibration,
 )
-from hhtools.robot.retarget_profile import build_scaler_config_for_robot
 from hhtools.retarget.interaction_mesh.config import InteractionMeshPipelineConfig
 from hhtools.retarget.interaction_mesh.motion_bridge import (
     ScaledMotionScene,
@@ -47,6 +47,7 @@ from hhtools.retarget.interaction_mesh.mujoco_scene import MujocoScene, require_
 from hhtools.retarget.newton_basic.human_aliases import auto_source_to_canonical
 from hhtools.retarget.newton_basic.scaler import HumanToRobotScaler
 from hhtools.robot.loader import URDFRobotModel
+from hhtools.robot.retarget_profile import build_scaler_config_for_robot
 
 _log = logging.getLogger(__name__)
 
@@ -1472,6 +1473,7 @@ class InteractionMeshPipeline:
                 )
                 used_collision_mode = "none"
 
+        execution_diagnostics = {"osqp_fallback_count": 0}
         try:
             traj = iterate_mpc_rti(
                 mj,
@@ -1504,6 +1506,7 @@ class InteractionMeshPipeline:
                 base_step_size=self.cfg.sqp_base_step_size,
                 lock_root_orientation_to_source=self.cfg.lock_root_orientation_to_source,
                 progress_callback=_mpc_cb,
+                execution_diagnostics=execution_diagnostics,
             )
         finally:
             if tmp_terrain_files:
@@ -1633,35 +1636,62 @@ class InteractionMeshPipeline:
                 ground_z=0.0,
             )
 
+        fallback_reasons: list[str] = []
+        if self.cfg.enable_collision and used_collision_mode == "none":
+            fallback_reasons.append("hard_collision_model_unavailable")
+        if execution_diagnostics["osqp_fallback_count"]:
+            fallback_reasons.append("osqp_box_solver_fallback")
+        from importlib.metadata import PackageNotFoundError, version
+
+        def _version(package: str) -> str:
+            try:
+                return version(package)
+            except PackageNotFoundError:
+                return "unknown"
+
         _meta_r = {
-                "retarget_backend": "interaction_mesh",
-                "mpc_horizon": self.cfg.mpc_horizon,
-                "laplacian_weight": self.cfg.laplacian_weight,
-                "sqp_step_size": self.cfg.sqp_step_size,
-                "sqp_inner_iters": self.cfg.sqp_inner_iters,
-                "smooth_weight": self.cfg.smooth_weight,
-                "enable_collision": self.cfg.enable_collision,
-                "collision_mode_used": used_collision_mode,
-                "collision_threshold": self.cfg.collision_threshold,
-                "penetration_tolerance": self.cfg.penetration_tolerance,
-                "sqp_base_step_size": self.cfg.sqp_base_step_size,
-                "contact_points": len(robot_points),
-                "smpl_scale": float(smpl_scale),
-                "source_z_min": float(z_min),
-                "source_terrain_z_offset": (
-                    float(terrain_heightfield_z_offset_world(motion, z_min))
-                    if motion.terrain is not None
-                    else float("nan")
-                ),
-                "terrain_floor_offset": float(floor_offset),
-                "terrain_signed_min_gap": float(signed_min_gap),
-                "clip_floor_snap_m": float(floor_offset) if not used_terrain_snap else 0.0,
-                "position_weight": float(self.cfg.position_weight),
-                "alignment_mean_m": align_summary["mean_m"],
-                "alignment_max_m": align_summary["max_m"],
-                "alignment_pelvis_m": align_summary["pelvis_m"],
-                "alignment_wrist_m": align_summary["wrist_m"],
-                "alignment_ankle_m": align_summary["ankle_m"],
+            "retarget_backend": "interaction_mesh",
+            "mpc_horizon": self.cfg.mpc_horizon,
+            "laplacian_weight": self.cfg.laplacian_weight,
+            "sqp_step_size": self.cfg.sqp_step_size,
+            "sqp_inner_iters": self.cfg.sqp_inner_iters,
+            "smooth_weight": self.cfg.smooth_weight,
+            "enable_collision": self.cfg.enable_collision,
+            "collision_mode_used": used_collision_mode,
+            "collision_threshold": self.cfg.collision_threshold,
+            "penetration_tolerance": self.cfg.penetration_tolerance,
+            "sqp_base_step_size": self.cfg.sqp_base_step_size,
+            "contact_points": len(robot_points),
+            "smpl_scale": float(smpl_scale),
+            "source_z_min": float(z_min),
+            "source_terrain_z_offset": (
+                float(terrain_heightfield_z_offset_world(motion, z_min))
+                if motion.terrain is not None
+                else float("nan")
+            ),
+            "terrain_floor_offset": float(floor_offset),
+            "terrain_signed_min_gap": float(signed_min_gap),
+            "clip_floor_snap_m": float(floor_offset) if not used_terrain_snap else 0.0,
+            "position_weight": float(self.cfg.position_weight),
+            "alignment_mean_m": align_summary["mean_m"],
+            "alignment_max_m": align_summary["max_m"],
+            "alignment_pelvis_m": align_summary["pelvis_m"],
+            "alignment_wrist_m": align_summary["wrist_m"],
+            "alignment_ankle_m": align_summary["ankle_m"],
+            "execution_provenance": {
+                "backend": "interaction_mesh",
+                "device": "cpu",
+                "device_kind": "cpu",
+                "precision": "mixed",
+                "runtime": "mujoco",
+                "runtime_version": _version("mujoco"),
+                "solver": f"osqp-{_version('osqp')}",
+                "cuda_graph_requested": False,
+                "cuda_graph_used": False,
+                "fallback_used": bool(fallback_reasons),
+                "fallback_reason": ",".join(fallback_reasons) or None,
+            },
+            "osqp_fallback_count": execution_diagnostics["osqp_fallback_count"],
         }
 
         from hhtools.robot.retarget_profile import apply_upper_body_roll_narrowing_post_ik

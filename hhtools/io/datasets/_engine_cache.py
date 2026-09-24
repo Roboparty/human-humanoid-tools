@@ -27,8 +27,38 @@ def engine_for_params(params: SmplMotionParams):  # noqa: ANN201
     return _get_cached_engine(params.surface_model, params.gender, num_betas)
 
 
+def motion_from_params(
+    params: SmplMotionParams,
+    *,
+    name: str,
+    source_format: str | None = None,
+    return_mesh: bool = False,
+    progress_callback=None,
+):
+    """Use the licensed engine when available, otherwise return a skeleton preview."""
+    try:
+        engine = engine_for_params(params)
+    except (FileNotFoundError, ImportError, OSError) as error:
+        from hhtools.bodymodels.fallback import motion_from_fallback
+
+        return motion_from_fallback(
+            params,
+            name=name,
+            source_format=source_format,
+            reason=error,
+            progress_callback=progress_callback,
+        )
+    return engine.to_motion(
+        params,
+        name=name,
+        source_format=source_format,
+        return_mesh=return_mesh,
+        progress_callback=progress_callback,
+    )
+
+
 def clear_engine_cache() -> None:
     _get_cached_engine.cache_clear()
 
 
-__all__ = ["clear_engine_cache", "engine_for_params"]
+__all__ = ["clear_engine_cache", "engine_for_params", "motion_from_params"]

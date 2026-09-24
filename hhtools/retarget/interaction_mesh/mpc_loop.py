@@ -781,6 +781,7 @@ def sqp_step_laplacian(
     base_step_size: float | None = None,
     # --- lock FREE-joint orientation to source pelvis ---
     lock_root_orientation_to_source: bool = True,
+    execution_diagnostics: dict[str, int] | None = None,
 ) -> NDArray[np.float64]:
     """One SQP frame solve with Laplacian + smoothness cost.
 
@@ -1062,6 +1063,10 @@ def sqp_step_laplacian(
                     foot_ub=foot_ub,
                 ).astype(np.float64, copy=False)
             except OsqpUnreliableError as exc:
+                if execution_diagnostics is not None:
+                    execution_diagnostics["osqp_fallback_count"] = (
+                        execution_diagnostics.get("osqp_fallback_count", 0) + 1
+                    )
                 # Bounded-step box-only fallback — see "Failure
                 # semantics" in the docstring.  Trust region is
                 # shrunk by OSQP_FALLBACK_TRUST_SHRINK so the solver
@@ -1243,6 +1248,7 @@ def iterate_mpc_rti(
     # Freeze FREE-joint orientation to each frame's source pelvis quat.
     lock_root_orientation_to_source: bool = True,
     progress_callback: Callable[[int, int], None] | None = None,
+    execution_diagnostics: dict[str, int] | None = None,
 ) -> NDArray[np.float64]:
     """Sliding-window MPC with per-frame SQP (holosoma ``iterate_mpc`` pattern).
 
@@ -1360,6 +1366,7 @@ def iterate_mpc_rti(
             leg_smooth_weight=leg_smooth_weight,
             leg_sqp_step_scale=leg_sqp_step_scale,
             lock_root_orientation_to_source=lock_root_orientation_to_source,
+            execution_diagnostics=execution_diagnostics,
         )
 
     # --- Fast path: H=1 (holosoma default) — one SQP per frame, no window loop ---

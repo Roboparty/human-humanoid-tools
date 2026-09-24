@@ -1,0 +1,31 @@
+{
+  "$defs": {
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One bounded JSON object containing a JobSpec v1 or download wrapper.\n\nThe migration service remains responsible for the stricter v1 shape,\ndepth, node-count, byte-size, allowlisted-root, and content checks.  This\nwrapper only gives REST and JSON CLI a stable, versioned transport shape.",
+  "properties": {
+    "payload": {
+      "additionalProperties": true,
+      "description": "Raw JobSpec v1 document or an existing single-job download wrapper.",
+      "title": "Payload",
+      "type": "object"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    }
+  },
+  "required": [
+    "payload"
+  ],
+  "title": "LegacyJobUpgradeRequest",
+  "type": "object"
+}

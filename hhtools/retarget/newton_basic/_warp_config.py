@@ -55,7 +55,11 @@ def is_cache_persistent() -> bool:
     return _persistent
 
 
-def configure(explicit: str | os.PathLike[str] | None = None) -> Path:
+def configure(
+    explicit: str | os.PathLike[str] | None = None,
+    *,
+    quiet: bool | None = None,
+) -> Path:
     """Point Warp at a writable kernel cache directory.
 
     Must be called *before* the first ``import warp``; we rely on the
@@ -68,12 +72,17 @@ def configure(explicit: str | os.PathLike[str] | None = None) -> Path:
             created on demand.  Otherwise we honour ``WARP_CACHE_DIR`` /
             default, and fall back to the workspace-local cache when the
             default isn't writable.
+        quiet: Optional process-local Warp diagnostic setting.  ``True`` is
+            used by stdio protocol hosts so Warp cannot write its first-init
+            banner into the wire.  The default ``None`` preserves Warp's
+            existing behavior for the CLI and WebUI.
 
     Returns:
         The resolved cache directory.
     """
+
     def _commit(path: Path, *, persistent: bool) -> Path:
-        global _configured, _resolved, _persistent
+        global _configured, _resolved, _persistent  # noqa: PLW0603 - module config snapshot
         path.mkdir(parents=True, exist_ok=True)
         os.environ["WARP_CACHE_DIR"] = str(path)
         # Also update config for already-loaded ``warp`` modules; this is
@@ -81,6 +90,13 @@ def configure(explicit: str | os.PathLike[str] | None = None) -> Path:
         # env var is the authoritative setting.
         try:
             import warp as wp  # local import — may not be imported yet
+
+            # Importing Warp itself is silent; its first ``wp.init()`` emits
+            # the device banner.  Set this before any Newton import can cause
+            # that initialization.  Do not redirect process-wide stdout:
+            # concurrent stdio traffic could otherwise be captured with it.
+            if quiet is not None:
+                wp.config.quiet = quiet
             wp.config.kernel_cache_dir = str(path)
         except ImportError:
             pass
@@ -94,7 +110,7 @@ def configure(explicit: str | os.PathLike[str] | None = None) -> Path:
                 "Warp kernel cache fell back to a non-persistent temp dir: %s. "
                 "GPU kernels will be RECOMPILED every run. Make a stable cache "
                 "writable, e.g.:\n"
-                "  sudo chown -R \"$USER\" ~/.cache/warp .hhtools/warp_cache 2>/dev/null; "
+                '  sudo chown -R "$USER" ~/.cache/warp .hhtools/warp_cache 2>/dev/null; '
                 "rm -rf ~/.cache/warp/* .hhtools/warp_cache/*\n"
                 "or set WARP_CACHE_DIR to a writable, persistent path.",
                 path,
@@ -155,9 +171,7 @@ def _dir_writable(path: Path) -> bool:
     except OSError:
         return False
     try:
-        with tempfile.NamedTemporaryFile(
-            dir=str(path), prefix=".hhtools_writetest_", delete=True
-        ):
+        with tempfile.NamedTemporaryFile(dir=str(path), prefix=".hhtools_writetest_", delete=True):
             pass
     except OSError:
         return False

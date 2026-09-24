@@ -34,7 +34,7 @@ def build_capsule_skeleton_mesh(
     """Return a lightweight capsule-per-bone representation.
 
     For the viewer's purposes we don't actually need a tessellated mesh up front — we return
-    segment metadata so the viewer can draw capsules using its native primitives (Viser offers
+    segment metadata so a renderer can draw capsules using its native primitives (the Web Stage offers
     scene.add_segments, mesh, and cylinder, all of which are cheap to update per frame).
     """
     starts, ends = bone_line_segments(positions, parent_indices)

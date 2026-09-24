@@ -72,6 +72,33 @@ def list_presets() -> list[RobotPreset]:
     return sorted(_CACHE.values(), key=lambda p: p.name)
 
 
+def list_presets_readonly() -> list[RobotPreset]:
+    """Discover existing YAML presets without scaffolding or mutating cache.
+
+    Capability discovery and preflight use this path because a read-only query
+    must not turn an orphan URDF into a newly written ``robot.yaml``.  Normal
+    UI/CLI discovery keeps the historical zero-config scaffolding behaviour in
+    :func:`list_presets` and :func:`refresh`.
+    """
+
+    if _CACHE is not None:
+        return sorted(_CACHE.values(), key=lambda preset: preset.name)
+    discovered: dict[str, RobotPreset] = {}
+    for root in _discovery_roots():
+        for preset in _scan_root(root, scaffold_missing=False):
+            discovered[preset.name] = preset
+    return sorted(discovered.values(), key=lambda preset: preset.name)
+
+
+def list_presets_in_root_readonly(root: Path) -> list[RobotPreset]:
+    """Discover existing presets below one trusted root without scaffolding."""
+
+    discovered = {
+        preset.name: preset for preset in _scan_root(Path(root), scaffold_missing=False)
+    }
+    return sorted(discovered.values(), key=lambda preset: preset.name)
+
+
 def get(name: str) -> RobotPreset:
     """Look up a preset by name.  Raises :class:`KeyError` if unknown."""
     _ensure_loaded()
@@ -118,6 +145,23 @@ def preset_from_dir(drop: Path) -> RobotPreset:
             f"robot.yaml under {drop} references missing URDF {preset.urdf_path}"
         )
     return preset
+
+
+def preset_from_yaml(yaml_path: Path) -> RobotPreset:
+    """Load one exact existing preset YAML without caching or scaffolding.
+
+    Agent preflight uses this after binding the YAML hash to a RobotBundle so
+    a previously populated process cache cannot supply stale ``dof_order`` or
+    ``ik_map`` values.  The function is read-only and never synthesizes files.
+    """
+
+    path = Path(yaml_path).resolve(strict=True)
+    if not path.is_file() or not (
+        path.name == "robot.yaml"
+        or (path.name.startswith("robot.") and path.name.endswith(".yaml"))
+    ):
+        raise FileNotFoundError(f"no robot preset YAML at {path}")
+    return _load_preset(path, path.parent)
 
 
 def clear_cache() -> None:
@@ -175,7 +219,7 @@ def _discovery_roots() -> list[Path]:
     return roots
 
 
-def _scan_root(root: Path) -> list[RobotPreset]:
+def _scan_root(root: Path, *, scaffold_missing: bool = True) -> list[RobotPreset]:
     """Scan one discovery root for ``<child>/robot*.yaml`` files.
 
     Per directory we first collect all ``robot.yaml`` + ``robot.<stem>.yaml``
@@ -189,13 +233,14 @@ def _scan_root(root: Path) -> list[RobotPreset]:
     """
     out: list[RobotPreset] = []
     for child in sorted(root.iterdir()):
-        if not child.is_dir():
+        if child.name.startswith(("_", ".")):
+            # Templates and hidden runtime folders stay invisible.
             continue
-        if child.name.startswith("_"):
-            # ``_template`` and any other private scaffolding stays invisible.
+        if child.is_symlink() or not child.is_dir():
             continue
 
-        _autoscaffold_missing_yaml(child)
+        if scaffold_missing:
+            _autoscaffold_missing_yaml(child)
 
         yaml_paths = _collect_yaml_paths(child)
         if not yaml_paths:

@@ -7,7 +7,7 @@ Combines **path hints** (parent folder names like ``SOMA/``, ``AMASS/``) with
 PyTorch checkpoint layout) so a standalone drop is routed to the correct adapter
 even when the parent directory name is missing.
 
-Registered mimic datasets (see :data:`hhtools.viewer.library._DIR_TO_ADAPTER`):
+Registered mimic datasets (see :data:`hhtools.services.motion_library._DIR_TO_ADAPTER`):
 
 * ``amass``, ``motion_x``, ``phuma`` — SMPL-family parameter files
 * ``soma``, ``lafan``, ``xsens_mocap`` — BVH dialects
@@ -23,7 +23,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from hhtools.viewer.library import _DIR_TO_ADAPTER, _normalise_dirname
+from hhtools.io.dataset_naming import (
+    DATASET_DIR_TO_ADAPTER as _DIR_TO_ADAPTER,
+)
+from hhtools.io.dataset_naming import (
+    normalize_dataset_dirname as _normalise_dirname,
+)
 
 _SOURCE_MANIFEST = "source.yaml"
 
@@ -68,7 +73,7 @@ def _is_parc_ms_npz(path: Path) -> bool:
     return parent.name == stem
 
 
-def _is_omomo_pkl(path: Path) -> bool:
+def is_omomo_pkl(path: Path) -> bool:
     parent = path.parent
     stem = path.stem
     if (parent / f"{stem}_cleaned_simplified.obj").is_file():
@@ -76,7 +81,7 @@ def _is_omomo_pkl(path: Path) -> bool:
     return any(parent.glob("*_cleaned_simplified.obj"))
 
 
-def _is_parc_ms_pkl(path: Path) -> bool:
+def is_parc_ms_pkl(path: Path) -> bool:
     parent = path.parent
     stem = path.stem
     if (parent / f"{stem}_terrain.obj").is_file():
@@ -84,7 +89,7 @@ def _is_parc_ms_pkl(path: Path) -> bool:
     return parent.name == stem
 
 
-def sniff_npz_dataset(path: Path) -> str:
+def sniff_npz_dataset(path: Path) -> str:  # noqa: PLR0911 - schema routing
     """Classify an ``.npz`` without loading a full :class:`~hhtools.core.motion.Motion`."""
     import numpy as np
 
@@ -143,14 +148,14 @@ def sniff_npy_dataset(path: Path) -> str:
 
 
 def sniff_pt_dataset(path: Path) -> str:
-    """Classify HMR4D-style ``.pt`` / ``.pth`` checkpoints."""
+    """Classify HMR4D-style ``.pt`` / ``.pth`` results without unsafe unpickling."""
     hint = path_dataset_hint(path)
     if hint in {"gvhmr", "kungfu_athlete"}:
         return hint
     try:
         import torch
 
-        data = torch.load(str(path), map_location="cpu", weights_only=False)
+        data = torch.load(str(path), map_location="cpu", weights_only=True)
         if isinstance(data, dict) and "smpl_params_global" in data:
             return hint or "gvhmr"
     except Exception:
@@ -160,15 +165,15 @@ def sniff_pt_dataset(path: Path) -> str:
 
 def sniff_pkl_dataset(path: Path) -> str:
     """Classify standalone ``.pkl`` when not already routed to intermimic/meshmimic."""
-    if _is_omomo_pkl(path):
+    if is_omomo_pkl(path):
         return "omomo"
-    if _is_parc_ms_pkl(path):
+    if is_parc_ms_pkl(path):
         return "parc_ms"
     hint = path_dataset_hint(path)
     return hint or "omomo"
 
 
-def infer_mimic_dataset(
+def infer_mimic_dataset(  # noqa: PLR0911 - format routing
     path: str | Path,
     *,
     bone_names: tuple[str, ...] | list[str] | None = None,

@@ -1,0 +1,104 @@
+{
+  "$defs": {
+    "AssetCategory": {
+      "description": "Workflow category used for backend selection.",
+      "enum": [
+        "plain_motion",
+        "object_interaction",
+        "terrain_scene",
+        "robot_trajectory",
+        "robot_model",
+        "calibration"
+      ],
+      "title": "AssetCategory",
+      "type": "string"
+    },
+    "AssetKind": {
+      "description": "Logical type of a registered asset.",
+      "enum": [
+        "motion_bundle",
+        "robot_trajectory_bundle",
+        "robot_bundle",
+        "calibration_bundle",
+        "dataset_bundle",
+        "video"
+      ],
+      "title": "AssetKind",
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Register a bundle from a path below a server-configured root.",
+  "properties": {
+    "category": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AssetCategory"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "display_name": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Display Name"
+    },
+    "kind": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AssetKind"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "recursive": {
+      "default": true,
+      "title": "Recursive",
+      "type": "boolean"
+    },
+    "relative_path": {
+      "maxLength": 1024,
+      "minLength": 1,
+      "title": "Relative Path",
+      "type": "string"
+    },
+    "root_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Root Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    }
+  },
+  "required": [
+    "root_id",
+    "relative_path"
+  ],
+  "title": "AssetRegistrationRequest",
+  "type": "object"
+}

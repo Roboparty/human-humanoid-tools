@@ -47,7 +47,7 @@ def _load_input_motion(path: Path):
     )
 
 
-def _load_motion_any(path: Path):
+def _load_motion_any(path: Path):  # noqa: PLR0911 - format routing is branch-heavy
     """Load :class:`~hhtools.core.motion.Motion` from NPZ/BVH/OMOMO ``.pkl`` / meshmimic ``.npy``.
 
     OmniContact capture directories (containing ``motion_actor.bvh``) are
@@ -72,9 +72,25 @@ def _load_motion_any(path: Path):
     if suf in (".npz", ".csv"):
         return load_motion(path)
     if suf == ".pkl":
-        from hhtools.io.datasets.omomo import OmomoAdapter
+        from hhtools.io.mimic_detect import is_omomo_pkl, is_parc_ms_pkl
 
-        return OmomoAdapter(root=path.parent).load_motion(path.name)
+        root = path.parent
+        sequence = path.name
+        if root.name == path.stem:
+            sequence = f"{root.name}/{path.name}"
+            root = root.parent
+        if is_omomo_pkl(path):
+            from hhtools.io.datasets.omomo import OmomoAdapter
+
+            return OmomoAdapter(root=root).load_motion(sequence)
+        if is_parc_ms_pkl(path):
+            from hhtools.io.datasets.parc_ms import ParcMsAdapter
+
+            return ParcMsAdapter(root=root).load_motion(sequence)
+        raise typer.BadParameter(
+            "interaction-mesh .pkl input must include an OMOMO object mesh "
+            "or a PARC terrain sidecar"
+        )
     if suf == ".npy":
         from hhtools.io.datasets.meshmimic_holosoma import MeshmimicHolosomaAdapter
 
@@ -161,14 +177,24 @@ def _expand_inputs(inputs: list[Path]) -> list[Path]:
 @app.command("run")
 def retarget(
     inputs: list[Path] = typer.Argument(..., help="NPZ files or directories to retarget."),
-    robot: str = typer.Option(..., "--robot", help="Registered robot name (e.g. unitree_g1__g1_29dof)."),
+    robot: str = typer.Option(
+        ...,
+        "--robot",
+        help="Registered robot name (e.g. unitree_g1__g1_29dof).",
+    ),
     output: Path = typer.Option(
         ..., "--output", "-o",
         help="Output directory or single .csv path (when a single input is given).",
     ),
-    ik_iterations: int = typer.Option(24, "--ik-iterations", help="Newton IK LM iterations per frame."),
+    ik_iterations: int = typer.Option(
+        24,
+        "--ik-iterations",
+        help="Newton IK LM iterations per frame.",
+    ),
     human_height: float = typer.Option(
-        1.7, "--human-height", help="Subject height in metres (drives the scaler's ratio correction).",
+        1.7,
+        "--human-height",
+        help="Subject height in metres (drives the scaler's ratio correction).",
     ),
     joint_limit_weight: float = typer.Option(
         10.0, "--joint-limit-weight",
@@ -218,19 +244,16 @@ def retarget(
     from hhtools.io.robot_csv import save_robot_csv
     from hhtools.retarget.calibration import (
         load_calibration,
-        resolve_calibration_file,
+        resolve_preset_calibration_file,
     )
+    from hhtools.retarget.newton_basic import NewtonBasicPipeline
+    from hhtools.robot.loader import load_robot
+    from hhtools.robot.registry import get as get_preset
     from hhtools.robot.retarget_profile import (
         build_feet_stabilizer_config,
         build_pipeline_config_for_preset,
         build_scaler_config_for_robot,
     )
-    from hhtools.retarget.newton_basic import (
-        NewtonBasicPipeline,
-        PipelineConfig,
-    )
-    from hhtools.robot.loader import load_robot
-    from hhtools.robot.registry import get as get_preset
 
     files = _expand_inputs(inputs)
     if not files:
@@ -244,19 +267,20 @@ def retarget(
         raise typer.BadParameter(str(err)) from err
     robot_model = load_robot(preset)
 
-    # Require a retarget calibration yaml next to the URDF (per reference
-    # format, or legacy single file when its embedded reference matches).
+    # Resolve either a writable per-user override or the calibration bundled
+    # with the robot preset.  Installed applications keep bundled assets
+    # immutable, so calibrations saved from the GUI normally live in the
+    # user's hhtools robot configuration directory.
     if preset.urdf_path is None:
         raise typer.BadParameter(
             f"robot preset {robot!r} has no URDF on disk; calibration "
             "cannot be resolved."
         )
-    preset_dir = preset.urdf_path.parent
-    cal_path = resolve_calibration_file(preset_dir, calibration_reference)
+    cal_path = resolve_preset_calibration_file(preset, calibration_reference)
     if cal_path is None:
         raise typer.BadParameter(
             f"no retarget calibration for robot {robot!r} with reference "
-            f"{calibration_reference!r} under {preset_dir}.\n"
+            f"{calibration_reference!r}.\n"
             "Expected e.g. "
             f"`retarget_calibration_{calibration_reference}.yaml`, or a "
             "legacy `retarget_calibration.yaml` whose `reference` field "
@@ -359,7 +383,7 @@ def retarget(
         else:
             out_path = output / f"{motion.name or src.stem}.csv"
 
-        from hhtools.web.export_bundle import bake_export_root_z
+        from hhtools.io.export_bundle import bake_export_root_z
 
         joint_q, lift = bake_export_root_z(robot_model, retargeted, source_motion=motion)
         meta_out = {
@@ -427,9 +451,7 @@ def interaction_mesh_precompute_laplacian(
         level=logging.DEBUG if verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    from pathlib import Path as _P
-
-    from hhtools.retarget.calibration import resolve_calibration_file
+    from hhtools.retarget.calibration import resolve_preset_calibration_file
     from hhtools.retarget.interaction_mesh.pipeline import InteractionMeshPipeline
     from hhtools.robot.loader import load_robot
     from hhtools.robot.registry import get as get_preset
@@ -445,7 +467,7 @@ def interaction_mesh_precompute_laplacian(
 
     motion = _load_motion_any(src)
     ref = _calibration_reference_for_motion(motion, calibration_reference)
-    cal_path = resolve_calibration_file(preset.urdf_path.parent, ref)
+    cal_path = resolve_preset_calibration_file(preset, ref)
     if cal_path is None:
         raise typer.BadParameter(f"no calibration for {robot!r} ref={ref!r}")
     if limit_frames is not None and motion.num_frames > limit_frames:
@@ -462,9 +484,11 @@ def interaction_mesh_precompute_laplacian(
         str(cal_path),
         human_height=human_height,
     )
-    targets, _robot_links, _z_min, _smpl_scale, _robot_points = pipe.precompute_laplacian_targets(motion)
+    targets, _robot_links, _z_min, _smpl_scale, _robot_points = (
+        pipe.precompute_laplacian_targets(motion)
+    )
     stacked = np.stack([t.target_laplacian for t in targets], axis=0)
-    output = _P(output)
+    output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
         output,
@@ -481,10 +505,18 @@ def interaction_mesh_precompute_laplacian(
 def interaction_mesh_run(
     inputs: list[Path] = typer.Argument(
         ...,
-        help="NPZ, OMOMO .pkl, meshmimic .npy, OmniContact capture dir, or dataset root.",
+        help=(
+            "NPZ, OMOMO .pkl, meshmimic .npy, OmniContact capture dir, "
+            "or dataset root."
+        ),
     ),
     robot: str = typer.Option(..., "--robot", help="Registered robot preset name."),
-    output: Path = typer.Option(..., "--output", "-o", help="Output directory or single .csv path."),
+    output: Path = typer.Option(
+        ...,
+        "--output",
+        "-o",
+        help="Output directory or single .csv path.",
+    ),
     human_height: float = typer.Option(1.7, "--human-height"),
     calibration_reference: str = typer.Option(
         "smpl",
@@ -503,7 +535,7 @@ def interaction_mesh_run(
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     from hhtools.io.robot_csv import save_robot_csv
-    from hhtools.retarget.calibration import resolve_calibration_file
+    from hhtools.retarget.calibration import resolve_preset_calibration_file
     from hhtools.retarget.interaction_mesh.pipeline import InteractionMeshPipeline
     from hhtools.robot.loader import load_robot
     from hhtools.robot.registry import get as get_preset
@@ -525,7 +557,7 @@ def interaction_mesh_run(
     for src in files:
         motion = _load_motion_any(src)
         ref = _calibration_reference_for_motion(motion, calibration_reference)
-        cal_path = resolve_calibration_file(preset.urdf_path.parent, ref)
+        cal_path = resolve_preset_calibration_file(preset, ref)
         if cal_path is None:
             raise typer.BadParameter(f"no calibration for {robot!r} ref={ref!r}")
         if limit_frames is not None and motion.num_frames > limit_frames:
@@ -540,7 +572,7 @@ def interaction_mesh_run(
         )
         ret = pipe.run(motion)
         out_path = output if output_is_file else output / f"{motion.name or src.stem}.csv"
-        from hhtools.web.export_bundle import bake_export_root_z
+        from hhtools.io.export_bundle import bake_export_root_z
 
         joint_q, lift = bake_export_root_z(robot_model, ret, source_motion=motion)
         meta_out = {

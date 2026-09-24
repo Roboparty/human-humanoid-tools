@@ -14,11 +14,14 @@ import pytest
 from hhtools.core.motion import Motion
 from hhtools.io.datasets.omomo import OmomoAdapter
 from hhtools.retarget.retarget_result import RetargetedMotion
-from hhtools.web.export_bundle import (
+from hhtools.web.output import r2r_export_bundle
+from hhtools.web.output.export_bundle import (
     OBJECT_CSV_HEADER,
     _resolve_export_scene_params,
     resolve_clip_export_dir,
+    sanitize_export_stem,
     write_retarget_export_bundle,
+    zip_directory,
 )
 
 
@@ -211,6 +214,148 @@ def test_flat_batch_exports_accumulate_in_shared_dir(tmp_path: Path) -> None:
         "walk2_subject1.csv",
         "walk4_subject1.csv",
     ]
+
+
+def test_export_stem_sanitization_preserves_unicode_and_removes_path_syntax() -> None:
+    assert sanitize_export_stem("舞蹈_01") == "舞蹈_01"
+    assert sanitize_export_stem("../outside") == "outside"
+    assert sanitize_export_stem(r"C:\outside\clip") == "clip"
+    assert len(sanitize_export_stem("舞" * 100).encode("utf-8")) <= 120
+
+
+@pytest.mark.parametrize("stem", ["../escaped", "/tmp/absolute", r"C:\outside\clip"])
+def test_flat_export_with_untrusted_stem_stays_inside_root(
+    tmp_path: Path,
+    stem: str,
+) -> None:
+    out_root = tmp_path / "exports"
+
+    class _DummyModel:
+        preset = type("P", (), {"name": "test_robot"})()
+
+        def dof_names(self):
+            return ("j1", "j2", "j3")
+
+    ret = RetargetedMotion(
+        name="clip",
+        joint_q=np.zeros((3, 10), dtype=np.float32),
+        sample_rate=30.0,
+        dof_names=("j1", "j2", "j3"),
+        meta={},
+    )
+    out = write_retarget_export_bundle(
+        ret,
+        _DummyModel(),
+        type("M", (), {"terrain": None, "objects": []})(),
+        out_root,
+        stem=stem,
+        fps=None,
+        fmt="csv",
+        backend="newton",
+        resample_fn=lambda r, fps: (r.joint_q, r.sample_rate),
+    )
+
+    out.resolve().relative_to(out_root.resolve())
+    assert out.name == f"{sanitize_export_stem(stem)}.csv"
+    assert out.is_file()
+    assert not (tmp_path / "escaped.csv").exists()
+
+
+def test_flat_export_rejects_output_symlink_escape(tmp_path: Path) -> None:
+    out_root = tmp_path / "exports"
+    out_root.mkdir()
+    outside = tmp_path / "outside.csv"
+    outside.write_text("do not replace", encoding="utf-8")
+    (out_root / "walk.csv").symlink_to(outside)
+
+    class _DummyModel:
+        preset = type("P", (), {"name": "test_robot"})()
+
+        def dof_names(self):
+            return ("j1", "j2", "j3")
+
+    ret = RetargetedMotion(
+        name="walk",
+        joint_q=np.zeros((3, 10), dtype=np.float32),
+        sample_rate=30.0,
+        dof_names=("j1", "j2", "j3"),
+        meta={},
+    )
+    with pytest.raises(ValueError, match="escapes output root"):
+        write_retarget_export_bundle(
+            ret,
+            _DummyModel(),
+            type("M", (), {"terrain": None, "objects": []})(),
+            out_root,
+            stem="walk",
+            fps=None,
+            fmt="csv",
+            backend="newton",
+            resample_fn=lambda r, fps: (r.joint_q, r.sample_rate),
+        )
+
+    assert outside.read_text(encoding="utf-8") == "do not replace"
+
+
+def test_zip_export_sanitizes_name_and_rejects_symlink_members(tmp_path: Path) -> None:
+    clip_dir = tmp_path / "clip"
+    clip_dir.mkdir()
+    (clip_dir / "walk.csv").write_text("trajectory", encoding="utf-8")
+
+    archive = zip_directory(clip_dir, "../outside")
+    assert archive == tmp_path / "outside.zip"
+    assert archive.is_file()
+    assert not (tmp_path.parent / "outside.zip").exists()
+
+    outside = tmp_path / "secret.txt"
+    outside.write_text("secret", encoding="utf-8")
+    (clip_dir / "linked.txt").symlink_to(outside)
+    with pytest.raises(ValueError, match="contains a symlink"):
+        zip_directory(clip_dir, "linked")
+
+
+def test_r2r_export_reuses_safe_stem_policy(tmp_path: Path, monkeypatch) -> None:
+    out_root = tmp_path / "exports"
+    source_path = tmp_path / "source.csv"
+    source_path.touch()
+
+    class _DummyModel:
+        preset = type("P", (), {"name": "test_robot"})()
+
+        def dof_names(self):
+            return ("j1", "j2", "j3")
+
+    ret = RetargetedMotion(
+        name="walk",
+        joint_q=np.zeros((3, 10), dtype=np.float32),
+        sample_rate=30.0,
+        dof_names=("j1", "j2", "j3"),
+        meta={},
+    )
+    motion = type("M", (), {"terrain": None, "objects": []})()
+    monkeypatch.setattr(
+        r2r_export_bundle,
+        "_bake_export_joint_q",
+        lambda _model, _ret, joint_q, *_args, **_kwargs: (joint_q, 0.0),
+    )
+
+    out = r2r_export_bundle.write_r2r_export_bundle(
+        ret,
+        _DummyModel(),
+        motion,
+        scene_scale_ratio=1.0,
+        entry={"source_path": str(source_path)},
+        out_root=out_root,
+        stem="../../机器人动作",
+        fps=None,
+        fmt="csv",
+        resample_fn=lambda r, fps: (r.joint_q, r.sample_rate),
+        yellow_foot_z=0.0,
+    )
+
+    assert out.name == "机器人动作.csv"
+    out.resolve().relative_to(out_root.resolve())
+    assert out.is_file()
 
 
 def test_resolve_clip_export_dir_matches_source_layout() -> None:

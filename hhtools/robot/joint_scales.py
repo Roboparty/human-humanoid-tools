@@ -35,12 +35,14 @@ _CALIBRATION_REF_ORDER: tuple[str, ...] = (
 _scale_context_cache: dict[tuple[object, ...], tuple[dict[str, float], dict[str, float]]] = {}
 
 
-def _newest_calibration_mtime(robot_dir: Path) -> float:
-    from hhtools.retarget.calibration.calibration import resolve_calibration_file
+def _newest_calibration_mtime(preset) -> float:
+    from hhtools.retarget.calibration.calibration import (
+        resolve_preset_calibration_file,
+    )
 
     newest = 0.0
     for ref in _CALIBRATION_REF_ORDER:
-        cal_path = resolve_calibration_file(robot_dir, ref)
+        cal_path = resolve_preset_calibration_file(preset, ref)
         if cal_path is not None and cal_path.is_file():
             try:
                 newest = max(newest, cal_path.stat().st_mtime)
@@ -65,8 +67,10 @@ def _scale_context_cache_key(preset) -> tuple[object, ...]:
             urdf_mtime = preset.urdf_path.stat().st_mtime
         except OSError:
             pass
-    cal_mtime = _newest_calibration_mtime(Path(preset.root_dir))
+    cal_mtime = _newest_calibration_mtime(preset)
+    agent_asset_id = preset.meta.get("_agent_asset_id")
     return (
+        agent_asset_id if isinstance(agent_asset_id, str) else None,
         preset.name,
         y_mtime,
         urdf_mtime,
@@ -228,7 +232,7 @@ def all_calibration_scales_for_preset(
     from hhtools.retarget.calibration.calibration import (
         derive_calibration_params,
         load_calibration,
-        resolve_calibration_file,
+        resolve_preset_calibration_file,
     )
 
     model = robot_model
@@ -242,7 +246,7 @@ def all_calibration_scales_for_preset(
 
     tables: list[dict[str, float]] = []
     for ref in _CALIBRATION_REF_ORDER:
-        cal_path = resolve_calibration_file(preset.root_dir, ref)
+        cal_path = resolve_preset_calibration_file(preset, ref)
         if cal_path is None or not cal_path.is_file():
             continue
         try:
@@ -361,7 +365,7 @@ def joint_scale_baselines_for_preset(
     from hhtools.retarget.calibration.calibration import (
         derive_calibration_params,
         load_calibration,
-        resolve_calibration_file,
+        resolve_preset_calibration_file,
     )
 
     model = robot_model
@@ -371,7 +375,7 @@ def joint_scale_baselines_for_preset(
         model = load_robot(preset, compile_mjcf=False)
 
     for ref in _CALIBRATION_REF_ORDER:
-        cal_path = resolve_calibration_file(preset.root_dir, ref)
+        cal_path = resolve_preset_calibration_file(preset, ref)
         if cal_path is None or not cal_path.is_file():
             continue
         try:

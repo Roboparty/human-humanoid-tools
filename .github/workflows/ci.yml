@@ -1,41 +1,206 @@
 name: CI
 
-on:
+"on":
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  lint-and-test:
-    name: Lint & test (CPU)
+  python:
+    name: Python 3.12 · minimum supported full suite
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    env:
+      UV_FROZEN: "1"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.9"
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked application dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Check Linux installer POSIX syntax
+        run: dash -n install.sh
+
+      - name: Reject critical Python errors
+        run: uv run --no-sync ruff check hhtools tests --select E9,F63,F7,F82
+
+      - name: Lint maintained application boundaries
+        run: >-
+          uv run --no-sync ruff check
+          hhtools/application hhtools/contracts hhtools/mcp hhtools/services
+          hhtools/web/server
+
+      - name: Check maintained Python formatting
+        run: >-
+          uv run --no-sync ruff format --check
+          hhtools/application hhtools/contracts hhtools/mcp hhtools/services
+          hhtools/web/server
+
+      - name: Run complete Python regression suite
+        run: uv run --no-sync python -m pytest -q
+
+      - name: Build wheel
+        run: uv build --wheel --clear --force-pep517
+
+      - name: Verify wheel contents
+        run: uv run --no-sync python scripts/verify_wheel_contents.py dist/*.whl
+
+  portable-contracts:
+    name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        python-version: ["3.12"]
+        include:
+          - name: Windows · Python 3.12 contracts
+            os: windows-latest
+            python: "3.12"
+          - name: Linux · Python 3.14 contracts
+            os: ubuntu-24.04
+            python: "3.14"
+    env:
+      UV_FROZEN: "1"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
+          version: "0.12.9"
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
-      - name: Install package (CPU-only)
+      - name: Sync portable dependencies
+        run: uv sync --extra dev
+
+      - name: Run portable architecture and contract tests
+        run: >-
+          uv run --no-sync python -m pytest -q
+          tests/test_python_package_boundaries.py
+          tests/test_agent_distribution.py
+          tests/agent/test_contracts.py
+
+      - name: Check lightweight CLI startup
+        run: uv run --no-sync hhtools --version
+
+  web-renderer:
+    name: React Web/Electron renderer
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: hhtools/web/frontend
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: hhtools/web/frontend/package-lock.json
+
+      - name: Install locked frontend dependencies
+        run: npm ci
+
+      - name: Type-check and run renderer tests
+        run: npm test
+
+      - name: Build shared renderer
+        run: npm run build
+
+      - name: Verify committed renderer assets are current
+        working-directory: .
+        shell: bash
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[formats,dev]"
+          git status --porcelain -- hhtools/web/static > "$RUNNER_TEMP/hhtools-static-status.txt"
+          cat "$RUNNER_TEMP/hhtools-static-status.txt"
+          test ! -s "$RUNNER_TEMP/hhtools-static-status.txt"
 
-      - name: Ruff (lint)
-        run: ruff check hhtools
+  desktop-shell:
+    name: Electron desktop shell
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      UV_FROZEN: "1"
+      HHTOOLS_E2E_SOFTWARE_RENDERING: "1"
+    defaults:
+      run:
+        working-directory: desktop
 
-      - name: Ruff (format)
-        run: ruff format --check hhtools
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv and Python for packaging and the sidecar
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.9"
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install locked desktop dependencies
+        run: npm ci
+
+      - name: Type-check desktop shell
+        run: npm run typecheck
+
+      - name: Run desktop tests
+        run: npm test
+
+      - name: Validate desktop packaging inputs
+        run: |
+          node --check scripts/prepare-builtin-assets.mjs
+          node --check scripts/prepare-runtime.mjs
+          npm run prepare:bootstrap
+          dash -n .bootstrap/install.sh
+
+      - name: Build Electron main and preload bundles
+        run: npm run build
+
+      - name: Install locked sidecar dependencies
+        working-directory: .
+        run: uv sync --extra web --no-dev
+
+      - name: Install display and Electron system dependencies
+        run: npx playwright install-deps chromium
+
+      - name: Run desktop end-to-end tests
+        run: xvfb-run --auto-servernum npm run test:e2e
+
+      - name: Upload desktop failure traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-e2e-results
+          path: desktop/test-results/
+          if-no-files-found: ignore

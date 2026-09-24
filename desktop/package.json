@@ -1,0 +1,193 @@
+{
+  "name": "hhtools-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Desktop GUI shell for human-humanoid-tools",
+  "desktopName": "hhtools",
+  "author": "hhtools contributors",
+  "homepage": "https://github.com/Roboparty/human-humanoid-tools",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Roboparty/human-humanoid-tools.git"
+  },
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "postinstall": "npm run prepare:electron",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "prepare:bootstrap": "node scripts/prepare-bootstrap.mjs",
+    "prepare:builtin": "node scripts/prepare-builtin-assets.mjs",
+    "prepare:electron": "node node_modules/electron/install.js",
+    "prepare:models": "node scripts/prepare-models.mjs",
+    "prepare:runtime": "node scripts/prepare-runtime.mjs",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts",
+    "test:e2e": "npm run build && playwright test --config playwright.config.ts",
+    "dist:win": "npm run prepare:electron && npm run build && npm run prepare:runtime && npm run prepare:builtin && electron-builder --win nsis",
+    "dist:linux": "npm run prepare:electron && npm run build && npm run prepare:builtin && npm run prepare:bootstrap && electron-builder --linux deb --x64",
+    "dist:mac": "node scripts/check-mac-host.mjs && npm run prepare:electron && npm run build && npm run prepare:builtin && npm run prepare:bootstrap && electron-builder --mac dmg zip --arm64"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@types/node": "24.10.1",
+    "electron": "43.4.1",
+    "electron-builder": "26.15.3",
+    "electron-vite": "5.0.0",
+    "typescript": "6.0.3",
+    "vite": "7.3.6",
+    "vitest": "4.1.11"
+  },
+  "build": {
+    "appId": "com.roboparty.hhtools.desktop.alpha",
+    "productName": "Human-Humanoid Tools",
+    "asar": true,
+    "electronDist": "node_modules/electron/dist",
+    "directories": {
+      "output": "release"
+    },
+    "compression": "maximum",
+    "artifactName": "hhtools-${version}-${arch}-setup.${ext}",
+    "files": [
+      "out/**/*",
+      "resources/icon.png",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".builtin",
+        "to": "builtin",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "icon": "resources/icon.ico",
+      "extraResources": [
+        {
+          "from": ".runtime",
+          "to": "runtime",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ],
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "artifactName": "hhtools-${version}-mac-${arch}.${ext}",
+      "category": "public.app-category.education",
+      "icon": "resources/icon.png",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "notarize": false,
+      "minimumSystemVersion": "12.0.0",
+      "signIgnore": [
+        "Contents/Resources/bootstrap/bin/uv$"
+      ],
+      "extraResources": [
+        {
+          "from": ".bootstrap",
+          "to": "bootstrap",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ],
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "dmg": {
+      "title": "Human-Humanoid Tools",
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "linux": {
+      "artifactName": "hhtools-${version}-${arch}.${ext}",
+      "category": "Science",
+      "executableName": "hhtools-desktop",
+      "extraResources": [
+        {
+          "from": ".bootstrap",
+          "to": "bootstrap",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ],
+      "icon": "resources/icon.png",
+      "syncDesktopName": true,
+      "target": [
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0",
+        "libgbm1",
+        "libasound2",
+        "ca-certificates",
+        "pkexec"
+      ],
+      "fpm": [
+        "--before-install=scripts/linux-before-install.sh"
+      ],
+      "maintainer": "hhtools contributors <53653538+Eleanor1018@users.noreply.github.com>",
+      "synopsis": "Desktop workflows for Human-Humanoid Tools"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "multiLanguageInstaller": true,
+      "installerLanguages": [
+        "en_US",
+        "zh_CN"
+      ],
+      "displayLanguageSelector": true,
+      "installerIcon": "resources/icon.ico",
+      "uninstallerIcon": "resources/icon.ico",
+      "installerHeaderIcon": "resources/icon.ico",
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0",
+  "asset_id": "asset:sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "kind": "motion_bundle",
+  "category": "terrain_scene",
+  "display_name": "PARC parkour",
+  "primary_file": "parc_ms/parkour_1/parkour_1.pkl",
+  "files": [
+    {
+      "role": "motion",
+      "relative_path": "parc_ms/parkour_1/parkour_1.pkl",
+      "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "size_bytes": 12288,
+      "media_type": "application/octet-stream",
+      "required": true
+    },
+    {
+      "role": "terrain_mesh",
+      "relative_path": "parc_ms/parkour_1/parkour_1_terrain.obj",
+      "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+      "size_bytes": 6144,
+      "media_type": "model/obj",
+      "required": true
+    }
+  ],
+  "source": {
+    "scheme": "managed_file",
+    "root_id": "motion-library",
+    "registered_at": "2026-08-31T12:00:00Z",
+    "logical_path": "parc_ms/parkour_1"
+  },
+  "detected": {
+    "dataset": "parc_ms",
+    "reference": "smpl",
+    "recommended_backend": "interaction_mesh"
+  },
+  "metadata": {}
+}

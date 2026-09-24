@@ -1,0 +1,24 @@
+[mcp_servers.hhtools]
+command = "uv"
+args = [
+    "run",
+    "--frozen",
+    "--no-sync",
+    "hhtools-mcp",
+    "--source",
+    "assets/motions",
+    "--save-dir",
+    ".hhtools/agent/save",
+    "--cache",
+    ".hhtools/agent/cache",
+    "--job-settings",
+    ".hhtools/agent/job-settings.json",
+    "--web-ui-url",
+    "http://127.0.0.1:8010",
+]
+cwd = "."
+enabled = true
+required = true
+startup_timeout_sec = 60
+tool_timeout_sec = 120
+default_tools_approval_mode = "writes"

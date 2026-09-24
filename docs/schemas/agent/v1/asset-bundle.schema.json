@@ -1,0 +1,314 @@
+{
+  "$defs": {
+    "AssetCategory": {
+      "description": "Workflow category used for backend selection.",
+      "enum": [
+        "plain_motion",
+        "object_interaction",
+        "terrain_scene",
+        "robot_trajectory",
+        "robot_model",
+        "calibration"
+      ],
+      "title": "AssetCategory",
+      "type": "string"
+    },
+    "AssetDetected": {
+      "additionalProperties": false,
+      "description": "Small set of routing hints discovered from a registered bundle.",
+      "properties": {
+        "dataset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dataset"
+        },
+        "recommended_backend": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recommended Backend"
+        },
+        "reference": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference"
+        },
+        "source_robot_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Robot Id"
+        },
+        "trajectory_profile": {
+          "anyOf": [
+            {
+              "enum": [
+                "mimic",
+                "intermimic",
+                "meshmimic"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trajectory Profile"
+        }
+      },
+      "title": "AssetDetected",
+      "type": "object"
+    },
+    "AssetFile": {
+      "additionalProperties": false,
+      "description": "One content-addressed file inside an :class:`AssetBundle`.",
+      "properties": {
+        "media_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "IANA media type when known.",
+          "title": "Media Type"
+        },
+        "relative_path": {
+          "description": "Portable path relative to the bundle.",
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Relative Path",
+          "type": "string"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "role": {
+          "$ref": "#/$defs/AssetFileRole"
+        },
+        "sha256": {
+          "description": "Lower-case SHA-256 content digest.",
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size_bytes": {
+          "minimum": 0,
+          "title": "Size Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "role",
+        "relative_path",
+        "sha256",
+        "size_bytes"
+      ],
+      "title": "AssetFile",
+      "type": "object"
+    },
+    "AssetFileRole": {
+      "description": "Semantic role of a file inside a bundle.",
+      "enum": [
+        "motion",
+        "robot_trajectory",
+        "robot_description",
+        "visual_mesh",
+        "collision_mesh",
+        "object_mesh",
+        "terrain_mesh",
+        "object_trajectory",
+        "calibration",
+        "metadata",
+        "video",
+        "other"
+      ],
+      "title": "AssetFileRole",
+      "type": "string"
+    },
+    "AssetKind": {
+      "description": "Logical type of a registered asset.",
+      "enum": [
+        "motion_bundle",
+        "robot_trajectory_bundle",
+        "robot_bundle",
+        "calibration_bundle",
+        "dataset_bundle",
+        "video"
+      ],
+      "title": "AssetKind",
+      "type": "string"
+    },
+    "AssetSource": {
+      "additionalProperties": false,
+      "description": "Location identity without exposing an arbitrary host absolute path.",
+      "properties": {
+        "logical_path": {
+          "anyOf": [
+            {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Logical Path"
+        },
+        "registered_at": {
+          "format": "date-time",
+          "title": "Registered At",
+          "type": "string"
+        },
+        "root_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Root Id",
+          "type": "string"
+        },
+        "scheme": {
+          "$ref": "#/$defs/AssetSourceScheme"
+        }
+      },
+      "required": [
+        "scheme",
+        "root_id",
+        "registered_at"
+      ],
+      "title": "AssetSource",
+      "type": "object"
+    },
+    "AssetSourceScheme": {
+      "description": "Controlled source schemes understood by the AssetRegistry.",
+      "enum": [
+        "managed_file",
+        "upload",
+        "shared_storage",
+        "artifact"
+      ],
+      "title": "AssetSourceScheme",
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Portable manifest for all files required by one logical input.",
+  "properties": {
+    "asset_id": {
+      "description": "Content-addressed asset id.",
+      "pattern": "^asset:sha256:[0-9a-f]{64}$",
+      "title": "Asset Id",
+      "type": "string"
+    },
+    "category": {
+      "$ref": "#/$defs/AssetCategory"
+    },
+    "detected": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AssetDetected"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "display_name": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Display Name",
+      "type": "string"
+    },
+    "files": {
+      "items": {
+        "$ref": "#/$defs/AssetFile"
+      },
+      "minItems": 1,
+      "title": "Files",
+      "type": "array"
+    },
+    "kind": {
+      "$ref": "#/$defs/AssetKind"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "primary_file": {
+      "maxLength": 1024,
+      "minLength": 1,
+      "title": "Primary File",
+      "type": "string"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    },
+    "source": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AssetSource"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "asset_id",
+    "kind",
+    "category",
+    "display_name",
+    "primary_file",
+    "files"
+  ],
+  "title": "AssetBundle",
+  "type": "object"
+}

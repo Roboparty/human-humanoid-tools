@@ -12,6 +12,10 @@ eggs/
 .eggs/
 lib/
 lib64/
+# `lib/` above is a Python build-directory rule. Keep the shadcn/Tailwind
+# source helpers under the frontend trackable on fresh clones.
+!hhtools/web/frontend/src/lib/
+!hhtools/web/frontend/src/lib/**
 parts/
 sdist/
 var/
@@ -38,11 +42,47 @@ htmlcov/
 .ruff_cache/
 coverage.xml
 *.cover
+coverage/
+**/.vitest/
 
 # Tooling
 .uv/
 .python-version
 # uv.lock is tracked — see README (reproducible installs for clone-and-run users).
+
+# Internal collaboration notes (local only)
+docs/electron-migration-plan.md
+docs/hhtools-function-map-and-validation.md
+docs/webui-p0-remediation.md
+docs/webui-p1-remediation.md
+docs/webui-ux-reform-plan.md
+docs/electron-gui-workspace-plan.md
+docs/web-electron-shared-ui-plan.md
+docs/remote-workspace-development-plan.md
+docs/agent-integration-plan.md
+docs/electron-remote-gpu-plan.md
+docs/fork-upstream-change-review.md
+docs/hhtools-architecture-plan.md
+docs/web-architecture-baseline.md
+
+# Electron desktop shell
+desktop/node_modules/
+desktop/out/
+desktop/release/
+desktop/.runtime/
+desktop/.runtime.staging-*/
+desktop/.models/
+desktop/.bootstrap/
+desktop/.bootstrap.staging-*/
+desktop/.builtin/
+desktop/.builtin.staging-*/
+desktop/.vite/
+desktop/test-results/
+desktop/playwright-report/
+
+# Frontend dependencies (compiled assets are packaged by Python).
+hhtools/web/frontend/node_modules/
+hhtools/web/frontend-old/
 
 # NVIDIA Warp / Newton kernel cache (auto-generated, machine-specific)
 .warp_cache/
@@ -152,6 +192,7 @@ configs/robots/*
 *.avi
 
 # Temp
+.tmp/
 tmp/
 scratch/
 *.log

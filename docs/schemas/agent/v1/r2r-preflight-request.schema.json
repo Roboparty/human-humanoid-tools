@@ -1,0 +1,127 @@
+{
+  "$defs": {
+    "OutputPolicy": {
+      "enum": [
+        "create_new",
+        "fail_if_exists",
+        "overwrite"
+      ],
+      "title": "OutputPolicy",
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Robot-to-robot intent resolved into a content-bound immutable plan.",
+  "properties": {
+    "backend": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Backend id, or null to use the supported R2R backend.",
+      "title": "Backend"
+    },
+    "calibration_id": {
+      "anyOf": [
+        {
+          "description": "Content-addressed calibration id.",
+          "pattern": "^cal:sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Calibration Id"
+    },
+    "output_format": {
+      "default": "csv",
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Output Format",
+      "type": "string"
+    },
+    "output_policy": {
+      "$ref": "#/$defs/OutputPolicy",
+      "default": "create_new"
+    },
+    "parameters": {
+      "additionalProperties": true,
+      "title": "Parameters",
+      "type": "object"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    },
+    "source_robot_asset_id": {
+      "anyOf": [
+        {
+          "description": "Content-addressed asset id.",
+          "pattern": "^asset:sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Registered source RobotBundle identity; required for a runnable plan.",
+      "title": "Source Robot Asset Id"
+    },
+    "source_robot_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Source Robot Id",
+      "type": "string"
+    },
+    "target_robot_asset_id": {
+      "anyOf": [
+        {
+          "description": "Content-addressed asset id.",
+          "pattern": "^asset:sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Registered target RobotBundle identity; required for a runnable plan.",
+      "title": "Target Robot Asset Id"
+    },
+    "target_robot_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Target Robot Id",
+      "type": "string"
+    },
+    "trajectory_asset_id": {
+      "description": "Content-addressed asset id.",
+      "pattern": "^asset:sha256:[0-9a-f]{64}$",
+      "title": "Trajectory Asset Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "trajectory_asset_id",
+    "source_robot_id",
+    "target_robot_id"
+  ],
+  "title": "R2RPreflightRequest",
+  "type": "object"
+}

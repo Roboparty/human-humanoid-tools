@@ -1,0 +1,114 @@
+{
+  "$defs": {
+    "RobotCapability": {
+      "additionalProperties": false,
+      "description": "Agent-facing robot availability and calibration summary.",
+      "properties": {
+        "available": {
+          "title": "Available",
+          "type": "boolean"
+        },
+        "calibrated_references": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Calibrated References",
+          "type": "array"
+        },
+        "display_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Display Name",
+          "type": "string"
+        },
+        "dof_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dof Count"
+        },
+        "has_ik_mapping": {
+          "title": "Has Ik Mapping",
+          "type": "boolean"
+        },
+        "has_urdf": {
+          "title": "Has Urdf",
+          "type": "boolean"
+        },
+        "robot_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Robot Id",
+          "type": "string"
+        },
+        "scaler_references": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Scaler References",
+          "type": "array"
+        },
+        "supported_references": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Supported References",
+          "type": "array"
+        },
+        "unavailable_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unavailable Reason"
+        }
+      },
+      "required": [
+        "robot_id",
+        "display_name",
+        "available",
+        "has_urdf",
+        "has_ik_mapping"
+      ],
+      "title": "RobotCapability",
+      "type": "object"
+    },
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Stable envelope for MCP robot discovery without repeating all capabilities.",
+  "properties": {
+    "robots": {
+      "items": {
+        "$ref": "#/$defs/RobotCapability"
+      },
+      "title": "Robots",
+      "type": "array"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    }
+  },
+  "title": "RobotListResponse",
+  "type": "object"
+}

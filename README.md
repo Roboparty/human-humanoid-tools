@@ -28,27 +28,205 @@ We welcome suggestions and ideas — please open an issue or discussion anytime.
 - **Robot→robot (R2R)** — retarget existing robot CSV/PKL exports onto a new URDF, including [MotionDecode](https://huggingface.co/datasets/CMRobot/MotionDecode) G1 CSVs.
 - **Dataset analysis** — scan, tag, embed, cluster, and subset human or robot motion libraries in the Web UI.
 
-**Requirements:** Linux, Python 3.12+. Preview on CPU; retarget needs **NVIDIA GPU (CUDA 12)**.
+**Requirements:** Python 3.12+. Linux/Windows support **NVIDIA GPU (CUDA 12)** acceleration;
+the Apple Silicon macOS desktop package uses CPU retargeting. See the desktop section for packaging requirements.
+Video-to-motion additionally needs a separate CUDA-capable GVHMR installation.
 
 ---
 
-## Quick start
+## Install and run
+
+hhtools has three interactive modes plus an Agent automation interface. They share the same motion,
+robot, and retargeting core, but their installation and launch paths are intentionally separate:
+
+| Mode | Best for | Launch |
+|------|----------|--------|
+| **Terminal (CLI/TUI workflow)** | Batch jobs, servers, SSH, and automation | `uv run hhtools ...` |
+| **WebUI** | Browser-based visualization and interactive workflows | `uv run hhtools web` |
+| **Desktop GUI** | Windows standalone app or Linux / macOS first-run setup | Application menu, Mac Applications, or `hhtools-desktop` |
+| **Agent (JSON CLI / MCP)** | Versioned H2R, scene-free R2R, and scalable Batch automation | [`hhtools agent` / `hhtools-mcp`](docs/agent.md) |
+
+### Recommended: source checkout with uv
+
+Install [`uv`](https://docs.astral.sh/uv/getting-started/installation/), then clone the repository.
+HHTools supports Python 3.12 or newer; uv selects a compatible interpreter and can install one when
+needed:
 
 ```bash
 git clone https://github.com/Roboparty/human-humanoid-tools.git
 cd human-humanoid-tools
-curl -LsSf https://astral.sh/uv/install.sh | sh   # if needed
-uv sync --extra all
+# Only needed when no compatible Python is installed:
+uv python install 3.12
+```
+
+For the complete HHTools environment—formats, robots, retargeting, WebUI, and Agent/MCP—use the
+project-maintained `all` extra:
+
+```bash
+uv sync --locked --extra all
+uv run hhtools --help
 uv run hhtools web
 ```
 
-Open `http://127.0.0.1:8009`.
+Open `http://127.0.0.1:8009`. GVHMR and separately licensed SMPL-family model weights remain
+external; the `all` extra installs their Python integration libraries, not those model files.
+
+For a smaller environment, install only the workflow you need. The core terminal commands require
+no extra:
+
+```bash
+uv sync --locked
+uv run hhtools --help
+```
+
+For WebUI preview and Newton retargeting:
+
+```bash
+uv sync --locked --extra web --extra retarget
+uv run hhtools web
+```
+
+For a preview-only WebUI, omit `--extra retarget`. If a required package is absent, startup exits
+with the missing package names and the exact recovery command instead of an import traceback.
+
+### Agent and MCP
+
+HHTools provides a strict JSON CLI for scripts and a local stdio MCP server for compatible agents.
+The current Agent interface covers safe, preflighted H2R, scene-free R2R, scalable H2R/R2R
+Batch jobs, and content-bound calibration assistance with GPT-visible front/side previews and
+validated silent save. It does not yet expose the full WebUI feature set. See
+[Agent interfaces](docs/agent.md) for installation, scope, the smoke-first workflow, runtime
+ownership, and the included Codex project configuration.
+
+### Desktop GUI
+
+Download the **0.1.0 preview** desktop package for your platform:
+
+| Platform | Download | Architecture |
+|----------|----------|--------------|
+| Windows | [EXE installer](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/v0.1.0%28beta%29/hhtools-0.1.0-x64-setup.exe) | x64 |
+| Linux | [Debian package](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/v0.1.0%28beta%29/hhtools-0.1.0-amd64.deb) | amd64 |
+| macOS 12+ | [DMG installer](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/v0.1.0%28beta%29/hhtools-0.1.0-mac-arm64.dmg) | Apple Silicon (arm64) |
+
+The Debian package contains Electron plus the curated built-in motions and robots. On first launch,
+its setup page uses the HHTools wheel, locked dependency list, uv configuration, and uv executable
+carried inside that same package. The recommended per-user option needs no administrator password,
+while the all-users option opens the operating system authentication dialog:
+
+```bash
+sudo apt install ./hhtools-0.1.0-amd64.deb
+hhtools-desktop
+```
+
+The Windows installer instead bundles its Python runtime and application source, so it starts
+without a checkout or system Python.
+
+**macOS installation:**
+
+1. Download and open the DMG above, then drag **Human-Humanoid Tools** into **Applications**.
+2. Launch the app from Applications. This preview is ad-hoc signed and has not been notarized by
+   Apple; if macOS blocks it, approve this app under **System Settings → Privacy & Security → Open Anyway**.
+3. Follow the first-run setup and keep an internet connection while it downloads an isolated
+   Python 3.12 environment. No existing Python, source checkout, or Homebrew installation is needed;
+   the runtime is installed for the current user without an administrator password.
+
+The macOS package includes the same 30 built-in motions and six robots as the other desktop packages.
+Warp retargeting runs on CPU; Intel Macs and the local NVIDIA GVHMR pipeline are unsupported.
+
+GVHMR and separately licensed SMPL-family weights remain optional on all platforms. Build details are in
+[`desktop/README.md`](desktop/README.md#desktop-packages).
+
+### Frontend development
+
+The WebUI and Electron GUI use one React + TypeScript renderer from
+`hhtools/web/frontend`; Electron loads the same page through its local FastAPI sidecar, so there is
+no second GUI renderer. Video-to-motion is the first complete workflow in the new shell. Tailwind
+CSS is wired into the build, and shadcn/ui primitives are copied into the project only when a real
+view needs them. The Stage controls exist, while the new renderer is still being connected.
+
+```bash
+cd hhtools/web/frontend
+npm install
+npm run typecheck
+npm test
+npm run build
+```
+
+The production build is written to `hhtools/web/static`, which is served unchanged by both
+FastAPI and Electron.
+
+Web jobs are unlimited by default. To enable FIFO admission control on a shared or
+memory-constrained GPU, set positive concurrency and an optional queue capacity:
+
+```bash
+uv run hhtools web --max-running-jobs 1 --max-queued-jobs 32
+```
+
+`0` means unlimited for both options; the queue setting only applies when running concurrency is
+limited. Agent batches likewise have no configured item or total-frame cap by default. Positive
+`--max-batch-items` and `--max-batch-total-frames` values opt into deployment-specific safeguards;
+`0` restores unlimited mode. The same settings are available as `HHTOOLS_MAX_RUNNING_JOBS`,
+`HHTOOLS_MAX_QUEUED_JOBS`, `HHTOOLS_MAX_BATCH_ITEMS`, and
+`HHTOOLS_MAX_BATCH_TOTAL_FRAMES` (including in the Electron sidecar and MCP server).
+They can also be edited under **Settings → Background-job scheduling** from local Web/Electron
+or an SSH loopback tunnel; ordinary remote-browser sessions are shown read-only until authenticated
+remote administration is implemented. Saving hot-applies the limits without restarting Python or Electron: lower running limits grandfather active jobs,
+while higher limits immediately promote FIFO waiters. The backend persists the values in the
+platform user-config directory; `HHTOOLS_WEB_SETTINGS_PATH` selects another file. Explicit CLI
+or environment values remain startup overrides and will win again on the next launch.
+The concurrency cap applies to scheduled Web jobs, not the optional Warp/Newton robot prewarm
+thread, so it is admission control rather than a process-wide GPU concurrency guarantee.
 
 | Panel | Flow |
 |-------|------|
+| **Video → Motion** | Upload one video → run official GVHMR → register the result in Motion Library |
 | **Motion → Robot** | Load clip → select robot → calibrate (once) → retarget → download CSV/ZIP |
 | **Robot → Robot** | Source robot + trajectory → target URDF → calibrate → retarget / batch ZIP |
 | **Dataset analysis** | Drop a folder → analyze → explore tags & scatter → export subset |
+
+### GVHMR video-to-motion
+
+Install [GVHMR](https://github.com/zju3dv/GVHMR) separately using its upstream instructions. hhtools
+does not bundle its source, official checkpoints, Python environment, or licensed body models in
+the default DEB/EXE. An explicitly authorized local build can stage `SMPLX_NEUTRAL.npz`; source and
+WebUI installs continue to use a local model directory.
+The **Video → Motion** view runs inference with the official released weights and publishes the
+generated `hmr4d_results.pt` to the Motion Library. Preprocessing caches stay outside the Library,
+and uploaded video is normalized to the 30 FPS timeline expected by GVHMR. Custom checkpoints and
+training are not exposed.
+
+On Linux, use **Set up** in the desktop Video → Motion view to select the official checkout, that
+installation's Python executable, and (when stored separately) the directory containing `smplx/`.
+The paths are saved in desktop user data and passed only to the isolated GVHMR subprocess. The same
+configuration can be supplied when launching from a terminal:
+
+```bash
+export HHTOOLS_GVHMR_ROOT=/path/to/GVHMR
+export HHTOOLS_GVHMR_PYTHON=/path/to/gvhmr/environment/bin/python
+export HHTOOLS_GVHMR_BODY_MODELS=/path/to/body_models
+uv run hhtools web
+```
+
+The checkout must keep the upstream `inputs/checkpoints` layout, including the licensed
+`inputs/checkpoints/body_models/smplx/SMPLX_NEUTRAL.npz`. The selected environment must provide the
+GVHMR dependencies and CUDA, and `ffmpeg` must be on `PATH`. `~/GVHMR`, repository `.venv`/`venv`,
+and common Conda environments named `gvhmr` are auto-discovered; explicit paths are more reliable.
+`HHTOOLS_GVHMR_TIMEOUT_SECONDS` optionally changes the two-hour inference timeout.
+
+On Windows, GVHMR remains an optional Docker-backed component. Set `HHTOOLS_GVHMR_ROOT` to the
+official checkout and `HHTOOLS_GVHMR_IMAGE` to the prepared image;
+`HHTOOLS_GVHMR_BODY_MODELS` can mount separately stored licensed assets. hhtools does not install or
+download any of these resources.
+
+An existing GVHMR result can still be dragged into **Motion** for import. Conversion requires a
+locally licensed SMPL-family model; if it is outside hhtools' search paths, set
+`HHTOOLS_BODY_MODELS` to that directory.
+
+For a terminal-only workflow, convert a GVHMR output directory to hhtools' unified Motion format:
+
+```bash
+hhtools import run --dataset gvhmr --root /path/to/gvhmr/output --out /path/to/motions
+```
 
 Robot tuning: edit [`configs/robots/unitree_g1/`](configs/robots/unitree_g1/) or uploaded `~/.config/hhtools/robots/<name>/robot.yaml`; run `hhtools robot validate <name>`. Details in [framework.md](framework.md).
 
@@ -58,6 +236,7 @@ Entry point: `uv run hhtools` (same package as the Web UI). Use this for large d
 
 | Command | Purpose |
 |---------|---------|
+| `hhtools doctor` | Check local Web, robot, retarget, MCP, body-model, and GVHMR readiness |
 | `hhtools convert run` | BVH / GLB → unified NPZ |
 | `hhtools import list` / `import run` | List adapters; import a dataset root → NPZ |
 | `hhtools bodymodel check` / `setup` | SMPL-family weight paths / download hints |
@@ -66,7 +245,6 @@ Entry point: `uv run hhtools` (same package as the Web UI). Use this for large d
 | `hhtools retarget interaction-mesh run` | Interaction-mesh (terrain / objects) → CSV |
 | `hhtools retarget interaction-mesh precompute-laplacian` | Precompute Laplacian targets (`.npz`) |
 | `hhtools web` | HTML / three.js UI (default `127.0.0.1:8009`) |
-| `hhtools ui` | Legacy Viser viewer |
 
 **Convert & import**
 
@@ -88,13 +266,24 @@ uv run hhtools import run --dataset omnicontact \
 **Robots**
 
 ```bash
+# Install all six curated robots into ~/.config/hhtools/robots.
+uv run python scripts/install_builtin_robots.py
+# Install one preset only (repeat --only to select several).
+uv run python scripts/install_builtin_robots.py --only g1_29dof
+
 uv run hhtools robot list
-uv run hhtools robot info unitree_g1__g1_29dof --no-mjcf
-uv run hhtools robot schema unitree_g1__g1_29dof -o /tmp/g1_header.csv
-uv run hhtools robot validate unitree_g1__g1_29dof
+uv run hhtools robot info g1_29dof --no-mjcf
+uv run hhtools robot schema g1_29dof -o /tmp/g1_header.csv
+uv run hhtools robot validate g1_29dof
 uv run hhtools robot scaffold unitree_g1          # skip existing yaml
 # uv run hhtools robot add /path/to/urdf_or_dir  # ingest into configs/robots/
 ```
+
+The installer downloads pinned official archives (about 772 MiB total) and
+keeps about 237 MiB of referenced files. Each preset retains its upstream
+license and a checksummed `SOURCE.json`. `--replace` atomically replaces local
+changes in the selected preset. Desktop bundles can point
+`HHTOOLS_BUNDLED_ROBOT_DIR` at an audited Robot Library.
 
 **Retarget (smoke with `--limit-frames`)**
 
@@ -245,4 +434,5 @@ When publishing results built on bundled adapters, also cite the **upstream data
 
 - **Code:** [Apache-2.0](LICENSE) · third-party: [NOTICE](NOTICE)
 - **SMPL / SMPL-H / SMPL-X weights:** not included; register at MPI and place under `configs/body_models/` — see [configs/body_models/README.md](configs/body_models/README.md)
+- Motion Library parameter clips still load as an animated skeleton when those weights are absent; the exact body mesh and joint regression require the locally licensed files.
 - **More docs:** [framework.md](framework.md) · [CONTRIBUTING.md](CONTRIBUTING.md)

@@ -1,0 +1,85 @@
+{
+  "$defs": {
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Create or revise one immutable target-pose candidate for a robot pair.",
+  "properties": {
+    "base_candidate_id": {
+      "anyOf": [
+        {
+          "description": "Content-addressed immutable calibration candidate id.",
+          "pattern": "^cal-candidate:sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Base Candidate Id"
+    },
+    "joint_q_overrides": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Joint Q Overrides",
+      "type": "object"
+    },
+    "locked_joints": {
+      "items": {
+        "maxLength": 256,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 512,
+      "title": "Locked Joints",
+      "type": "array"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    },
+    "source_robot_asset_id": {
+      "description": "Content-addressed asset id.",
+      "pattern": "^asset:sha256:[0-9a-f]{64}$",
+      "title": "Source Robot Asset Id",
+      "type": "string"
+    },
+    "source_robot_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "title": "Source Robot Id",
+      "type": "string"
+    },
+    "target_robot_asset_id": {
+      "description": "Content-addressed asset id.",
+      "pattern": "^asset:sha256:[0-9a-f]{64}$",
+      "title": "Target Robot Asset Id",
+      "type": "string"
+    },
+    "target_robot_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "title": "Target Robot Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source_robot_id",
+    "source_robot_asset_id",
+    "target_robot_id",
+    "target_robot_asset_id"
+  ],
+  "title": "R2RCalibrationProposalRequest",
+  "type": "object"
+}

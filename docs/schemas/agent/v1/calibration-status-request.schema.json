@@ -1,0 +1,70 @@
+{
+  "$defs": {
+    "CalibrationReference": {
+      "enum": [
+        "smplx",
+        "smpl",
+        "gvhmr",
+        "soma_bvh",
+        "lafan_bvh",
+        "mocap_bvh",
+        "xsens_mocap",
+        "glb"
+      ],
+      "title": "CalibrationReference",
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "motion_asset_id": {
+      "anyOf": [
+        {
+          "description": "Content-addressed asset id.",
+          "pattern": "^asset:sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Motion Asset Id"
+    },
+    "reference": {
+      "$ref": "#/$defs/CalibrationReference"
+    },
+    "robot_asset_id": {
+      "description": "Content-addressed asset id.",
+      "pattern": "^asset:sha256:[0-9a-f]{64}$",
+      "title": "Robot Asset Id",
+      "type": "string"
+    },
+    "robot_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "title": "Robot Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    }
+  },
+  "required": [
+    "robot_id",
+    "robot_asset_id",
+    "reference"
+  ],
+  "title": "CalibrationStatusRequest",
+  "type": "object"
+}

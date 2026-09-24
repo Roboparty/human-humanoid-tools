@@ -13,25 +13,18 @@ from hhtools.core.grounding import (
     retarget_source_floor_z_world,
 )
 from hhtools.retarget.robot_to_robot import source_trajectory_to_motion
-from hhtools.robot.loader import load_robot
-from hhtools.robot.registry import get, refresh
 
 
 @pytest.fixture(scope="module")
-def standing_g1():
-    """g1 plus a zero-DOF trajectory whose soles rest exactly on ``z=0``."""
-    refresh()
-    try:
-        model = load_robot(get("g1"), compile_mjcf=False)
-    except KeyError:
-        pytest.skip("g1 robot not registered in this environment")
+def standing_g1(grounding_robot_pair):
+    """Self-contained robot whose soles rest exactly on ``z=0``."""
+    model = grounding_robot_pair[0]
 
     from hhtools.robot.standing_height import _trimesh_scene_z_bounds
 
     model.apply_configuration(model.zero_configuration())
     bounds = _trimesh_scene_z_bounds(model.trimesh_scene(collision=False))
-    if bounds is None:
-        pytest.skip("g1 has no visual meshes to measure a sole plane from")
+    assert bounds is not None
 
     dof_names = tuple(model.dof_names())
     joint_q = np.zeros((4, 7 + len(dof_names)), dtype=np.float32)

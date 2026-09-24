@@ -1,0 +1,54 @@
+{
+  "$defs": {
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Identify one exact source/target robot pair calibration.",
+  "properties": {
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    },
+    "source_robot_asset_id": {
+      "description": "Content-addressed asset id.",
+      "pattern": "^asset:sha256:[0-9a-f]{64}$",
+      "title": "Source Robot Asset Id",
+      "type": "string"
+    },
+    "source_robot_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "title": "Source Robot Id",
+      "type": "string"
+    },
+    "target_robot_asset_id": {
+      "description": "Content-addressed asset id.",
+      "pattern": "^asset:sha256:[0-9a-f]{64}$",
+      "title": "Target Robot Asset Id",
+      "type": "string"
+    },
+    "target_robot_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "title": "Target Robot Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source_robot_id",
+    "source_robot_asset_id",
+    "target_robot_id",
+    "target_robot_asset_id"
+  ],
+  "title": "R2RCalibrationStatusRequest",
+  "type": "object"
+}

@@ -1,0 +1,418 @@
+{
+  "$defs": {
+    "AssetCategory": {
+      "description": "Workflow category used for backend selection.",
+      "enum": [
+        "plain_motion",
+        "object_interaction",
+        "terrain_scene",
+        "robot_trajectory",
+        "robot_model",
+        "calibration"
+      ],
+      "title": "AssetCategory",
+      "type": "string"
+    },
+    "BackendCapability": {
+      "additionalProperties": false,
+      "description": "A retargeting backend and the inputs/outputs it can handle.",
+      "properties": {
+        "available": {
+          "title": "Available",
+          "type": "boolean"
+        },
+        "backend_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_-]*$",
+          "title": "Backend Id",
+          "type": "string"
+        },
+        "display_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Display Name",
+          "type": "string"
+        },
+        "features": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "title": "Features",
+          "type": "object"
+        },
+        "limits": {
+          "additionalProperties": true,
+          "title": "Limits",
+          "type": "object"
+        },
+        "output_formats": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Output Formats",
+          "type": "array"
+        },
+        "supported_categories": {
+          "items": {
+            "$ref": "#/$defs/AssetCategory"
+          },
+          "title": "Supported Categories",
+          "type": "array"
+        },
+        "unavailable_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unavailable Reason"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "backend_id",
+        "display_name",
+        "available"
+      ],
+      "title": "BackendCapability",
+      "type": "object"
+    },
+    "DeviceCapability": {
+      "additionalProperties": false,
+      "description": "One execution device visible to the HHTools service.",
+      "properties": {
+        "available": {
+          "title": "Available",
+          "type": "boolean"
+        },
+        "compute_capability": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Compute Capability"
+        },
+        "device_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Device Id",
+          "type": "string"
+        },
+        "display_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Display Name",
+          "type": "string"
+        },
+        "free_memory_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Free Memory Bytes"
+        },
+        "kind": {
+          "$ref": "#/$defs/DeviceKind"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        },
+        "total_memory_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Memory Bytes"
+        }
+      },
+      "required": [
+        "device_id",
+        "kind",
+        "display_name",
+        "available"
+      ],
+      "title": "DeviceCapability",
+      "type": "object"
+    },
+    "DeviceKind": {
+      "enum": [
+        "cpu",
+        "cuda",
+        "mps"
+      ],
+      "title": "DeviceKind",
+      "type": "string"
+    },
+    "RobotCapability": {
+      "additionalProperties": false,
+      "description": "Agent-facing robot availability and calibration summary.",
+      "properties": {
+        "available": {
+          "title": "Available",
+          "type": "boolean"
+        },
+        "calibrated_references": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Calibrated References",
+          "type": "array"
+        },
+        "display_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Display Name",
+          "type": "string"
+        },
+        "dof_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dof Count"
+        },
+        "has_ik_mapping": {
+          "title": "Has Ik Mapping",
+          "type": "boolean"
+        },
+        "has_urdf": {
+          "title": "Has Urdf",
+          "type": "boolean"
+        },
+        "robot_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Robot Id",
+          "type": "string"
+        },
+        "scaler_references": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Scaler References",
+          "type": "array"
+        },
+        "supported_references": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Supported References",
+          "type": "array"
+        },
+        "unavailable_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unavailable Reason"
+        }
+      },
+      "required": [
+        "robot_id",
+        "display_name",
+        "available",
+        "has_urdf",
+        "has_ik_mapping"
+      ],
+      "title": "RobotCapability",
+      "type": "object"
+    },
+    "SchedulerCapability": {
+      "additionalProperties": false,
+      "description": "Current admission policy and occupancy.\n\n``max_running_jobs == 0`` disables admission control entirely in the Web\nscheduler.  In that state ``max_queued_jobs`` is retained as configured\nmetadata but is not enforced, so the effective mode remains ``unlimited``.",
+      "properties": {
+        "closed": {
+          "default": false,
+          "title": "Closed",
+          "type": "boolean"
+        },
+        "max_queued_jobs": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Max Queued Jobs",
+          "type": "integer"
+        },
+        "max_running_jobs": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Max Running Jobs",
+          "type": "integer"
+        },
+        "mode": {
+          "$ref": "#/$defs/SchedulerMode"
+        },
+        "queued": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Queued",
+          "type": "integer"
+        },
+        "reserved": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Reserved",
+          "type": "integer"
+        },
+        "running": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Running",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "SchedulerCapability",
+      "type": "object"
+    },
+    "SchedulerMode": {
+      "description": "How the running and queued admission limits are configured.",
+      "enum": [
+        "unlimited",
+        "limited",
+        "mixed"
+      ],
+      "title": "SchedulerMode",
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Compact discovery response used before an agent builds a plan.",
+  "properties": {
+    "agent_api_version": {
+      "default": "v1",
+      "title": "Agent Api Version",
+      "type": "string"
+    },
+    "asset_root_ids": {
+      "items": {
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+        "type": "string"
+      },
+      "title": "Asset Root Ids",
+      "type": "array"
+    },
+    "backends": {
+      "items": {
+        "$ref": "#/$defs/BackendCapability"
+      },
+      "title": "Backends",
+      "type": "array"
+    },
+    "devices": {
+      "items": {
+        "$ref": "#/$defs/DeviceCapability"
+      },
+      "title": "Devices",
+      "type": "array"
+    },
+    "features": {
+      "additionalProperties": {
+        "type": "boolean"
+      },
+      "title": "Features",
+      "type": "object"
+    },
+    "robots": {
+      "items": {
+        "$ref": "#/$defs/RobotCapability"
+      },
+      "title": "Robots",
+      "type": "array"
+    },
+    "scheduler": {
+      "$ref": "#/$defs/SchedulerCapability"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    },
+    "service_name": {
+      "default": "hhtools",
+      "title": "Service Name",
+      "type": "string"
+    },
+    "service_version": {
+      "minLength": 1,
+      "title": "Service Version",
+      "type": "string"
+    },
+    "supported_input_formats": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Supported Input Formats",
+      "type": "array"
+    },
+    "supported_output_formats": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Supported Output Formats",
+      "type": "array"
+    }
+  },
+  "required": [
+    "service_version",
+    "scheduler"
+  ],
+  "title": "CapabilityResponse",
+  "type": "object"
+}

@@ -258,13 +258,13 @@ class BakedMesh:
       keeps that fidelity at ~0% runtime cost.
     * The memory footprint is modest for typical clips: SMPL (V=6890) at 300 frames
       ≈ 25 MB float32; SMPL-X (V=10475) at 300 frames ≈ 38 MB — well within what
-      a browser-hosted Viser session handles for a single mesh update per frame.
+      the browser renderer handles in a single mesh update per frame.
 
     Attributes:
         vertices: ``(T, V, 3)`` float32 deformed positions, one per frame.
         triangles: ``(F, 3)`` int32 face topology (shared across all frames).
         normals: Optional ``(T, V, 3)`` float32 per-frame vertex normals.  When
-            absent the renderer relies on Viser's smooth-shading defaults.
+            absent the renderer computes smooth-shading defaults.
     """
 
     vertices: NDArray

@@ -1,0 +1,426 @@
+{
+  "schema_version": 1,
+  "baseline": {
+    "commit": "2c4de3980425ac10ff172a5724438fe1a8a076eb",
+    "description": "Pre-refactor repository state audited on 2026-09-08"
+  },
+  "policy": {
+    "include_only_declared": true,
+    "motions_root": "assets/motions",
+    "robot_install_root": "user Robot Library during development; release staging chooses its own root",
+    "exclude": [
+      "**/.hhtools_analysis/**",
+      "user Motion Library",
+      "generated job artifacts",
+      "downloaded robot trajectories",
+      "body model weights"
+    ],
+    "redistribution_note": "Presence in the source repository is not a substitute for release-time license review."
+  },
+  "motions": [
+    {
+      "id": "amass:mimic/AMASS/B10_-_walk_turn_left_(45)_stageii",
+      "dataset": "amass",
+      "profile": "mimic",
+      "display_name": "B10_-_walk_turn_left_(45)_stageii",
+      "primary": "assets/motions/mimic/AMASS/B10_-_walk_turn_left_(45)_stageii.npz",
+      "files": [
+        "assets/motions/mimic/AMASS/B10_-_walk_turn_left_(45)_stageii.npz"
+      ]
+    },
+    {
+      "id": "glb:mimic/GLB/cranberry",
+      "dataset": "glb",
+      "profile": "mimic",
+      "display_name": "cranberry",
+      "primary": "assets/motions/mimic/GLB/cranberry.glb",
+      "files": [
+        "assets/motions/mimic/GLB/cranberry.glb"
+      ]
+    },
+    {
+      "id": "lafan:mimic/LAFAN/dance1_subject2",
+      "dataset": "lafan",
+      "profile": "mimic",
+      "display_name": "dance1_subject2",
+      "primary": "assets/motions/mimic/LAFAN/dance1_subject2.bvh",
+      "files": [
+        "assets/motions/mimic/LAFAN/dance1_subject2.bvh"
+      ]
+    },
+    {
+      "id": "lafan:mimic/LAFAN/fallAndGetUp1_subject1",
+      "dataset": "lafan",
+      "profile": "mimic",
+      "display_name": "fallAndGetUp1_subject1",
+      "primary": "assets/motions/mimic/LAFAN/fallAndGetUp1_subject1.bvh",
+      "files": [
+        "assets/motions/mimic/LAFAN/fallAndGetUp1_subject1.bvh"
+      ]
+    },
+    {
+      "id": "meshmimic_holosoma:meshmimic/holosoma/parkour_1/parkour_1",
+      "dataset": "meshmimic_holosoma",
+      "profile": "meshmimic",
+      "display_name": "parkour_1",
+      "primary": "assets/motions/meshmimic/holosoma/parkour_1/parkour_1.npy",
+      "files": [
+        "assets/motions/meshmimic/holosoma/parkour_1/parkour_1.npy",
+        "assets/motions/meshmimic/holosoma/parkour_1/parkour_1.pkl",
+        "assets/motions/meshmimic/holosoma/parkour_1/terrain.obj"
+      ]
+    },
+    {
+      "id": "meshmimic_holosoma:meshmimic/holosoma/parkour_2/parkour_2",
+      "dataset": "meshmimic_holosoma",
+      "profile": "meshmimic",
+      "display_name": "parkour_2",
+      "primary": "assets/motions/meshmimic/holosoma/parkour_2/parkour_2.npy",
+      "files": [
+        "assets/motions/meshmimic/holosoma/parkour_2/parkour_2.npy",
+        "assets/motions/meshmimic/holosoma/parkour_2/parkour_2.pkl",
+        "assets/motions/meshmimic/holosoma/parkour_2/terrain.obj"
+      ]
+    },
+    {
+      "id": "meshmimic_holosoma:meshmimic/holosoma/parkour_3/parkour_3",
+      "dataset": "meshmimic_holosoma",
+      "profile": "meshmimic",
+      "display_name": "parkour_3",
+      "primary": "assets/motions/meshmimic/holosoma/parkour_3/parkour_3.npy",
+      "files": [
+        "assets/motions/meshmimic/holosoma/parkour_3/parkour_3.npy",
+        "assets/motions/meshmimic/holosoma/parkour_3/parkour_3.pkl",
+        "assets/motions/meshmimic/holosoma/parkour_3/terrain.obj"
+      ]
+    },
+    {
+      "id": "meshmimic_holosoma:meshmimic/holosoma/parkour_4/parkour_4",
+      "dataset": "meshmimic_holosoma",
+      "profile": "meshmimic",
+      "display_name": "parkour_4",
+      "primary": "assets/motions/meshmimic/holosoma/parkour_4/parkour_4.npy",
+      "files": [
+        "assets/motions/meshmimic/holosoma/parkour_4/parkour_4.npy",
+        "assets/motions/meshmimic/holosoma/parkour_4/parkour_4.pkl",
+        "assets/motions/meshmimic/holosoma/parkour_4/terrain.obj"
+      ]
+    },
+    {
+      "id": "meshmimic_holosoma:meshmimic/holosoma/parkour_5/parkour_5",
+      "dataset": "meshmimic_holosoma",
+      "profile": "meshmimic",
+      "display_name": "parkour_5",
+      "primary": "assets/motions/meshmimic/holosoma/parkour_5/parkour_5.npy",
+      "files": [
+        "assets/motions/meshmimic/holosoma/parkour_5/parkour_5.npy",
+        "assets/motions/meshmimic/holosoma/parkour_5/parkour_5.pkl",
+        "assets/motions/meshmimic/holosoma/parkour_5/terrain.obj"
+      ]
+    },
+    {
+      "id": "mocap:mimic/MOCAP/D0429_侧空翻__01_Sk00_144",
+      "dataset": "mocap",
+      "profile": "mimic",
+      "display_name": "D0429_侧空翻__01_Sk00_144",
+      "primary": "assets/motions/mimic/MOCAP/D0429_侧空翻__01_Sk00_144.bvh",
+      "files": [
+        "assets/motions/mimic/MOCAP/D0429_侧空翻__01_Sk00_144.bvh"
+      ]
+    },
+    {
+      "id": "mocap:mimic/MOCAP/D0429_前空翻__01_Sk00_148",
+      "dataset": "mocap",
+      "profile": "mimic",
+      "display_name": "D0429_前空翻__01_Sk00_148",
+      "primary": "assets/motions/mimic/MOCAP/D0429_前空翻__01_Sk00_148.bvh",
+      "files": [
+        "assets/motions/mimic/MOCAP/D0429_前空翻__01_Sk00_148.bvh"
+      ]
+    },
+    {
+      "id": "mocap:mimic/MOCAP/D0429_后空翻__01_Sk00_146",
+      "dataset": "mocap",
+      "profile": "mimic",
+      "display_name": "D0429_后空翻__01_Sk00_146",
+      "primary": "assets/motions/mimic/MOCAP/D0429_后空翻__01_Sk00_146.bvh",
+      "files": [
+        "assets/motions/mimic/MOCAP/D0429_后空翻__01_Sk00_146.bvh"
+      ]
+    },
+    {
+      "id": "mocap:mimic/MOCAP/D0429_毽子后空翻__01_Sk00_149",
+      "dataset": "mocap",
+      "profile": "mimic",
+      "display_name": "D0429_毽子后空翻__01_Sk00_149",
+      "primary": "assets/motions/mimic/MOCAP/D0429_毽子后空翻__01_Sk00_149.bvh",
+      "files": [
+        "assets/motions/mimic/MOCAP/D0429_毽子后空翻__01_Sk00_149.bvh"
+      ]
+    },
+    {
+      "id": "mocap:mimic/MOCAP/D0429_踢月转体__01_Sk00_143",
+      "dataset": "mocap",
+      "profile": "mimic",
+      "display_name": "D0429_踢月转体__01_Sk00_143",
+      "primary": "assets/motions/mimic/MOCAP/D0429_踢月转体__01_Sk00_143.bvh",
+      "files": [
+        "assets/motions/mimic/MOCAP/D0429_踢月转体__01_Sk00_143.bvh"
+      ]
+    },
+    {
+      "id": "motion_x:mimic/Motion-X/Aerial_Kick_Kungfu_wushu_3_clip2",
+      "dataset": "motion_x",
+      "profile": "mimic",
+      "display_name": "Aerial_Kick_Kungfu_wushu_3_clip2",
+      "primary": "assets/motions/mimic/Motion-X/Aerial_Kick_Kungfu_wushu_3_clip2.npy",
+      "files": [
+        "assets/motions/mimic/Motion-X/Aerial_Kick_Kungfu_wushu_3_clip2.npy"
+      ]
+    },
+    {
+      "id": "omnicontact:intermimic/OmniContact/case1_carry_20260330000166_1_1775007076/motion_actor",
+      "dataset": "omnicontact",
+      "profile": "intermimic",
+      "display_name": "case1_carry_20260330000166_1_1775007076",
+      "primary": "assets/motions/intermimic/OmniContact/case1_carry_20260330000166_1_1775007076/motion_actor.bvh",
+      "files": [
+        "assets/motions/intermimic/OmniContact/case1_carry_20260330000166_1_1775007076/Box_H_1.obj",
+        "assets/motions/intermimic/OmniContact/case1_carry_20260330000166_1_1775007076/capture_meta.json",
+        "assets/motions/intermimic/OmniContact/case1_carry_20260330000166_1_1775007076/motion_actor.bvh",
+        "assets/motions/intermimic/OmniContact/case1_carry_20260330000166_1_1775007076/motion_actor.csv",
+        "assets/motions/intermimic/OmniContact/case1_carry_20260330000166_1_1775007076/prop_Box_H_1.csv"
+      ]
+    },
+    {
+      "id": "omnicontact:intermimic/OmniContact/case1_carry_20260330000166_1_1775009756/motion_actor",
+      "dataset": "omnicontact",
+      "profile": "intermimic",
+      "display_name": "case1_carry_20260330000166_1_1775009756",
+      "primary": "assets/motions/intermimic/OmniContact/case1_carry_20260330000166_1_1775009756/motion_actor.bvh",
+      "files": [
+        "assets/motions/intermimic/OmniContact/case1_carry_20260330000166_1_1775009756/Box_H_1.obj",
+        "assets/motions/intermimic/OmniContact/case1_carry_20260330000166_1_1775009756/capture_meta.json",
+        "assets/motions/intermimic/OmniContact/case1_carry_20260330000166_1_1775009756/motion_actor.bvh",
+        "assets/motions/intermimic/OmniContact/case1_carry_20260330000166_1_1775009756/motion_actor.csv",
+        "assets/motions/intermimic/OmniContact/case1_carry_20260330000166_1_1775009756/prop_Box_H_1.csv"
+      ]
+    },
+    {
+      "id": "omomo:intermimic/OMOMO/sub10_largebox_000/sub10_largebox_000",
+      "dataset": "omomo",
+      "profile": "intermimic",
+      "display_name": "sub10_largebox_000",
+      "primary": "assets/motions/intermimic/OMOMO/sub10_largebox_000/sub10_largebox_000.pkl",
+      "files": [
+        "assets/motions/intermimic/OMOMO/sub10_largebox_000/largebox_cleaned_simplified.obj",
+        "assets/motions/intermimic/OMOMO/sub10_largebox_000/sub10_largebox_000.pkl"
+      ]
+    },
+    {
+      "id": "omomo:intermimic/OMOMO/sub12_woodchair_000/sub12_woodchair_000",
+      "dataset": "omomo",
+      "profile": "intermimic",
+      "display_name": "sub12_woodchair_000",
+      "primary": "assets/motions/intermimic/OMOMO/sub12_woodchair_000/sub12_woodchair_000.pkl",
+      "files": [
+        "assets/motions/intermimic/OMOMO/sub12_woodchair_000/sub12_woodchair_000.pkl",
+        "assets/motions/intermimic/OMOMO/sub12_woodchair_000/woodchair_cleaned_simplified.obj"
+      ]
+    },
+    {
+      "id": "parc_ms:meshmimic/parc_ms/BOXES_0_0_opt_dm_dm/BOXES_0_0_opt_dm_dm",
+      "dataset": "parc_ms",
+      "profile": "meshmimic",
+      "display_name": "BOXES_0_0_opt_dm_dm",
+      "primary": "assets/motions/meshmimic/parc_ms/BOXES_0_0_opt_dm_dm/BOXES_0_0_opt_dm_dm.pkl",
+      "files": [
+        "assets/motions/meshmimic/parc_ms/BOXES_0_0_opt_dm_dm/BOXES_0_0_opt_dm_dm.pkl",
+        "assets/motions/meshmimic/parc_ms/BOXES_0_0_opt_dm_dm/BOXES_0_0_opt_dm_dm_terrain.obj"
+      ]
+    },
+    {
+      "id": "parc_ms:meshmimic/parc_ms/BOXES_1_0_opt_dm_dm/BOXES_1_0_opt_dm_dm",
+      "dataset": "parc_ms",
+      "profile": "meshmimic",
+      "display_name": "BOXES_1_0_opt_dm_dm",
+      "primary": "assets/motions/meshmimic/parc_ms/BOXES_1_0_opt_dm_dm/BOXES_1_0_opt_dm_dm.pkl",
+      "files": [
+        "assets/motions/meshmimic/parc_ms/BOXES_1_0_opt_dm_dm/BOXES_1_0_opt_dm_dm.pkl",
+        "assets/motions/meshmimic/parc_ms/BOXES_1_0_opt_dm_dm/BOXES_1_0_opt_dm_dm_terrain.obj"
+      ]
+    },
+    {
+      "id": "parc_ms:meshmimic/parc_ms/beyond_reverse_vault_003_aug001_dm_aug8/beyond_reverse_vault_003_aug001_dm_aug8",
+      "dataset": "parc_ms",
+      "profile": "meshmimic",
+      "display_name": "beyond_reverse_vault_003_aug001_dm_aug8",
+      "primary": "assets/motions/meshmimic/parc_ms/beyond_reverse_vault_003_aug001_dm_aug8/beyond_reverse_vault_003_aug001_dm_aug8.pkl",
+      "files": [
+        "assets/motions/meshmimic/parc_ms/beyond_reverse_vault_003_aug001_dm_aug8/beyond_reverse_vault_003_aug001_dm_aug8.pkl",
+        "assets/motions/meshmimic/parc_ms/beyond_reverse_vault_003_aug001_dm_aug8/beyond_reverse_vault_003_aug001_dm_aug8_terrain.obj"
+      ]
+    },
+    {
+      "id": "parc_ms:meshmimic/parc_ms/beyond_speed_vault_005_aug007_flipped_dm_aug1/beyond_speed_vault_005_aug007_flipped_dm_aug1",
+      "dataset": "parc_ms",
+      "profile": "meshmimic",
+      "display_name": "beyond_speed_vault_005_aug007_flipped_dm_aug1",
+      "primary": "assets/motions/meshmimic/parc_ms/beyond_speed_vault_005_aug007_flipped_dm_aug1/beyond_speed_vault_005_aug007_flipped_dm_aug1.pkl",
+      "files": [
+        "assets/motions/meshmimic/parc_ms/beyond_speed_vault_005_aug007_flipped_dm_aug1/beyond_speed_vault_005_aug007_flipped_dm_aug1.pkl",
+        "assets/motions/meshmimic/parc_ms/beyond_speed_vault_005_aug007_flipped_dm_aug1/beyond_speed_vault_005_aug007_flipped_dm_aug1_terrain.obj"
+      ]
+    },
+    {
+      "id": "parc_ms:meshmimic/parc_ms/dec2024_teaser_0_0_opt_dm/dec2024_teaser_0_0_opt_dm",
+      "dataset": "parc_ms",
+      "profile": "meshmimic",
+      "display_name": "dec2024_teaser_0_0_opt_dm",
+      "primary": "assets/motions/meshmimic/parc_ms/dec2024_teaser_0_0_opt_dm/dec2024_teaser_0_0_opt_dm.pkl",
+      "files": [
+        "assets/motions/meshmimic/parc_ms/dec2024_teaser_0_0_opt_dm/dec2024_teaser_0_0_opt_dm.pkl",
+        "assets/motions/meshmimic/parc_ms/dec2024_teaser_0_0_opt_dm/dec2024_teaser_0_0_opt_dm_terrain.obj"
+      ]
+    },
+    {
+      "id": "parc_ms:meshmimic/parc_ms/dec2024_teaser_2000_0_opt_dm/dec2024_teaser_2000_0_opt_dm",
+      "dataset": "parc_ms",
+      "profile": "meshmimic",
+      "display_name": "dec2024_teaser_2000_0_opt_dm",
+      "primary": "assets/motions/meshmimic/parc_ms/dec2024_teaser_2000_0_opt_dm/dec2024_teaser_2000_0_opt_dm.pkl",
+      "files": [
+        "assets/motions/meshmimic/parc_ms/dec2024_teaser_2000_0_opt_dm/dec2024_teaser_2000_0_opt_dm.pkl",
+        "assets/motions/meshmimic/parc_ms/dec2024_teaser_2000_0_opt_dm/dec2024_teaser_2000_0_opt_dm_terrain.obj"
+      ]
+    },
+    {
+      "id": "parc_ms:meshmimic/parc_ms/dec2024_teaser_500_0_opt_dm/dec2024_teaser_500_0_opt_dm",
+      "dataset": "parc_ms",
+      "profile": "meshmimic",
+      "display_name": "dec2024_teaser_500_0_opt_dm",
+      "primary": "assets/motions/meshmimic/parc_ms/dec2024_teaser_500_0_opt_dm/dec2024_teaser_500_0_opt_dm.pkl",
+      "files": [
+        "assets/motions/meshmimic/parc_ms/dec2024_teaser_500_0_opt_dm/dec2024_teaser_500_0_opt_dm.pkl",
+        "assets/motions/meshmimic/parc_ms/dec2024_teaser_500_0_opt_dm/dec2024_teaser_500_0_opt_dm_terrain.obj"
+      ]
+    },
+    {
+      "id": "phuma:mimic/PHUMA/kick",
+      "dataset": "phuma",
+      "profile": "mimic",
+      "display_name": "kick",
+      "primary": "assets/motions/mimic/PHUMA/kick.npy",
+      "files": [
+        "assets/motions/mimic/PHUMA/kick.npy"
+      ]
+    },
+    {
+      "id": "soma:mimic/SOMA/big_light_one_hand_pick_up_front_low_R_005__A508",
+      "dataset": "soma",
+      "profile": "mimic",
+      "display_name": "big_light_one_hand_pick_up_front_low_R_005__A508",
+      "primary": "assets/motions/mimic/SOMA/big_light_one_hand_pick_up_front_low_R_005__A508.bvh",
+      "files": [
+        "assets/motions/mimic/SOMA/big_light_one_hand_pick_up_front_low_R_005__A508.bvh"
+      ]
+    },
+    {
+      "id": "xsens_mocap:mimic/Xsens_mocap/stand",
+      "dataset": "xsens_mocap",
+      "profile": "mimic",
+      "display_name": "stand",
+      "primary": "assets/motions/mimic/Xsens_mocap/stand.bvh",
+      "files": [
+        "assets/motions/mimic/Xsens_mocap/stand.bvh"
+      ]
+    },
+    {
+      "id": "xsens_mocap:mimic/Xsens_mocap/walk",
+      "dataset": "xsens_mocap",
+      "profile": "mimic",
+      "display_name": "walk",
+      "primary": "assets/motions/mimic/Xsens_mocap/walk.bvh",
+      "files": [
+        "assets/motions/mimic/Xsens_mocap/walk.bvh"
+      ]
+    }
+  ],
+  "motion_shared_files": [
+    "assets/motions/meshmimic/holosoma/source.yaml"
+  ],
+  "baseline_exclusions": [
+    {
+      "path": "assets/motions/mimic/GVHMR/hmr4d_results.pt",
+      "reason": "Generated GVHMR output with a known motion-loading problem; not a stable built-in sample."
+    }
+  ],
+  "robots": [
+    {
+      "preset": "g1_29dof",
+      "display_name": "Unitree G1",
+      "repository": "https://github.com/unitreerobotics/unitree_ros.git",
+      "commit": "7d6075f7f58588b189b940130e3edab3c839b2df",
+      "main_urdf": "robots/g1_description/g1_29dof.urdf",
+      "license_paths": [
+        "LICENSE"
+      ],
+      "bundle_manifest": "SOURCE.json"
+    },
+    {
+      "preset": "roboto_origin",
+      "display_name": "ROBOTO_ORIGIN (RPO)",
+      "repository": "https://github.com/Roboparty/rpo_description.git",
+      "commit": "37aac9ca665e92731444a1618320078e7ba21569",
+      "main_urdf": "urdf/rpo.urdf",
+      "license_paths": [
+        "LICENSE"
+      ],
+      "bundle_manifest": "SOURCE.json"
+    },
+    {
+      "preset": "agibot_x2_ultra",
+      "display_name": "AgiBot X2",
+      "repository": "https://github.com/AgibotTech/agibot_x2_urdf.git",
+      "commit": "77f43eb0904dae4c48ccd9154fee824f8ffd4d38",
+      "main_urdf": "X2_URDF-v1.4.0/X2-Ultra.urdf",
+      "license_paths": [
+        "LICENSE"
+      ],
+      "bundle_manifest": "SOURCE.json"
+    },
+    {
+      "preset": "asimov_1",
+      "display_name": "Asimov 1",
+      "repository": "https://github.com/menloresearch/asimov-1.git",
+      "commit": "b8420ffe99159065152aa1321a03147c0962f251",
+      "main_urdf": "sim-model/urdf/asimov_1.urdf",
+      "license_paths": [
+        "HARDWARE-LICENSE.txt"
+      ],
+      "bundle_manifest": "SOURCE.json"
+    },
+    {
+      "preset": "fourier_gr2",
+      "display_name": "Fourier GR-2",
+      "repository": "https://github.com/FFTAI/Wiki-GRx-Models.git",
+      "commit": "7d96c758f048fe1bf92b3258864d94771ae0c093",
+      "main_urdf": "GRX/GR2/gr2v3_8_7/basic_urdf/gr2v3_8_7.urdf",
+      "license_paths": [
+        "LICENSE"
+      ],
+      "bundle_manifest": "SOURCE.json"
+    },
+    {
+      "preset": "berkeley_humanoid_lite",
+      "display_name": "Berkeley Humanoid Lite",
+      "repository": "https://github.com/HybridRobotics/Berkeley-Humanoid-Lite-Assets.git",
+      "commit": "fc90fedd008b1e56a22e3c5221548d6b24f49707",
+      "main_urdf": "data/robots/berkeley_humanoid/berkeley_humanoid_lite/urdf/berkeley_humanoid_lite.urdf",
+      "license_paths": [
+        "LICENCE"
+      ],
+      "bundle_manifest": "SOURCE.json"
+    }
+  ]
+}

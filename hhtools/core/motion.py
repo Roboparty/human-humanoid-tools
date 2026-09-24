@@ -44,7 +44,7 @@ class Motion:
             dataset.  **Terrain is no longer carried here** — see :attr:`terrain`.
         terrain: Optional :class:`TerrainHeightfield` describing static environment geometry
             (stairs, platforms, slopes).  When set, this is the single source of truth for
-            terrain throughout the pipeline: the viser viewer renders it as a triangulated
+            terrain throughout the pipeline: the Web Stage renders it as a triangulated
             surface, the MPC-SQP retargeter compiles it as a MuJoCo ``<hfield>`` for hard
             non-penetration constraints, and PARC export ships the raw ``hf`` grid for training.
             ``None`` means the clip has no terrain (e.g. flat-ground AMASS clips).

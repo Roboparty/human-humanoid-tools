@@ -1,0 +1,60 @@
+{
+  "$defs": {
+    "BatchWorkflow": {
+      "enum": [
+        "h2r",
+        "r2r"
+      ],
+      "title": "BatchWorkflow",
+      "type": "string"
+    },
+    "OutputPolicy": {
+      "enum": [
+        "create_new",
+        "fail_if_exists",
+        "overwrite"
+      ],
+      "title": "OutputPolicy",
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Ordered ready single-item plans to freeze into one batch.",
+  "properties": {
+    "item_plan_ids": {
+      "items": {
+        "description": "Content-addressed plan id.",
+        "pattern": "^plan:sha256:[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Item Plan Ids",
+      "type": "array"
+    },
+    "output_policy": {
+      "$ref": "#/$defs/OutputPolicy",
+      "default": "create_new"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    },
+    "workflow": {
+      "$ref": "#/$defs/BatchWorkflow"
+    }
+  },
+  "required": [
+    "workflow",
+    "item_plan_ids"
+  ],
+  "title": "BatchPreflightRequest",
+  "type": "object"
+}

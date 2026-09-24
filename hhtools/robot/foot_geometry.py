@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -13,9 +13,14 @@ if TYPE_CHECKING:
 _log = logging.getLogger(__name__)
 
 __all__ = [
+    "apply_retarget_dof",
     "estimate_min_lateral_foot_separation",
     "foot_mesh_lateral_inner_gap",
+    "ground_contact_zs",
+    "lowest_ankle_z",
+    "quat_xyzw_to_rotmat",
     "resolve_leg_abduction_joints",
+    "scene_min_mesh_z",
     "clamp_joint_q_foot_lateral_clearance",
 ]
 
@@ -24,6 +29,169 @@ _AXIS_TO_IDX = {"X": 0, "Y": 1, "Z": 2}
 # Per-robot foot mesh node lists — avoids scanning the full URDF scene each call.
 _FOOT_MESH_NODE_CACHE: dict[tuple[str, str], tuple[tuple[str, str], ...]] = {}
 _GEOM_VERTEX_CACHE: dict[tuple[str, str], np.ndarray] = {}
+
+
+def quat_xyzw_to_rotmat(q: np.ndarray) -> np.ndarray:
+    """Convert one unit ``xyzw`` quaternion to a float64 rotation matrix."""
+
+    x, y, z, w = (float(q[0]), float(q[1]), float(q[2]), float(q[3]))
+    return np.array(
+        [
+            [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
+            [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
+            [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
+        ],
+        dtype=np.float64,
+    )
+
+
+def _resolve_ik_link(ik_map: dict[str, Any], canonical: str) -> str | None:
+    spec = ik_map.get(canonical)
+    if spec is None:
+        return None
+    if isinstance(spec, str):
+        return spec
+    if isinstance(spec, dict):
+        link = spec.get("link") or spec.get("body")
+        return str(link) if link is not None else None
+    return str(spec)
+
+
+def scene_min_mesh_z(scene, root_rot: np.ndarray | None = None) -> float | None:
+    """Return the lowest robot mesh Z after an optional root rotation."""
+
+    try:
+        import trimesh
+    except Exception:
+        return None
+    rotation = (
+        np.eye(3, dtype=np.float64)
+        if root_rot is None
+        else np.asarray(root_rot, dtype=np.float64)
+    )
+    root_transform = np.eye(4, dtype=np.float64)
+    root_transform[:3, :3] = rotation
+    min_z: float | None = None
+    for node_name in scene.graph.nodes_geometry:
+        mat, geom_name = scene.graph[node_name]
+        if geom_name is None:
+            continue
+        geom = scene.geometry.get(geom_name)
+        if not isinstance(geom, trimesh.Trimesh) or geom.is_empty:
+            continue
+        mat_world = root_transform @ np.asarray(mat, dtype=np.float64)
+        vertices = np.asarray(geom.vertices, dtype=np.float64)
+        z = (
+            mat_world[2, 0] * vertices[:, 0]
+            + mat_world[2, 1] * vertices[:, 1]
+            + mat_world[2, 2] * vertices[:, 2]
+            + mat_world[2, 3]
+        ).min()
+        if min_z is None or z < min_z:
+            min_z = float(z)
+    return min_z
+
+
+def lowest_ankle_z(
+    model: URDFRobotModel,
+    ik_map: dict[str, Any],
+    root_rot: np.ndarray,
+) -> float | None:
+    """Return the lowest ankle-link origin Z after the root rotation."""
+
+    root_transform = np.eye(4, dtype=np.float64)
+    root_transform[:3, :3] = np.asarray(root_rot, dtype=np.float64)
+    ankle_zs: list[float] = []
+    for canonical in ("left_ankle", "right_ankle"):
+        link = _resolve_ik_link(ik_map, canonical)
+        if not link:
+            continue
+        try:
+            link_transform = np.asarray(model.urdf.get_transform(link), dtype=np.float64)
+        except Exception:
+            continue
+        ankle_zs.append(float((root_transform @ link_transform)[2, 3]))
+    return min(ankle_zs) if ankle_zs else None
+
+
+def _lowest_ik_link_z(
+    model: URDFRobotModel,
+    ik_map: dict[str, Any],
+    root_rot: np.ndarray,
+    slots: tuple[str, ...],
+) -> float | None:
+    """Return the lowest requested IK link-origin Z after the root rotation."""
+
+    root_transform = np.eye(4, dtype=np.float64)
+    root_transform[:3, :3] = np.asarray(root_rot, dtype=np.float64)
+    zs: list[float] = []
+    for canonical in slots:
+        link = _resolve_ik_link(ik_map, canonical)
+        if not link:
+            continue
+        try:
+            link_transform = np.asarray(model.urdf.get_transform(link), dtype=np.float64)
+        except Exception:
+            continue
+        zs.append(float((root_transform @ link_transform)[2, 3]))
+    return min(zs) if zs else None
+
+
+def ground_contact_zs(
+    model: URDFRobotModel,
+    ik_map: dict[str, Any],
+    root_rot: np.ndarray,
+    *,
+    include_mesh: bool = True,
+) -> tuple[float | None, float | None]:
+    """Return the lowest ``(limb_origin_z, mesh_z)`` in the root frame.
+
+    Link origins and mesh surfaces stay separate because a planted ankle or
+    knee origin normally sits above the actual contact surface.
+    """
+
+    limb_z = _lowest_ik_link_z(
+        model,
+        ik_map,
+        root_rot,
+        ("left_ankle", "right_ankle", "left_knee", "right_knee"),
+    )
+    mesh_z: float | None = None
+    if include_mesh:
+        mesh_z = scene_min_mesh_z(model.trimesh_scene(), root_rot)
+    return limb_z, mesh_z
+
+
+def apply_retarget_dof(
+    model: URDFRobotModel,
+    dof_names: list[str] | tuple[str, ...],
+    dof_values: np.ndarray,
+) -> None:
+    """Apply one retarget DOF row, tolerating generic ``dof_N`` placeholders."""
+
+    names = list(dof_names)
+    values = np.asarray(dof_values, dtype=np.float64).reshape(-1)
+    if names and not any(str(name).startswith("dof_") for name in names):
+        config = {
+            str(names[i]): float(values[i])
+            for i in range(min(len(names), len(values)))
+        }
+        model.apply_configuration(config)
+        return
+    model_dof = model.dof_names()
+    config_values = np.zeros(len(model_dof), dtype=np.float64)
+    count = min(len(values), len(config_values))
+    config_values[:count] = values[:count]
+    model.apply_configuration(config_values)
+
+
+def _model_content_identity(model: URDFRobotModel) -> str:
+    """Separate Agent caches by immutable RobotBundle when identity is known."""
+
+    asset_id = model.preset.meta.get("_agent_asset_id")
+    if isinstance(asset_id, str) and asset_id:
+        return asset_id
+    return f"preset:{model.preset.name}"
 
 
 def _lateral_axis_idx(preset) -> int:
@@ -54,15 +222,13 @@ def _foot_contact_links(model: "URDFRobotModel") -> tuple[str | None, str | None
 
 
 def _root_transform(root_xyzw: np.ndarray | None) -> np.ndarray:
-    from hhtools.web.serialize import _quat_xyzw_to_rotmat
-
     T = np.eye(4, dtype=np.float64)
     if root_xyzw is None:
         return T
     root = np.asarray(root_xyzw, dtype=np.float64).reshape(-1)
     if root.size >= 7:
         T[:3, 3] = root[:3]
-        T[:3, :3] = _quat_xyzw_to_rotmat(root[3:7])
+        T[:3, :3] = quat_xyzw_to_rotmat(root[3:7])
     return T
 
 
@@ -72,14 +238,12 @@ def _root_lateral_direction(preset, root_xyzw: np.ndarray | None) -> np.ndarray:
     When a floating-base orientation is supplied, the lateral axis follows
     the root frame so foot clearance stays correct after heading alignment.
     """
-    from hhtools.web.serialize import _quat_xyzw_to_rotmat
-
     lat_i = _lateral_axis_idx(preset)
     axis = np.zeros(3, dtype=np.float64)
     axis[lat_i] = 1.0
     root = np.asarray(root_xyzw, dtype=np.float64).reshape(-1) if root_xyzw is not None else None
     if root is not None and root.size >= 7:
-        lat = _quat_xyzw_to_rotmat(root[3:7]) @ axis
+        lat = quat_xyzw_to_rotmat(root[3:7]) @ axis
         norm = float(np.linalg.norm(lat))
         if norm > 1e-9:
             return lat / norm
@@ -88,7 +252,7 @@ def _root_lateral_direction(preset, root_xyzw: np.ndarray | None) -> np.ndarray:
 
 def _foot_mesh_node_parts(model: "URDFRobotModel", link: str) -> tuple[tuple[str, str], ...]:
     """Cached ``(scene_node, geom_name)`` pairs belonging to ``link``."""
-    key = (str(model.preset.name), link)
+    key = (_model_content_identity(model), link)
     cached = _FOOT_MESH_NODE_CACHE.get(key)
     if cached is not None:
         return cached
@@ -110,7 +274,7 @@ def _foot_mesh_node_parts(model: "URDFRobotModel", link: str) -> tuple[tuple[str
 def _cached_geom_vertices(model: "URDFRobotModel", geom_name: str) -> np.ndarray | None:
     import trimesh
 
-    key = (str(model.preset.name), geom_name)
+    key = (_model_content_identity(model), geom_name)
     if key in _GEOM_VERTEX_CACHE:
         return _GEOM_VERTEX_CACHE[key]
     geom = model.urdf.scene.geometry.get(geom_name)

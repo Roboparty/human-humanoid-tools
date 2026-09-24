@@ -1,6 +1,7 @@
 """Core data structures for the hhtools motion pipeline.
 
-This subpackage is intentionally free of optional dependencies (no torch, no viser, no newton)
+This subpackage is intentionally free of optional dependencies
+(no torch, UI frameworks, or newton).
 so that headless pipelines remain lightweight.
 """
 

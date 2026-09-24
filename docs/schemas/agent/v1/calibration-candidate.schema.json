@@ -1,0 +1,161 @@
+{
+  "$defs": {
+    "CalibrationReference": {
+      "enum": [
+        "smplx",
+        "smpl",
+        "gvhmr",
+        "soma_bvh",
+        "lafan_bvh",
+        "mocap_bvh",
+        "xsens_mocap",
+        "glb"
+      ],
+      "title": "CalibrationReference",
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Content-bound robot pose proposed for one exact robot/reference identity.",
+  "properties": {
+    "algorithm": {
+      "const": "hhtools.calibration.kinematic.v1",
+      "default": "hhtools.calibration.kinematic.v1",
+      "title": "Algorithm",
+      "type": "string"
+    },
+    "baseline": {
+      "enum": [
+        "urdf_zero",
+        "saved_calibration",
+        "candidate"
+      ],
+      "title": "Baseline",
+      "type": "string"
+    },
+    "baseline_calibration_id": {
+      "anyOf": [
+        {
+          "description": "Content-addressed calibration id.",
+          "pattern": "^cal:sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Baseline Calibration Id"
+    },
+    "candidate_id": {
+      "description": "Content-addressed immutable calibration candidate id.",
+      "pattern": "^cal-candidate:sha256:[0-9a-f]{64}$",
+      "title": "Candidate Id",
+      "type": "string"
+    },
+    "joint_q": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Joint Q",
+      "type": "object"
+    },
+    "locked_joints": {
+      "items": {
+        "maxLength": 256,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 512,
+      "title": "Locked Joints",
+      "type": "array"
+    },
+    "motion_asset_id": {
+      "anyOf": [
+        {
+          "description": "Content-addressed asset id.",
+          "pattern": "^asset:sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Motion Asset Id"
+    },
+    "motion_digest": {
+      "anyOf": [
+        {
+          "description": "Lower-case SHA-256 content digest.",
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Motion Digest"
+    },
+    "parent_candidate_id": {
+      "anyOf": [
+        {
+          "description": "Content-addressed immutable calibration candidate id.",
+          "pattern": "^cal-candidate:sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Candidate Id"
+    },
+    "reference": {
+      "$ref": "#/$defs/CalibrationReference"
+    },
+    "robot_asset_id": {
+      "description": "Content-addressed asset id.",
+      "pattern": "^asset:sha256:[0-9a-f]{64}$",
+      "title": "Robot Asset Id",
+      "type": "string"
+    },
+    "robot_digest": {
+      "description": "Lower-case SHA-256 content digest.",
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Robot Digest",
+      "type": "string"
+    },
+    "robot_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "title": "Robot Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    }
+  },
+  "required": [
+    "candidate_id",
+    "robot_id",
+    "robot_asset_id",
+    "robot_digest",
+    "reference",
+    "baseline",
+    "joint_q"
+  ],
+  "title": "CalibrationCandidate",
+  "type": "object"
+}

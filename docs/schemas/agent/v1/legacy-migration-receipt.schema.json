@@ -1,0 +1,87 @@
+{
+  "additionalProperties": false,
+  "description": "Portable proof of how one canonical v1 document became JobSpec v2.",
+  "properties": {
+    "canonical_v1_sha256": {
+      "description": "Lower-case SHA-256 content digest.",
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Canonical V1 Sha256",
+      "type": "string"
+    },
+    "job_spec_sha256": {
+      "description": "Lower-case SHA-256 content digest.",
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Job Spec Sha256",
+      "type": "string"
+    },
+    "motion_asset_id": {
+      "description": "Content-addressed asset id.",
+      "pattern": "^asset:sha256:[0-9a-f]{64}$",
+      "title": "Motion Asset Id",
+      "type": "string"
+    },
+    "output_format": {
+      "const": "csv",
+      "default": "csv",
+      "title": "Output Format",
+      "type": "string"
+    },
+    "output_policy": {
+      "const": "create_new",
+      "default": "create_new",
+      "title": "Output Policy",
+      "type": "string"
+    },
+    "plan_id": {
+      "description": "Content-addressed plan id.",
+      "pattern": "^plan:sha256:[0-9a-f]{64}$",
+      "title": "Plan Id",
+      "type": "string"
+    },
+    "robot_asset_id": {
+      "description": "Content-addressed asset id.",
+      "pattern": "^asset:sha256:[0-9a-f]{64}$",
+      "title": "Robot Asset Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "semantics": {
+      "const": "hhtools.legacy-job-upgrade.v1",
+      "default": "hhtools.legacy-job-upgrade.v1",
+      "title": "Semantics",
+      "type": "string"
+    },
+    "source_schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Source Schema Version",
+      "type": "integer"
+    },
+    "warnings": {
+      "default": [],
+      "items": {
+        "description": "Stable, English, machine-readable code.",
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[A-Z][A-Z0-9_]*$",
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "canonical_v1_sha256",
+    "motion_asset_id",
+    "robot_asset_id",
+    "plan_id",
+    "job_spec_sha256"
+  ],
+  "title": "LegacyMigrationReceipt",
+  "type": "object"
+}

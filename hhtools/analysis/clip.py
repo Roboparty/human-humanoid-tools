@@ -78,14 +78,14 @@ def _load_source(source_path: Path, dataset: str = ""):
     Mirrors the web library loading path: robot trajectory CSVs go through the
     robot reader; every other clip is dispatched to its registered dataset
     adapter (``amass`` / ``omomo`` / ``omnicontact`` / ``parc_ms`` / ``holosoma`` / ``lafan`` /
-    ``glb`` / ...), exactly as :meth:`hhtools.viewer.cache.EphemeralCache._convert`
+    ``glb`` / ...), exactly as :meth:`hhtools.services.motion_cache.EphemeralCache._convert`
     does, so heterogeneous formats (``.pkl`` / ``.npy`` / ``.bvh`` / ...) all load.
     Falls back to the plain loader registry when no dataset name is supplied.
     """
-    from hhtools.web.r2r_upload_resolve import _is_robot_export_trajectory
+    from hhtools.io.robot_trajectory_detect import is_robot_export_trajectory
 
     suffix = source_path.suffix.lower()
-    is_robot = dataset == "robot" or _is_robot_export_trajectory(source_path)
+    is_robot = dataset == "robot" or is_robot_export_trajectory(source_path)
     if is_robot and suffix in (".csv", ".pkl", ".pickle", ".npz"):
         from hhtools.io.robot_csv import RobotCSV, load_robot_csv
         from hhtools.retarget.robot_to_robot import load_source_trajectory

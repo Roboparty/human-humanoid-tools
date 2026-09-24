@@ -11,26 +11,16 @@ from hhtools.core.grounding import SOURCE_FLOOR_META_KEY
 from hhtools.core.hierarchy import Hierarchy
 from hhtools.core.motion import Motion
 from hhtools.retarget.retarget_result import RetargetedMotion
-from hhtools.robot.loader import load_robot
-from hhtools.robot.registry import get, refresh
-from hhtools.web.serialize import (
-    _lowest_ankle_z,
-    _quat_xyzw_to_rotmat,
+from hhtools.robot.foot_geometry import lowest_ankle_z, quat_xyzw_to_rotmat
+from hhtools.web.output.serialize import (
     _scaled_overlay_foot_z,
     serialize_robot_trajectory,
 )
 
 
 @pytest.fixture(scope="module")
-def g1_rp1():
-    refresh()
-    try:
-        return (
-            load_robot(get("g1"), compile_mjcf=False),
-            load_robot(get("rp1"), compile_mjcf=False),
-        )
-    except KeyError:
-        pytest.skip("g1/rp1 robots not registered in this environment")
+def g1_rp1(grounding_robot_pair):
+    return grounding_robot_pair
 
 
 def _r2r_motion(*, ankle_z: float = 0.06, sole_z: float = 0.0) -> Motion:
@@ -88,13 +78,13 @@ def _playback_ankle_world_z(model, traj: dict) -> float:
     lift = float(frame.get("mesh_z_lift") or 0.0)
     ik_map = dict(model.preset.ik_map) if model.preset.ik_map else {}
     model.apply_configuration(model.zero_configuration())
-    ankle = _lowest_ankle_z(model, ik_map, _quat_xyzw_to_rotmat(root[3:7]))
+    ankle = lowest_ankle_z(model, ik_map, quat_xyzw_to_rotmat(root[3:7]))
     assert ankle is not None
     return float(root[2] + lift + ankle)
 
 
 def test_r2r_yellow_keeps_scaled_source_feet(g1_rp1):
-    from hhtools.web.server import _compute_r2r_scaled_preview
+    from hhtools.web.server.preview_runtime import _compute_r2r_scaled_preview
 
     src, tgt = g1_rp1
     motion = _r2r_motion(ankle_z=0.06, sole_z=0.0)
@@ -114,7 +104,7 @@ def test_r2r_yellow_keeps_scaled_source_feet(g1_rp1):
 
 def test_r2r_playback_aligns_robot_ankles_to_yellow_feet(g1_rp1):
     from hhtools.retarget.robot_to_robot import align_retargeted_ankles_to_scaled_source
-    from hhtools.web.server import _compute_r2r_scaled_preview
+    from hhtools.web.server.preview_runtime import _compute_r2r_scaled_preview
 
     src, tgt = g1_rp1
     motion = _r2r_motion(ankle_z=0.06, sole_z=0.0)

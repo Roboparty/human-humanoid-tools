@@ -1,0 +1,2 @@
+# Generated bundles can embed GLSL source whose whitespace is preserved by Three.js.
+hhtools/web/static/assets/*.js -whitespace

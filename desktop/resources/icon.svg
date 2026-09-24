@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>hhtools robot</title>
+  <rect x="3" y="3" width="58" height="58" rx="17" fill="#0878e8"/>
+  <path d="M32 11v8" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="32" cy="10" r="4" fill="#79d8ff" stroke="#fff" stroke-width="2"/>
+  <rect x="8" y="29" width="7" height="15" rx="3.5" fill="#d9efff"/>
+  <rect x="49" y="29" width="7" height="15" rx="3.5" fill="#d9efff"/>
+  <rect x="12" y="18" width="40" height="34" rx="13" fill="#fff"/>
+  <rect x="17" y="24" width="30" height="20" rx="8" fill="#0b1b31"/>
+  <circle cx="25" cy="34" r="3.5" fill="#65d7ff"/>
+  <circle cx="39" cy="34" r="3.5" fill="#65d7ff"/>
+  <rect x="25" y="47" width="14" height="3" rx="1.5" fill="#b9ddf8"/>
+</svg>

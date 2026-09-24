@@ -1,0 +1,919 @@
+{
+  "$defs": {
+    "ApiError": {
+      "additionalProperties": false,
+      "description": "Structured failure that an agent can inspect without parsing prose.",
+      "properties": {
+        "code": {
+          "description": "Stable, English, machine-readable code.",
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Code",
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": true,
+          "description": "Small structured context; large payloads belong in artifacts.",
+          "title": "Details",
+          "type": "object"
+        },
+        "message": {
+          "description": "Human-readable, potentially localized explanation.",
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "next_action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NextAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "retryable": {
+          "default": false,
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "$ref": "#/$defs/SchemaVersion",
+          "default": "1.0"
+        },
+        "stage": {
+          "$ref": "#/$defs/ErrorStage"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "stage"
+      ],
+      "title": "ApiError",
+      "type": "object"
+    },
+    "ErrorStage": {
+      "description": "Stable stage in which an API error occurred.",
+      "enum": [
+        "request",
+        "asset_registration",
+        "asset_inspection",
+        "calibration",
+        "preflight",
+        "admission",
+        "execution",
+        "evaluation",
+        "artifact",
+        "internal"
+      ],
+      "title": "ErrorStage",
+      "type": "string"
+    },
+    "JobSpecBatchItem": {
+      "additionalProperties": false,
+      "description": "Exact single-workflow JobSpec projection embedded in a batch JobSpec.",
+      "properties": {
+        "backend": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Backend",
+          "type": "string"
+        },
+        "calibration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JobSpecCalibration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_parameters": {
+          "additionalProperties": true,
+          "title": "Effective Parameters",
+          "type": "object"
+        },
+        "input": {
+          "$ref": "#/$defs/JobSpecInput"
+        },
+        "item_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Item Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "retarget",
+            "r2r_retarget"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "output_policy": {
+          "$ref": "#/$defs/OutputPolicy"
+        },
+        "plan_id": {
+          "description": "Content-addressed plan id.",
+          "pattern": "^plan:sha256:[0-9a-f]{64}$",
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/JobSpecProvenance"
+        },
+        "robot": {
+          "$ref": "#/$defs/JobSpecRobot"
+        },
+        "source_robot": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JobSpecRobot"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "item_id",
+        "plan_id",
+        "kind",
+        "input",
+        "robot",
+        "backend",
+        "output_policy",
+        "provenance",
+        "created_at"
+      ],
+      "title": "JobSpecBatchItem",
+      "type": "object"
+    },
+    "JobSpecCalibration": {
+      "additionalProperties": false,
+      "description": "Exact calibration selected by preflight.",
+      "properties": {
+        "calibration_id": {
+          "description": "Content-addressed calibration id.",
+          "pattern": "^cal:sha256:[0-9a-f]{64}$",
+          "title": "Calibration Id",
+          "type": "string"
+        },
+        "sha256": {
+          "description": "Lower-case SHA-256 content digest.",
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "calibration_id",
+        "sha256"
+      ],
+      "title": "JobSpecCalibration",
+      "type": "object"
+    },
+    "JobSpecInput": {
+      "additionalProperties": false,
+      "description": "Content-bound input reference used by an executable job.",
+      "properties": {
+        "asset_id": {
+          "description": "Content-addressed asset id.",
+          "pattern": "^asset:sha256:[0-9a-f]{64}$",
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "sha256": {
+          "description": "Lower-case SHA-256 content digest.",
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_id",
+        "sha256"
+      ],
+      "title": "JobSpecInput",
+      "type": "object"
+    },
+    "JobSpecKind": {
+      "enum": [
+        "retarget",
+        "r2r_retarget",
+        "batch_retarget"
+      ],
+      "title": "JobSpecKind",
+      "type": "string"
+    },
+    "JobSpecProvenance": {
+      "additionalProperties": false,
+      "description": "Code, dependency, and execution-device identity for reproduction.",
+      "properties": {
+        "cuda": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cuda"
+        },
+        "dependencies": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Dependencies",
+          "type": "object"
+        },
+        "device": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Device"
+        },
+        "hhtools_dirty": {
+          "title": "Hhtools Dirty",
+          "type": "boolean"
+        },
+        "hhtools_git_commit": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Hhtools Git Commit",
+          "type": "string"
+        },
+        "newton": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Newton"
+        },
+        "platform": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Platform"
+        },
+        "python": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Python",
+          "type": "string"
+        },
+        "pytorch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pytorch"
+        }
+      },
+      "required": [
+        "hhtools_git_commit",
+        "hhtools_dirty",
+        "python"
+      ],
+      "title": "JobSpecProvenance",
+      "type": "object"
+    },
+    "JobSpecRobot": {
+      "additionalProperties": false,
+      "description": "Robot identity and exact configuration used by the job.",
+      "properties": {
+        "asset_id": {
+          "description": "Content-addressed asset id.",
+          "pattern": "^asset:sha256:[0-9a-f]{64}$",
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "config_sha256": {
+          "description": "Lower-case SHA-256 content digest.",
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Sha256",
+          "type": "string"
+        },
+        "robot_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Robot Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "robot_id",
+        "asset_id",
+        "config_sha256"
+      ],
+      "title": "JobSpecRobot",
+      "type": "object"
+    },
+    "JobSpecV2": {
+      "additionalProperties": false,
+      "description": "Immutable, preflight-resolved execution identity for a retarget job.",
+      "properties": {
+        "backend": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Backend",
+          "type": "string"
+        },
+        "batch_items": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/JobSpecBatchItem"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Batch Items"
+        },
+        "calibration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JobSpecCalibration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_parameters": {
+          "additionalProperties": true,
+          "title": "Effective Parameters",
+          "type": "object"
+        },
+        "inputs": {
+          "items": {
+            "$ref": "#/$defs/JobSpecInput"
+          },
+          "minItems": 1,
+          "title": "Inputs",
+          "type": "array"
+        },
+        "kind": {
+          "$ref": "#/$defs/JobSpecKind"
+        },
+        "output_policy": {
+          "$ref": "#/$defs/OutputPolicy"
+        },
+        "plan_id": {
+          "description": "Content-addressed plan id.",
+          "pattern": "^plan:sha256:[0-9a-f]{64}$",
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/JobSpecProvenance"
+        },
+        "robot": {
+          "$ref": "#/$defs/JobSpecRobot"
+        },
+        "schema_version": {
+          "const": 2,
+          "default": 2,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "source_robot": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JobSpecRobot"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "kind",
+        "plan_id",
+        "inputs",
+        "robot",
+        "backend",
+        "output_policy",
+        "provenance",
+        "created_at"
+      ],
+      "title": "JobSpecV2",
+      "type": "object"
+    },
+    "LegacyMigrationReceipt": {
+      "additionalProperties": false,
+      "description": "Portable proof of how one canonical v1 document became JobSpec v2.",
+      "properties": {
+        "canonical_v1_sha256": {
+          "description": "Lower-case SHA-256 content digest.",
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Canonical V1 Sha256",
+          "type": "string"
+        },
+        "job_spec_sha256": {
+          "description": "Lower-case SHA-256 content digest.",
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Job Spec Sha256",
+          "type": "string"
+        },
+        "motion_asset_id": {
+          "description": "Content-addressed asset id.",
+          "pattern": "^asset:sha256:[0-9a-f]{64}$",
+          "title": "Motion Asset Id",
+          "type": "string"
+        },
+        "output_format": {
+          "const": "csv",
+          "default": "csv",
+          "title": "Output Format",
+          "type": "string"
+        },
+        "output_policy": {
+          "const": "create_new",
+          "default": "create_new",
+          "title": "Output Policy",
+          "type": "string"
+        },
+        "plan_id": {
+          "description": "Content-addressed plan id.",
+          "pattern": "^plan:sha256:[0-9a-f]{64}$",
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "robot_asset_id": {
+          "description": "Content-addressed asset id.",
+          "pattern": "^asset:sha256:[0-9a-f]{64}$",
+          "title": "Robot Asset Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "semantics": {
+          "const": "hhtools.legacy-job-upgrade.v1",
+          "default": "hhtools.legacy-job-upgrade.v1",
+          "title": "Semantics",
+          "type": "string"
+        },
+        "source_schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Source Schema Version",
+          "type": "integer"
+        },
+        "warnings": {
+          "default": [],
+          "items": {
+            "description": "Stable, English, machine-readable code.",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Z][A-Z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "canonical_v1_sha256",
+        "motion_asset_id",
+        "robot_asset_id",
+        "plan_id",
+        "job_spec_sha256"
+      ],
+      "title": "LegacyMigrationReceipt",
+      "type": "object"
+    },
+    "NextAction": {
+      "additionalProperties": false,
+      "description": "An explicit recovery or continuation step for an agent or human.",
+      "properties": {
+        "action": {
+          "description": "Stable, English action identifier.",
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Action",
+          "type": "string"
+        },
+        "actor": {
+          "enum": [
+            "agent",
+            "human",
+            "system"
+          ],
+          "title": "Actor",
+          "type": "string"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional human-readable instruction.",
+          "title": "Message"
+        },
+        "parameters": {
+          "additionalProperties": true,
+          "description": "Structured parameters needed to perform the action.",
+          "title": "Parameters",
+          "type": "object"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "pattern": "^(?:(?:/(?:\\?(?:(?:calibrate|panel|robot|view)=[^&#\\s]{0,256}(?:&(?:calibrate|panel|robot|view)=[^&#\\s]{0,256})*)?)?|http://(?:127\\.0\\.0\\.1|localhost|\\[::1\\]):(?:0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])/(?:\\?(?:(?:calibrate|panel|robot|view)=[^&#\\s]{0,256}(?:&(?:calibrate|panel|robot|view)=[^&#\\s]{0,256})*)?)?)|https://(?:\\[(?:(?:(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}|(?:[0-9A-Fa-f]{1,4}:){1,7}:|(?:[0-9A-Fa-f]{1,4}:){1,6}:[0-9A-Fa-f]{1,4}|(?:[0-9A-Fa-f]{1,4}:){1,5}(?::[0-9A-Fa-f]{1,4}){1,2}|(?:[0-9A-Fa-f]{1,4}:){1,4}(?::[0-9A-Fa-f]{1,4}){1,3}|(?:[0-9A-Fa-f]{1,4}:){1,3}(?::[0-9A-Fa-f]{1,4}){1,4}|(?:[0-9A-Fa-f]{1,4}:){1,2}(?::[0-9A-Fa-f]{1,4}){1,5}|[0-9A-Fa-f]{1,4}:(?:(?::[0-9A-Fa-f]{1,4}){1,6})|:(?:(?::[0-9A-Fa-f]{1,4}){1,7}|:)))\\]|[A-Za-z0-9._~-]+)(?::(?:0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?(?:[/?#](?:(?:[A-Za-z0-9._~!$&'()*+,;=:@-]|%[0-9A-Fa-f]{2})|[/?#])*)?)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional allowlisted local calibration UI route or portable HTTPS documentation URL.",
+          "title": "Url"
+        }
+      },
+      "required": [
+        "actor",
+        "action"
+      ],
+      "title": "NextAction",
+      "type": "object"
+    },
+    "OutputPolicy": {
+      "enum": [
+        "create_new",
+        "fail_if_exists",
+        "overwrite"
+      ],
+      "title": "OutputPolicy",
+      "type": "string"
+    },
+    "PreflightCheck": {
+      "additionalProperties": false,
+      "description": "One deterministic precondition evaluated by the service.",
+      "properties": {
+        "code": {
+          "description": "Stable, English, machine-readable code.",
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Code",
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": true,
+          "title": "Details",
+          "type": "object"
+        },
+        "level": {
+          "$ref": "#/$defs/PreflightCheckLevel"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "next_action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NextAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "code",
+        "level",
+        "message"
+      ],
+      "title": "PreflightCheck",
+      "type": "object"
+    },
+    "PreflightCheckLevel": {
+      "enum": [
+        "pass",
+        "warning",
+        "error"
+      ],
+      "title": "PreflightCheckLevel",
+      "type": "string"
+    },
+    "PreflightResponse": {
+      "additionalProperties": false,
+      "description": "Preflight result; only ``ready`` responses expose a runnable plan.",
+      "properties": {
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/PreflightCheck"
+          },
+          "title": "Checks",
+          "type": "array"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "plan": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RetargetPlan"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "recommended_backend": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recommended Backend"
+        },
+        "request_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "required_actions": {
+          "items": {
+            "$ref": "#/$defs/NextAction"
+          },
+          "title": "Required Actions",
+          "type": "array"
+        },
+        "schema_version": {
+          "$ref": "#/$defs/SchemaVersion",
+          "default": "1.0"
+        },
+        "status": {
+          "$ref": "#/$defs/PreflightStatus"
+        }
+      },
+      "required": [
+        "request_id",
+        "status"
+      ],
+      "title": "PreflightResponse",
+      "type": "object"
+    },
+    "PreflightStatus": {
+      "enum": [
+        "ready",
+        "human_action_required",
+        "rejected"
+      ],
+      "title": "PreflightStatus",
+      "type": "string"
+    },
+    "RetargetPlan": {
+      "additionalProperties": false,
+      "description": "Fully resolved, content-bound plan accepted by ``start_retarget``.",
+      "properties": {
+        "backend": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Backend",
+          "type": "string"
+        },
+        "calibration_digest": {
+          "anyOf": [
+            {
+              "description": "Lower-case SHA-256 content digest.",
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calibration Digest"
+        },
+        "calibration_id": {
+          "anyOf": [
+            {
+              "description": "Content-addressed calibration id.",
+              "pattern": "^cal:sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calibration Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "expires_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expires At"
+        },
+        "input_digest": {
+          "description": "Lower-case SHA-256 content digest.",
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Input Digest",
+          "type": "string"
+        },
+        "motion_asset_id": {
+          "description": "Content-addressed asset id.",
+          "pattern": "^asset:sha256:[0-9a-f]{64}$",
+          "title": "Motion Asset Id",
+          "type": "string"
+        },
+        "output_format": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Output Format",
+          "type": "string"
+        },
+        "output_policy": {
+          "$ref": "#/$defs/OutputPolicy"
+        },
+        "parameters": {
+          "additionalProperties": true,
+          "title": "Parameters",
+          "type": "object"
+        },
+        "plan_id": {
+          "description": "Content-addressed plan id.",
+          "pattern": "^plan:sha256:[0-9a-f]{64}$",
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "robot_asset_id": {
+          "description": "Content-addressed asset id.",
+          "pattern": "^asset:sha256:[0-9a-f]{64}$",
+          "title": "Robot Asset Id",
+          "type": "string"
+        },
+        "robot_digest": {
+          "description": "Lower-case SHA-256 content digest.",
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Robot Digest",
+          "type": "string"
+        },
+        "robot_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Robot Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "$ref": "#/$defs/SchemaVersion",
+          "default": "1.0"
+        }
+      },
+      "required": [
+        "plan_id",
+        "created_at",
+        "motion_asset_id",
+        "robot_id",
+        "robot_asset_id",
+        "backend",
+        "output_format",
+        "output_policy",
+        "input_digest",
+        "robot_digest"
+      ],
+      "title": "RetargetPlan",
+      "type": "object"
+    },
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Non-executing upgrade result tied to its authoritative preflight.",
+  "properties": {
+    "job_spec": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/JobSpecV2"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "preflight": {
+      "$ref": "#/$defs/PreflightResponse"
+    },
+    "receipt": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LegacyMigrationReceipt"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    }
+  },
+  "required": [
+    "preflight"
+  ],
+  "title": "LegacyJobUpgradeResponse",
+  "type": "object"
+}

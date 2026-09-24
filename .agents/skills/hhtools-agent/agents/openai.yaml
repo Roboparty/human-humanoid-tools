@@ -1,0 +1,27 @@
+interface:
+  display_name: "HHTools Agent"
+  short_description: "Run and visually auto-calibrate safe HHTools workflows"
+  default_prompt: "Use $hhtools-agent to inspect assets, automatically propose and visually validate missing H2R or R2R pair calibration, silently save only a valid candidate, then preflight a smoke run and stop for review before any full job."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "hhtools"
+      description: "Local HHTools H2R/R2R/Batch and visual calibration MCP server"
+      transport: "stdio"
+      command: "uv"
+      args:
+        - "run"
+        - "--frozen"
+        - "--no-sync"
+        - "hhtools-mcp"
+        - "--source"
+        - "assets/motions"
+        - "--save-dir"
+        - ".hhtools/agent/save"
+        - "--cache"
+        - ".hhtools/agent/cache"
+        - "--job-settings"
+        - ".hhtools/agent/job-settings.json"
+        - "--web-ui-url"
+        - "http://127.0.0.1:8010"
+      cwd: "."

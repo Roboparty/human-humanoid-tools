@@ -1,15 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 """Loader for the dataset-analysis configuration (thresholds + weights).
 
-The single source of truth is ``configs/analysis/default.yaml``.  Values are read
-once and cached; callers may pass an explicit override dict (e.g. from the web UI)
+The single source of truth is ``configs/analysis/default.yaml``. Callers may pass
+an explicit override dict (e.g. from the web UI)
 that is deep-merged on top of the defaults.
 """
 
 from __future__ import annotations
 
 from copy import deepcopy
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +18,6 @@ def _config_path() -> Path:
     return here.parent.parent / "configs" / "analysis" / "default.yaml"
 
 
-@lru_cache(maxsize=1)
 def _load_default() -> dict[str, Any]:
     path = _config_path()
     if not path.is_file():

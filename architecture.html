@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>hhtools 架构图</title>
+<style>
+  :root {
+    --rp-blue-700: #0A3C96;
+    --rp-blue-500: #3F78C7;
+    --rp-blue-300: #9DBDE8;
+    --rp-blue-100: #DCE9F8;
+    --rp-blue-50: #F7FBFE;
+    --rp-ink: #02122E;
+    --rp-muted: #64748B;
+    --accent-gpu: #0E7A5F;
+    --accent-gpu-bg: #E6F5F0;
+    --accent-warm: #B45309;
+    --accent-warm-bg: #FEF3E2;
+    --accent-purple: #6D28D9;
+    --accent-purple-bg: #F1EBFC;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+    background: #EDF3FA;
+    color: var(--rp-ink);
+    display: flex;
+    justify-content: center;
+    padding: 32px 16px;
+  }
+  .canvas {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 8px 40px rgba(10, 60, 150, 0.10);
+    padding: 40px 48px;
+    max-width: 1280px;
+  }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
+  .subtitle { color: var(--rp-muted); font-size: 14px; margin-top: 6px; margin-bottom: 28px; }
+  .layer {
+    border-radius: 12px;
+    padding: 16px 18px 18px;
+    margin-bottom: 14px;
+    position: relative;
+  }
+  .layer-label {
+    position: absolute;
+    top: -10px;
+    left: 16px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    padding: 2px 10px;
+    border-radius: 999px;
+    color: #fff;
+  }
+  .layer-note {
+    position: absolute;
+    top: -9px;
+    right: 16px;
+    font-size: 11px;
+    color: var(--rp-muted);
+    background: #fff;
+    padding: 0 8px;
+  }
+  .boxes { display: flex; gap: 12px; flex-wrap: wrap; }
+  .box {
+    flex: 1;
+    min-width: 150px;
+    background: #fff;
+    border: 1.5px solid var(--rp-blue-100);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .box .t { font-size: 14px; font-weight: 650; }
+  .box .d { font-size: 11.5px; color: var(--rp-muted); margin-top: 4px; line-height: 1.5; }
+  .box .tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 999px;
+    margin-top: 7px;
+  }
+
+  .l5 { background: var(--rp-blue-50); border: 1.5px solid var(--rp-blue-300); }
+  .l5 .layer-label { background: var(--rp-blue-700); }
+  .l4 { background: #F5F0FD; border: 1.5px solid #C9B6F2; }
+  .l4 .layer-label { background: var(--accent-purple); }
+  .l3 { background: #F0FAF6; border: 1.5px solid #A8DCC8; }
+  .l3 .layer-label { background: var(--accent-gpu); }
+  .l2 { background: var(--accent-warm-bg); border: 1.5px solid #F2CFA0; }
+  .l2 .layer-label { background: var(--accent-warm); }
+  .l1 { background: #F1F5F9; border: 1.5px solid #B6C2CF; }
+  .l1 .layer-label { background: #475569; }
+
+  .tag-gpu { background: var(--accent-gpu-bg); color: var(--accent-gpu); }
+  .tag-cpu { background: #F1F5F9; color: #475569; }
+  .tag-rec { background: #DCE9F8; color: var(--rp-blue-700); }
+  .tag-legacy { background: #F1F5F9; color: var(--rp-muted); }
+  .tag-lazy { background: var(--accent-warm-bg); color: var(--accent-warm); }
+
+  .arrow-row {
+    display: flex;
+    justify-content: center;
+    margin: -6px 0 2px;
+    color: var(--rp-blue-500);
+    font-size: 18px;
+    letter-spacing: 12px;
+  }
+  .flow-caption {
+    text-align: center;
+    font-size: 10.5px;
+    color: var(--rp-muted);
+    margin-bottom: 8px;
+  }
+
+  .bottom-section { display: flex; gap: 14px; margin-top: 22px; flex-wrap: wrap; }
+  .panel {
+    flex: 1;
+    min-width: 280px;
+    border: 1.5px dashed var(--rp-blue-300);
+    border-radius: 12px;
+    padding: 14px 16px;
+    background: var(--rp-blue-50);
+  }
+  .panel h3 { font-size: 13px; font-weight: 700; margin-bottom: 10px; color: var(--rp-blue-700); }
+  .panel ul { list-style: none; }
+  .panel li { font-size: 12px; color: var(--rp-ink); padding: 3px 0; line-height: 1.5; }
+  .panel li::before { content: "·"; color: var(--rp-blue-500); font-weight: 700; margin-right: 6px; }
+  .legend { display: flex; gap: 18px; margin-top: 20px; flex-wrap: wrap; }
+  .legend span { font-size: 11px; color: var(--rp-muted); display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+</style>
+</head>
+<body>
+<div class="canvas">
+  <h1>hhtools 架构图</h1>
+  <p class="subtitle">human-humanoid-tools · 人体动作 → 人形机器人 retargeting · 分层规则:下层永不 import 上层,重依赖全部 lazy import</p>
+
+  <!-- Layer 5: UI -->
+  <div class="layer l5">
+    <span class="layer-label">LAYER 5 · 用户接口</span>
+    <span class="layer-note">两个 UI 共享同一后端,数据不出本机</span>
+    <div class="boxes">
+      <div class="box">
+        <div class="t">CLI(Typer)</div>
+        <div class="d">web / ui / retarget / convert / import / robot / bodymodel</div>
+        <span class="tag tag-cpu">hhtools &lt;cmd&gt;</span>
+      </div>
+      <div class="box">
+        <div class="t">Web UI ⭐</div>
+        <div class="d">FastAPI(4269 行, 47 路由)+ three.js SPA · 中文界面 · 离线 vendor</div>
+        <span class="tag tag-rec">推荐入口 hhtools web</span>
+      </div>
+      <div class="box">
+        <div class="t">Viser Viewer</div>
+        <div class="d">app.py 5533 行 · 旧版 3D 查看器(library/anatomy/cache 被 web 复用)</div>
+        <span class="tag tag-legacy">retired · Viser UI</span>
+      </div>
+      <div class="box">
+        <div class="t">Analysis 分析</div>
+        <div class="d">metrics → tags → embedding → FPS 多样性子集(LIMMT/GQS 风格)</div>
+        <span class="tag tag-cpu">/api/dataset/*</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-row">▲ ▲ ▲</div>
+  <div class="flow-caption">调用 pipeline · 共享 calibration + scaler</div>
+
+  <!-- Layer 4: Retarget -->
+  <div class="layer l4">
+    <span class="layer-label">LAYER 4 · RETARGET</span>
+    <span class="layer-note">按 clip 内容选后端</span>
+    <div class="boxes">
+      <div class="box">
+        <div class="t">Backend A · Newton IK</div>
+        <div class="d">newton_basic · scaler → feet stabilizer → Warp IK → joint clamp · CUDA-graph</div>
+        <span class="tag tag-gpu">GPU · 骨架类 clip(mimic)</span>
+      </div>
+      <div class="box">
+        <div class="t">Backend B · Interaction Mesh</div>
+        <div class="d">interaction_mesh · Laplacian + MPC/SQP(MuJoCo + OSQP 硬非穿透)</div>
+        <span class="tag tag-gpu">人+物/地形 clip</span>
+      </div>
+      <div class="box">
+        <div class="t">Calibration 标定(共享)</div>
+        <div class="d">robot↔human 一次性对齐 · 每 robot×format 一个 YAML · UI 可交互编辑</div>
+        <span class="tag tag-cpu">calibration.py 2032 行</span>
+      </div>
+      <div class="box">
+        <div class="t">R2R 机器人→机器人</div>
+        <div class="d">robot_to_robot.py · 源轨迹 FK → canonical → 新机器人 IK</div>
+        <span class="tag tag-cpu">916 行</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-row">▲ ▲ ▲</div>
+  <div class="flow-caption">load_motion() / load_robot() → 统一 Motion IR</div>
+
+  <!-- Layer 3: IO + Robot -->
+  <div class="layer l3">
+    <span class="layer-label">LAYER 3 · IO + ROBOT</span>
+    <span class="layer-note">注册表扩展点</span>
+    <div class="boxes">
+      <div class="box">
+        <div class="t">IO 格式适配</div>
+        <div class="d">BVH(多方言)/ GLB / 统一 NPZ v1 / PARC pkl / RobotCSV</div>
+        <span class="tag tag-cpu">register_loader</span>
+      </div>
+      <div class="box">
+        <div class="t">数据集适配 10+</div>
+        <div class="d">AMASS · Motion-X · OMOMO · PHUMA · GVHMR · LAFAN · SOMA · Xsens · holosoma · parc_ms</div>
+        <span class="tag tag-cpu">@register_dataset</span>
+      </div>
+      <div class="box">
+        <div class="t">Robot 机器人接入</div>
+        <div class="d">URDF 权威 + robot.yaml · scaffold 零配置 · urdf_normalize 修厂商 quirk</div>
+        <span class="tag tag-lazy">yourdfpy/mujoco lazy</span>
+      </div>
+      <div class="box">
+        <div class="t">Kinematics 推断</div>
+        <div class="d">ik_map 启发式推断 + 解剖验证 · joint_scales · foot/arm geometry</div>
+        <span class="tag tag-cpu">validate / repair</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-row">▲</div>
+  <div class="flow-caption">SMPL 前向 → Motion(权重需用户自备,MPI 许可)</div>
+
+  <!-- Layer 2: BodyModels -->
+  <div class="layer l2">
+    <span class="layer-label">LAYER 2 · BODY MODELS</span>
+    <span class="layer-note">smplx/torch lazy</span>
+    <div class="boxes">
+      <div class="box">
+        <div class="t">SmplxEngine</div>
+        <div class="d">SMPL(24j)/ SMPL-H(52j)/ SMPL-X · 批量 forward → Motion · lru_cache</div>
+        <span class="tag tag-lazy">torch lazy</span>
+      </div>
+      <div class="box">
+        <div class="t">SmplMotionParams</div>
+        <div class="d">统一 SMPL 家族 IR:root_orient / body_pose / betas / trans / 手/表情</div>
+        <span class="tag tag-cpu">params.py</span>
+      </div>
+      <div class="box">
+        <div class="t">chumpy 兼容补丁</div>
+        <div class="d">让 MPI 老权重在 Py3.12+ 可 unpickle</div>
+        <span class="tag tag-cpu">compat.py</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-row">▲</div>
+  <div class="flow-caption">一切汇聚于此 · 纯 NumPy,零重依赖</div>
+
+  <!-- Layer 1: Core -->
+  <div class="layer l1">
+    <span class="layer-label">LAYER 1 · CORE(纯 NumPy)</span>
+    <span class="layer-note">Z-up · +X forward · 米制 · xyzw 四元数</span>
+    <div class="boxes">
+      <div class="box">
+        <div class="t">Motion(核心 IR)</div>
+        <div class="d">全局位置 (F,J,3) + 四元数 (F,J,4) + 层级 + SceneObject + TerrainHeightfield</div>
+        <span class="tag tag-rec">单一中间表示</span>
+      </div>
+      <div class="box">
+        <div class="t">Skeleton / Hierarchy</div>
+        <div class="d">骨骼拓扑 + 参考静止姿态 · FK 前向运动学 · AnimationBuffer</div>
+        <span class="tag tag-cpu">纯数据</span>
+      </div>
+      <div class="box">
+        <div class="t">math 数学库</div>
+        <div class="d">quaternion / rotation / transform / vector 批量运算</div>
+        <span class="tag tag-cpu">NumPy only</span>
+      </div>
+      <div class="box">
+        <div class="t">工具</div>
+        <div class="d">resample(SLERP)· grounding 地面检测 · simplify 骨骼裁剪 · LBS 蒙皮</div>
+        <span class="tag tag-cpu">纯函数</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom panels -->
+  <div class="bottom-section">
+    <div class="panel">
+      <h3>📦 持久化 / 存储</h3>
+      <ul>
+        <li>统一 NPZ v1 — 磁盘标准 IR</li>
+        <li>robot.yaml — 机器人唯一可编辑配置</li>
+        <li>retarget_calibration_*.yaml — 标定结果</li>
+        <li>RobotCSV — retarget 输出轨迹</li>
+        <li>PARC MSFileData pkl — 可训练导出</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>🔌 外部输入(用户提供)</h3>
+      <ul>
+        <li>SMPL / SMPL-H / SMPL-X 权重(MPI 许可,不附带)</li>
+        <li>机器人 URDF + meshes(web 上传或 CLI scaffold)</li>
+        <li>动作数据:BVH / GLB / NPZ / NPY / PTK</li>
+        <li>NVIDIA newton(Retarget GPU 后端,手动安装)</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>🚀 部署形态</h3>
+      <ul>
+        <li>hhtools web → 127.0.0.1:8009(当前)</li>
+        <li>旧 Viser 本地查看器已退役；统一使用 hhtools web / desktop</li>
+        <li>CLI 批处理:scripts/batch_*.py</li>
+        <li>候选:Electron 壳 + Python 子进程(评估中)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><i class="sw" style="background:#0A3C96"></i> UI 层</span>
+    <span><i class="sw" style="background:#6D28D9"></i> Retarget 层</span>
+    <span><i class="sw" style="background:#0E7A5F"></i> IO/Robot 层</span>
+    <span><i class="sw" style="background:#B45309"></i> Body Models 层</span>
+    <span><i class="sw" style="background:#475569"></i> Core 层</span>
+    <span><i class="sw" style="background:#fff;border:1px dashed #9DBDE8"></i> 存储/外部输入</span>
+  </div>
+</div>
+</body>
+</html>

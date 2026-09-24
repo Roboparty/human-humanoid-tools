@@ -3,15 +3,15 @@
 Workflow at a glance
 --------------------
 
-1. **Capture** — the viewer's calibration mode lets the user dial
-   actuated joint angles so the robot, at floating-base identity,
-   visually matches a chosen reference human T-pose.  The resulting
-   configuration is packaged into a :class:`RobotRetargetCalibration`
-   and written next to the URDF as
-   ``retarget_calibration_<reference>.yaml`` (one file per robot **and**
-   per reference format: ``smpl``, ``lafan_bvh``, …) via
-   :func:`save_calibration`.  Legacy ``retarget_calibration.yaml`` is
-   still loaded when its embedded ``reference`` matches.
+1. **Capture** — the viewer can dial actuated joint angles, or the Agent
+   calibration assistant can generate and validate a constrained candidate,
+   so the robot at floating-base identity matches a chosen reference pose.
+   The resulting configuration is packaged into a :class:`RobotRetargetCalibration` and
+   persisted via :func:`save_calibration_for_preset`.  Writable source-tree
+   presets keep the historical sibling file; packaged read-only presets use a
+   per-user override below ``~/.config/hhtools/robots/<robot>/``.  Legacy
+   ``retarget_calibration.yaml`` is still loaded when its embedded
+   ``reference`` matches.
 
 2. **Use** — at retarget time, :func:`build_scaler_config_from_calibration`
    reads that yaml, runs the URDF's forward kinematics at the stored
@@ -47,9 +47,12 @@ not cached; the closed-form computation is <1 ms per robot.
 
 from __future__ import annotations
 
+import errno
 import logging
+import os
+import uuid
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -69,6 +72,7 @@ if TYPE_CHECKING:
     from hhtools.core.motion import Motion
     from hhtools.retarget.newton_basic.config import ScalerConfig
     from hhtools.retarget.newton_basic.rest_pose import SourceRestPose
+    from hhtools.robot.base import RobotPreset
     from hhtools.robot.loader import URDFRobotModel
 
 CALIBRATION_FILENAME = "retarget_calibration.yaml"
@@ -197,6 +201,329 @@ def calibration_path_for(
     return base / CALIBRATION_FILENAME
 
 
+def _require_calibration_reference(reference: str) -> str:
+    """Return a canonical, filename-safe calibration reference.
+
+    Public Web endpoints ultimately pass user-selected reference names into
+    calibration storage.  Normalising and validating before constructing a
+    filename both preserves the historical aliases and prevents an unknown
+    value from becoming a path component.
+    """
+
+    normalized = normalize_calibration_reference(str(reference))
+    if normalized not in _VALID_CALIBRATION_REFERENCES:
+        raise ValueError(
+            f"unknown calibration reference {reference!r} "
+            f"(normalised {normalized!r}); expected one of "
+            f"{sorted(_VALID_CALIBRATION_REFERENCES)}"
+        )
+    return normalized
+
+
+def _safe_preset_component(name: str) -> str:
+    """Validate a preset id before using it below the user robot root."""
+
+    value = str(name).strip()
+    normalized = value.replace("\\", "/")
+    posix = PurePosixPath(normalized)
+    windows = PureWindowsPath(value)
+    if (
+        not value
+        or "\x00" in value
+        or posix.is_absolute()
+        or windows.is_absolute()
+        or bool(windows.drive)
+        or len(posix.parts) != 1
+        or posix.name in {"", ".", ".."}
+    ):
+        raise ValueError(f"unsafe robot preset name for calibration storage: {name!r}")
+    return posix.name
+
+
+def _user_calibration_directory(
+    preset: RobotPreset,
+    user_root: str | Path | None,
+) -> Path:
+    """Return a contained per-preset directory in the user robot library.
+
+    ``resolve(strict=False)`` deliberately resolves any already-existing
+    symlink components.  A per-robot symlink that escapes the configured user
+    root is rejected before either a read or a write can follow it.
+    """
+
+    if user_root is None:
+        from hhtools.utils.paths import user_robot_dir
+
+        root = user_robot_dir()
+    else:
+        root = Path(user_root).expanduser()
+    resolved_root = root.resolve(strict=False)
+    candidate = (resolved_root / _safe_preset_component(preset.name)).resolve(
+        strict=False
+    )
+    try:
+        candidate.relative_to(resolved_root)
+    except ValueError as err:
+        raise ValueError(
+            f"user calibration directory escapes the configured robot root: {candidate}"
+        ) from err
+    return candidate
+
+
+def _reference_specific_filenames(reference: str) -> tuple[str, ...]:
+    """Canonical filename followed by an optional historical alias filename."""
+
+    canonical = _require_calibration_reference(reference)
+    names = [f"retarget_calibration_{canonical}.yaml"]
+    raw = str(reference)
+    if raw != canonical and normalize_calibration_reference(raw) == canonical:
+        names.append(f"retarget_calibration_{raw}.yaml")
+    return tuple(names)
+
+
+def _contained_calibration_path(directory: Path, candidate: Path) -> Path:
+    """Resolve one candidate without allowing a file symlink to escape."""
+
+    root = directory.resolve(strict=False)
+    resolved = candidate.resolve(strict=False)
+    try:
+        resolved.relative_to(root)
+    except ValueError as err:
+        raise ValueError(
+            f"calibration path escapes its preset directory: {candidate}"
+        ) from err
+    return resolved
+
+
+def _validate_preset_calibration_candidate(
+    path: Path,
+    preset: RobotPreset,
+    reference: str,
+    *,
+    legacy: bool,
+) -> bool:
+    """Validate one candidate and report whether it matches ``reference``.
+
+    A reference-specific filename is an explicit claim and therefore a
+    malformed document or mismatched identity is an error.  The legacy
+    single-file form may validly belong to another reference; that one case is
+    a normal non-match so resolution can continue to the bundled fallback.
+    """
+
+    wanted = _require_calibration_reference(reference)
+    try:
+        calibration = load_calibration(path)
+    except Exception as err:
+        raise ValueError(f"invalid retarget calibration at {path}: {err}") from err
+
+    if calibration.robot != preset.name:
+        raise ValueError(
+            f"{path}: calibration robot {calibration.robot!r} does not match "
+            f"preset {preset.name!r}"
+        )
+    actual = normalize_calibration_reference(str(calibration.reference))
+    if actual != wanted:
+        if legacy:
+            return False
+        raise ValueError(
+            f"{path}: calibration reference {actual!r} does not match {wanted!r}"
+        )
+    return True
+
+
+def _resolve_calibration_in_directory(
+    directory: Path,
+    preset: RobotPreset,
+    reference: str,
+) -> Path | None:
+    """Resolve and strictly validate one directory layer."""
+
+    for filename in _reference_specific_filenames(reference):
+        preferred = directory / filename
+        if preferred.is_file() or preferred.is_symlink():
+            preferred = _contained_calibration_path(directory, preferred)
+            if _validate_preset_calibration_candidate(
+                preferred, preset, reference, legacy=False
+            ):
+                return preferred
+
+    legacy = directory / CALIBRATION_FILENAME
+    if legacy.is_file() or legacy.is_symlink():
+        legacy = _contained_calibration_path(directory, legacy)
+        if _validate_preset_calibration_candidate(
+            legacy, preset, reference, legacy=True
+        ):
+            return legacy
+    return None
+
+
+def resolve_preset_calibration_file(
+    preset: RobotPreset,
+    reference: str,
+    user_root: str | Path | None = None,
+) -> Path | None:
+    """Resolve a preset calibration with a per-user override layer.
+
+    Resolution order is deliberately deterministic:
+
+    1. ``<user robot root>/.calibration-overlays/<preset.name>/``,
+    2. ``<user robot root>/<preset.name>/`` (canonical file, historical alias,
+       then matching legacy single-file calibration),
+    3. the directory containing the preset URDF, and
+    4. ``preset.root_dir`` when it differs from the URDF directory.
+
+    The user layer is therefore writable even when a packaged robot lives in
+    a root-owned ``/opt`` tree.  Existing source checkouts retain their bundled
+    calibration fallback.  A present but malformed or identity-mismatched
+    override raises :class:`ValueError`; silently falling back would make a
+    successful-looking save use a different file on the next run.
+    """
+
+    _require_calibration_reference(reference)
+    from hhtools.utils.paths import user_calibration_overlay_dir
+
+    user_directory = _user_calibration_directory(preset, user_root)
+    overlay_directory = user_calibration_overlay_dir(
+        _safe_preset_component(preset.name), user_root=user_root
+    )
+
+    search: list[Path] = [overlay_directory, user_directory]
+    urdf_path = getattr(preset, "urdf_path", None)
+    if urdf_path is not None:
+        search.append(Path(urdf_path).parent)
+    search.append(Path(preset.root_dir))
+
+    seen: set[Path] = set()
+    for directory in search:
+        resolved_directory = directory.resolve(strict=False)
+        if resolved_directory in seen:
+            continue
+        seen.add(resolved_directory)
+        candidate = _resolve_calibration_in_directory(
+            resolved_directory, preset, reference
+        )
+        if candidate is not None:
+            return candidate
+    return None
+
+
+def _user_override_exists(directory: Path, reference: str) -> bool:
+    """Whether this preset has adopted user-layer calibration storage."""
+
+    filenames = (*_reference_specific_filenames(reference), CALIBRATION_FILENAME)
+    if any(
+        (directory / name).exists() or (directory / name).is_symlink()
+        for name in filenames
+    ):
+        return True
+    try:
+        return any(directory.glob("retarget_calibration_*.yaml"))
+    except OSError:
+        return False
+
+
+def _path_appears_writable(path: Path) -> bool:
+    """Cheap preflight for packaged read-only directories.
+
+    This is only an optimisation and user-facing hint boundary; the actual
+    write remains authoritative and permission/read-only errors are handled
+    below to avoid a time-of-check/time-of-use assumption.
+    """
+
+    probe = path if path.exists() else path.parent
+    return probe.exists() and os.access(probe, os.W_OK)
+
+
+def _is_read_only_write_error(error: OSError) -> bool:
+    return isinstance(error, PermissionError) or error.errno in {
+        errno.EACCES,
+        errno.EPERM,
+        errno.EROFS,
+    }
+
+
+def save_calibration_for_preset(
+    calibration: RobotRetargetCalibration,
+    preset: RobotPreset,
+    *,
+    derived: _DerivedParams | None = None,
+    user_robot_root: str | Path | None = None,
+    prefer_user_overlay: bool = False,
+) -> Path:
+    """Persist calibration beside a writable source preset or in user overlay.
+
+    Source-tree development keeps the historical, version-controllable
+    sibling YAML.  Installed packages normally fail the writability preflight
+    (or the authoritative open with ``EACCES``/``EROFS``), at which point the
+    exact same document is written below the per-user robot directory.  Once a
+    preset has any user calibration, later saves stay in that layer so a
+    writable checkout cannot unexpectedly bypass an existing override.
+    ``prefer_user_overlay`` makes validated Agent writes leave the registered
+    robot bundle untouched even in a writable source checkout. If the legacy
+    user directory overlaps the robot bundle, use the separate overlay layer;
+    once adopted, that layer also receives subsequent Web/CLI saves.
+    """
+
+    reference = _require_calibration_reference(str(calibration.reference))
+    if calibration.robot != preset.name:
+        raise ValueError(
+            f"calibration robot {calibration.robot!r} does not match preset "
+            f"{preset.name!r}"
+        )
+
+    user_directory = _user_calibration_directory(preset, user_robot_root)
+    user_target = _contained_calibration_path(
+        user_directory,
+        user_directory / f"retarget_calibration_{reference}.yaml",
+    )
+
+    urdf_path = getattr(preset, "urdf_path", None)
+    bundled_directory = (
+        Path(urdf_path).parent if urdf_path is not None else Path(preset.root_dir)
+    ).resolve(strict=False)
+    bundled_target = _contained_calibration_path(
+        bundled_directory,
+        bundled_directory / f"retarget_calibration_{reference}.yaml",
+    )
+    from hhtools.utils.paths import user_calibration_overlay_dir
+
+    overlay_directory = user_calibration_overlay_dir(
+        _safe_preset_component(preset.name), user_root=user_robot_root
+    )
+    bundle_root = Path(preset.root_dir).resolve(strict=False)
+    overlaps_bundle = (
+        user_directory.is_relative_to(bundle_root)
+        or bundle_root.is_relative_to(user_directory)
+        or user_directory.is_relative_to(bundled_directory)
+        or bundled_directory.is_relative_to(user_directory)
+    )
+    if _user_override_exists(overlay_directory, reference) or (
+        prefer_user_overlay and overlaps_bundle
+    ):
+        if overlay_directory.is_relative_to(bundle_root):
+            raise ValueError("calibration overlay must be outside the registered robot bundle")
+        overlay_target = _contained_calibration_path(
+            overlay_directory,
+            overlay_directory / f"retarget_calibration_{reference}.yaml",
+        )
+        return save_calibration(calibration, overlay_target, derived=derived)
+
+    if (
+        prefer_user_overlay
+        or bundled_target.resolve(strict=False) == user_target.resolve(strict=False)
+        or _user_override_exists(user_directory, reference)
+        or not _path_appears_writable(bundled_target)
+    ):
+        return save_calibration(calibration, user_target, derived=derived)
+
+    try:
+        return save_calibration(calibration, bundled_target, derived=derived)
+    except OSError as err:
+        if not _is_read_only_write_error(err):
+            raise
+        return save_calibration(calibration, user_target, derived=derived)
+
+
 def resolve_calibration_file(
     robot_preset_dir: str | Path,
     reference: str,
@@ -299,8 +626,18 @@ def save_calibration(
                 "cannot silently misalign retarget."
             ),
         }
-    with target.open("w", encoding="utf-8") as fp:
-        yaml.safe_dump(payload, fp, default_flow_style=False, sort_keys=False)
+    encoded = yaml.safe_dump(
+        payload,
+        default_flow_style=False,
+        sort_keys=False,
+        allow_unicode=True,
+    )
+    temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_text(encoded, encoding="utf-8")
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
     return target
 
 
@@ -368,7 +705,7 @@ _TPOSE_ARM_JOINTS: tuple[str, ...] = (
 
 def repair_apose_calibration_for_straight_t_reference(
     calibration: RobotRetargetCalibration,
-    robot_preset_dir: str | Path,
+    robot_preset_dir: str | Path | RobotPreset,
 ) -> RobotRetargetCalibration:
     """Borrow T-pose arm angles from a sibling calibration when needed.
 
@@ -388,11 +725,20 @@ def repair_apose_calibration_for_straight_t_reference(
     if abs(roll) > 0.5:
         return calibration
 
-    preset_dir = Path(robot_preset_dir)
+    preset = (
+        robot_preset_dir
+        if hasattr(robot_preset_dir, "name") and hasattr(robot_preset_dir, "root_dir")
+        else None
+    )
+    preset_dir = Path(preset.root_dir if preset is not None else robot_preset_dir)
     for donor_ref in _STRAIGHT_T_ARM_REFERENCES:
         if donor_ref == ref:
             continue
-        donor_path = resolve_calibration_file(preset_dir, donor_ref)
+        donor_path = (
+            resolve_preset_calibration_file(preset, donor_ref)
+            if preset is not None
+            else resolve_calibration_file(preset_dir, donor_ref)
+        )
         if donor_path is None:
             continue
         try:
@@ -860,10 +1206,10 @@ def build_scaler_config_from_calibration(
 
     from dataclasses import replace as _dc_replace
 
-    preset_dir = getattr(getattr(model, "preset", None), "root_dir", None)
-    if preset_dir is not None:
+    preset = getattr(model, "preset", None)
+    if preset is not None:
         calibration = repair_apose_calibration_for_straight_t_reference(
-            calibration, preset_dir,
+            calibration, preset,
         )
 
     from hhtools.retarget.newton_basic.human_aliases import (

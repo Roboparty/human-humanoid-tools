@@ -70,7 +70,7 @@ def run_convert(
         table.add_row("[red]fail[/]", f"{src}  —  {msg}")
     _console.print(table)
 
-    if errors and not ok:
+    if errors:
         raise typer.Exit(code=2)
 
 

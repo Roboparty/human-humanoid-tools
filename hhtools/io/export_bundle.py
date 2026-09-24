@@ -1,0 +1,860 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 hhtools contributors
+# SPDX-License-Identifier: Apache-2.0
+"""Browser-facing retarget export bundles (OMOMO / parc_ms style folders).
+
+When a clip has terrain or interaction objects, exports are packaged as::
+
+    <stem>/
+        <stem>.csv   OR   <stem>.pkl   # robot trajectory
+        object_<i>_<name>.csv|.pkl     # per interaction object (robot-scaled frame)
+        <stem>_terrain.obj             # terrain mesh in robot scale
+        <object_mesh>.obj              # centred mesh vertices scaled to robot frame
+
+Interaction-object tracks are the same scaled robot-frame 6-DoF trajectories the
+interaction-mesh SQP used as anchors (``smpl_scale`` + foot-floor ``z_offset``).
+Terrain OBJ uses ``source_terrain_z_offset`` (split grounding) when stamped on
+``retargeted.meta``; object meshes are centred + scaled by ``obj.scale * smpl_scale``.
+
+The caller receives a ``.zip`` path suitable for ``FileResponse`` download
+into the user's default browser save folder (never written under ``assets/``).
+"""
+
+from __future__ import annotations
+
+import csv
+import logging
+import pickle
+import shutil
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+
+_log = logging.getLogger(__name__)
+
+_WINDOWS_RESERVED_STEMS = frozenset(
+    {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        *(f"COM{i}" for i in range(1, 10)),
+        *(f"LPT{i}" for i in range(1, 10)),
+    }
+)
+
+
+def sanitize_export_stem(stem: object) -> str:
+    """Return one portable filename component while retaining readable Unicode."""
+    raw = str(stem or "").strip().replace("\\", "/").rsplit("/", 1)[-1]
+    safe = "".join(
+        "_" if ord(char) < 32 or ord(char) == 127 or char in '<>:"|?*' else char
+        for char in raw
+    ).strip(" .")
+    safe = safe.encode("utf-8", errors="ignore")[:120].decode(
+        "utf-8",
+        errors="ignore",
+    ).rstrip(" .")
+    if not safe or safe in {".", ".."}:
+        safe = "export"
+    if safe.split(".", 1)[0].upper() in _WINDOWS_RESERVED_STEMS:
+        safe = f"_{safe}"
+    return safe
+
+
+def ensure_export_path(out_root: str | Path, candidate: str | Path) -> Path:
+    """Require an output path, including existing symlinks, to stay in ``out_root``."""
+    root = Path(out_root).resolve(strict=False)
+    path = Path(candidate)
+    try:
+        path.resolve(strict=False).relative_to(root)
+    except (OSError, ValueError) as err:
+        raise ValueError(f"export path escapes output root: {path}") from err
+    return path
+
+
+def motion_has_scene(motion) -> bool:
+    return bool(getattr(motion, "terrain", None) is not None or getattr(motion, "objects", None))
+
+
+def resolve_clip_export_dir(
+    out_root: str | Path,
+    stem: str,
+    source_path: str | Path | None = None,
+    *,
+    has_scene: bool = False,
+) -> Path:
+    """Directory for one clip's export files, mirroring the source tree.
+
+    Flat sources (``AMASS/clip.npz``) write into ``out_root/clip.csv``.
+    Folder clips (``OMOMO/clip/clip.pkl``) write into ``out_root/clip/``.
+    Upload drops whose ``export_subdir`` already ends at the clip folder do not
+    gain an extra ``clip/clip/`` nesting level.
+    """
+    out_root = Path(out_root)
+    stem = sanitize_export_stem(stem)
+    if source_path is not None:
+        parent = Path(source_path).resolve().parent
+        if parent.name == stem:
+            if out_root.name == stem:
+                return ensure_export_path(out_root, out_root)
+            return ensure_export_path(out_root, out_root / stem)
+        if has_scene:
+            return ensure_export_path(out_root, out_root / stem)
+        return ensure_export_path(out_root, out_root)
+    candidate = out_root / stem if has_scene else out_root
+    return ensure_export_path(out_root, candidate)
+
+
+OBJECT_CSV_HEADER = (
+    "time",
+    "pos_x",
+    "pos_y",
+    "pos_z",
+    "quat_x",
+    "quat_y",
+    "quat_z",
+    "quat_w",
+    "ext_x",
+    "ext_y",
+    "ext_z",
+)
+
+
+def _resolve_export_scene_params(meta: dict, source_motion) -> tuple[float, float, float]:
+    """Return ``(smpl_scale, z_offset_skeleton, z_offset_terrain)`` for export."""
+    from hhtools.core.grounding import terrain_heightfield_z_offset_world
+
+    smpl_scale = float(meta.get("smpl_scale", 1.0))
+    z_offset = float(meta.get("source_z_min", 0.0))
+    terrain = getattr(source_motion, "terrain", None)
+    if terrain is None:
+        return smpl_scale, z_offset, z_offset
+
+    z_terrain_raw = meta.get("source_terrain_z_offset")
+    if z_terrain_raw is not None and np.isfinite(float(z_terrain_raw)):
+        z_terrain = float(z_terrain_raw)
+    else:
+        z_terrain = float(terrain_heightfield_z_offset_world(source_motion, z_offset))
+    return smpl_scale, z_offset, z_terrain
+
+
+def _yellow_foot_z_from_motion_meta(source_motion, meta: dict) -> float | None:
+    """Lowest ankle/foot Z in the retarget robot frame (``smpl_scale`` + floor snap).
+
+    Used when no browser scaled-preview is available (batch export) so the
+    baked root_z still tracks terrain/object height the same way playback does.
+    """
+    if source_motion is None:
+        return None
+    try:
+        smpl_scale = float(meta.get("smpl_scale", 1.0))
+        z_min = float(meta.get("source_z_min", 0.0))
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(smpl_scale) or smpl_scale <= 0.0:
+        return None
+    hierarchy = getattr(source_motion, "hierarchy", None)
+    names = list(getattr(hierarchy, "bone_names", []) or [])
+    positions = np.asarray(getattr(source_motion, "positions", None), dtype=np.float64)
+    if not names or positions.ndim != 3 or positions.shape[0] == 0:
+        return None
+
+    def _norm(name: str) -> str:
+        return str(name).lower().replace("_", "").replace(" ", "")
+
+    name_to_i = {_norm(n): i for i, n in enumerate(names)}
+    zs: list[float] = []
+    pos0 = positions[0]
+    for key in (
+        "leftankle",
+        "rightankle",
+        "leftfoot",
+        "rightfoot",
+        "leftleg",
+        "rightleg",
+    ):
+        idx = name_to_i.get(key)
+        if idx is not None and idx < pos0.shape[0]:
+            zs.append(float((pos0[idx, 2] - z_min) * smpl_scale))
+    return min(zs) if zs else None
+
+
+def _bake_export_joint_q(
+    model,
+    retargeted,
+    joint_q: np.ndarray,
+    source_motion,
+    meta: dict,
+    *,
+    scaled_preview: dict | None = None,
+    yellow_foot_z: float | None = None,
+    preserve_absolute_z: bool | None = None,
+    yellow_align: str = "sole",
+) -> tuple[np.ndarray, float]:
+    """Bake viewer ``mesh_z_lift`` into robot ``root_z`` for CSV/PKL export."""
+    from hhtools.io.scene_serialize import bake_playback_mesh_z_lift_into_joint_q
+
+    if model is None or not hasattr(model, "trimesh_scene"):
+        return np.asarray(joint_q, dtype=np.float32), 0.0
+
+    if preserve_absolute_z is None:
+        preserve_absolute_z = getattr(source_motion, "terrain", None) is not None
+    yellow = yellow_foot_z
+    if yellow is None and scaled_preview is None:
+        has_scene = motion_has_scene(source_motion)
+        if has_scene or preserve_absolute_z:
+            yellow = _yellow_foot_z_from_motion_meta(source_motion, meta)
+
+    return bake_playback_mesh_z_lift_into_joint_q(
+        model,
+        retargeted,
+        joint_q,
+        scaled_preview=scaled_preview,
+        yellow_foot_z=yellow,
+        preserve_absolute_z=bool(preserve_absolute_z),
+        yellow_align=yellow_align,
+    )
+
+
+def bake_export_root_z(
+    model,
+    retargeted,
+    joint_q: np.ndarray | None = None,
+    source_motion=None,
+    *,
+    scaled_preview: dict | None = None,
+    yellow_foot_z: float | None = None,
+    preserve_absolute_z: bool | None = None,
+) -> tuple[np.ndarray, float]:
+    """Public helper: bake viewer mesh Z lift into ``joint_q`` for any export path."""
+    q = joint_q if joint_q is not None else np.asarray(retargeted.joint_q, dtype=np.float32)
+    meta = dict(getattr(retargeted, "meta", {}) or {})
+    return _bake_export_joint_q(
+        model,
+        retargeted,
+        q,
+        source_motion,
+        meta,
+        scaled_preview=scaled_preview,
+        yellow_foot_z=yellow_foot_z,
+        preserve_absolute_z=preserve_absolute_z,
+    )
+
+
+def _scaled_terrain(source_motion, smpl_scale: float, z_terrain: float):
+    terrain = getattr(source_motion, "terrain", None)
+    if terrain is None:
+        return None
+    try:
+        return terrain.scaled(float(smpl_scale), z_offset=float(z_terrain))
+    except Exception:
+        return terrain
+
+
+def _robot_pkl_blob(
+    retargeted,
+    joint_q: np.ndarray,
+    sample_rate: float,
+    meta: dict,
+) -> dict[str, object]:
+    joint_q_wxyz = np.empty_like(joint_q)
+    joint_q_wxyz[:, :3] = joint_q[:, :3]
+    joint_q_wxyz[:, 3] = joint_q[:, 6]
+    joint_q_wxyz[:, 4] = joint_q[:, 3]
+    joint_q_wxyz[:, 5] = joint_q[:, 4]
+    joint_q_wxyz[:, 6] = joint_q[:, 5]
+    if joint_q.shape[1] > 7:
+        joint_q_wxyz[:, 7:] = joint_q[:, 7:]
+
+    dof_all = list(getattr(retargeted, "dof_names", []) or [])
+    nq_act = joint_q.shape[1] - 7
+    actuated_dof_names = dof_all[-nq_act:] if len(dof_all) >= nq_act else dof_all
+
+    return {
+        "joint_q": joint_q_wxyz,
+        "dof_names": actuated_dof_names,
+        "sample_rate": float(sample_rate),
+        "name": str(getattr(retargeted, "name", "retargeted")),
+        "root_quat_format": "wxyz",
+        "smpl_scale": float(meta.get("smpl_scale", 1.0)),
+        "z_offset": float(meta.get("source_z_min", 0.0)),
+        "meta": {k: str(v) for k, v in meta.items()},
+    }
+
+
+def _object_track_blob(
+    ob,
+    retargeted,
+    *,
+    smpl_scale: float,
+    z_offset: float,
+) -> dict[str, object]:
+    """One interaction object's trajectory in the retarget / robot frame."""
+    op = np.asarray(ob.positions, dtype=np.float32).copy()
+    op[:, 2] -= float(z_offset)
+    op *= float(smpl_scale)
+    oq_xyzw = np.asarray(ob.quaternions, dtype=np.float32)
+    oq_wxyz = np.empty_like(oq_xyzw)
+    oq_wxyz[..., 0] = oq_xyzw[..., 3]
+    oq_wxyz[..., 1:] = oq_xyzw[..., :3]
+    mesh_name = Path(str(getattr(ob, "mesh_path", "") or "")).name
+    # Cuboid extents follow the same mesh scaling as the exported OBJ
+    # (``ob.scale * smpl_scale``); they are dimensions, not positions, so the
+    # ``z_offset`` grounding shift does not apply.
+    extents = (
+        np.asarray(getattr(ob, "extents", (0.0, 0.0, 0.0)), dtype=np.float64).reshape(3)
+        * float(getattr(ob, "scale", 1.0))
+        * float(smpl_scale)
+    )
+    return {
+        "name": str(ob.name),
+        "positions": op,
+        "quaternions": oq_wxyz,
+        "extents": extents.astype(np.float32),
+        "mesh_filename": mesh_name,
+        "mesh_path": str(getattr(ob, "mesh_path", "") or ""),
+        "sample_rate": float(retargeted.sample_rate),
+        "quat_format": "wxyz",
+        "frame": "retarget_robot",
+    }
+
+
+def _object_track_blobs(
+    retargeted,
+    source_motion,
+    *,
+    smpl_scale: float,
+    z_offset: float,
+) -> list[dict[str, object]]:
+    return [
+        _object_track_blob(ob, retargeted, smpl_scale=smpl_scale, z_offset=z_offset)
+        for ob in (getattr(source_motion, "objects", []) or [])
+    ]
+
+
+def _save_object_track_csv(
+    path: Path,
+    blob: dict[str, object],
+    *,
+    meta: dict | None = None,
+    include_header: bool = True,
+) -> Path:
+    """Write one interaction-object trajectory as CSV (robot frame, xyzw quat)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    positions = np.asarray(blob["positions"], dtype=np.float64)
+    quats_wxyz = np.asarray(blob["quaternions"], dtype=np.float64)
+    extents = np.asarray(blob["extents"], dtype=np.float64).reshape(3)
+    sample_rate = float(blob["sample_rate"])
+    num_frames = int(positions.shape[0])
+    times = np.arange(num_frames, dtype=np.float64) / max(sample_rate, 1.0)
+
+    header_meta = {
+        "object": str(blob["name"]),
+        "sample_rate": f"{sample_rate:.6f}",
+        "quat_format": "xyzw",
+        "frame": "retarget_robot",
+        "mesh_filename": str(blob.get("mesh_filename", "")),
+    }
+    header_meta.update(meta or {})
+
+    with path.open("w", newline="", encoding="utf-8") as fp:
+        writer = csv.writer(fp)
+        if include_header:
+            for key in sorted(header_meta):
+                fp.write(f"# {key}: {header_meta[key]}\n")
+            writer.writerow(OBJECT_CSV_HEADER)
+        for frame in range(num_frames):
+            q = quats_wxyz[frame]
+            # Repeat the constant object dimensions on every row.  This keeps a
+            # clipped or concatenated CSV self-describing even when its OBJ
+            # sidecar or metadata header is not available to the consumer.
+            writer.writerow([
+                f"{times[frame]:.6f}",
+                f"{positions[frame, 0]:.6f}",
+                f"{positions[frame, 1]:.6f}",
+                f"{positions[frame, 2]:.6f}",
+                f"{q[1]:.6f}",
+                f"{q[2]:.6f}",
+                f"{q[3]:.6f}",
+                f"{q[0]:.6f}",
+                f"{extents[0]:.6f}",
+                f"{extents[1]:.6f}",
+                f"{extents[2]:.6f}",
+            ])
+    return path
+
+
+def _write_object_tracks(
+    clip_dir: Path,
+    retargeted,
+    source_motion,
+    *,
+    smpl_scale: float,
+    z_offset: float,
+    fmt: str,
+    csv_header: bool = True,
+) -> list[str]:
+    """Write ``object_<i>_<name>.{csv|pkl}`` sidecars in the robot frame."""
+    written: list[str] = []
+    use_csv = (fmt or "csv").lower() == "csv"
+    for idx, ob in enumerate(getattr(source_motion, "objects", []) or []):
+        blob = _object_track_blob(
+            ob, retargeted, smpl_scale=smpl_scale, z_offset=z_offset,
+        )
+        safe_name = "".join(
+            (c if c.isalnum() or c in "._-" else "_" for c in str(ob.name)),
+        )
+        ext = "csv" if use_csv else "pkl"
+        obj_path = clip_dir / f"object_{idx}_{safe_name}.{ext}"
+        if use_csv:
+            _save_object_track_csv(obj_path, blob, include_header=csv_header)
+        else:
+            with open(obj_path, "wb") as f:
+                pickle.dump(blob, f)
+        written.append(obj_path.name)
+        _log.info(
+            "object track %s %s (frames=%d)",
+            ext,
+            obj_path.name,
+            int(np.asarray(blob["positions"]).shape[0]),
+        )
+    return written
+
+
+def _export_scaled_object_mesh(ob, dst: Path, mesh_scale: float) -> bool:
+    """Centre mesh on centroid and scale vertices to the robot frame."""
+    raw = str(getattr(ob, "mesh_path", "") or "").strip()
+    if not raw:
+        return False
+    src = Path(raw)
+    if not src.is_file():
+        return False
+    try:
+        import trimesh
+
+        loaded = trimesh.load(str(src), force="mesh", process=False)
+        verts = np.asarray(getattr(loaded, "vertices", np.zeros((0, 3))), dtype=np.float64)
+        faces = np.asarray(getattr(loaded, "faces", np.zeros((0, 3))), dtype=np.int64)
+        if verts.size == 0 or faces.size == 0:
+            return False
+        centroid = verts.mean(axis=0)
+        verts = (verts - centroid) * float(mesh_scale)
+        mesh = trimesh.Trimesh(
+            vertices=verts.astype(np.float32),
+            faces=faces,
+            process=False,
+        )
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        mesh.export(str(dst))
+        return True
+    except Exception as exc:
+        _log.warning("scaled object mesh export failed %s → %s: %s", src, dst, exc)
+        return False
+
+
+def _copy_scene_meshes(
+    clip_dir: Path,
+    source_motion,
+    stem: str,
+    *,
+    smpl_scale: float,
+    z_terrain: float,
+) -> list[str]:
+    """Export robot-scaled terrain OBJ + interaction object meshes into ``clip_dir``."""
+    from hhtools.io.parc_import import heightfield_to_wavefront_obj
+
+    copied: list[str] = []
+    terrain_robot = _scaled_terrain(source_motion, smpl_scale, z_terrain)
+    if terrain_robot is not None:
+        obj_path = clip_dir / f"{stem}_terrain.obj"
+        try:
+            heightfield_to_wavefront_obj(terrain_robot, obj_path)
+            copied.append(obj_path.name)
+        except OSError as exc:
+            _log.warning("terrain OBJ export failed: %s", exc)
+
+    for ob in getattr(source_motion, "objects", []) or []:
+        raw = str(getattr(ob, "mesh_path", "") or "").strip()
+        if not raw:
+            continue
+        src = Path(raw)
+        dst = clip_dir / src.name
+        mesh_scale = float(getattr(ob, "scale", 1.0)) * float(smpl_scale)
+        if _export_scaled_object_mesh(ob, dst, mesh_scale):
+            copied.append(dst.name)
+        elif src.is_file() and dst.resolve() != src.resolve():
+            try:
+                shutil.copy2(src, dst)
+                copied.append(dst.name)
+                _log.warning(
+                    "fell back to unscaled mesh copy for %s (trimesh export failed)",
+                    src.name,
+                )
+            except OSError as exc:
+                _log.warning("could not copy mesh %s → %s: %s", src, dst, exc)
+    return copied
+
+
+def identity_resample(retargeted: Any, fps: float | None):
+    """No-op resample helper for CLI / batch exporters (keeps native sample rate)."""
+    src = float(getattr(retargeted, "sample_rate", 30.0))
+    jq = np.asarray(retargeted.joint_q, dtype=np.float32)
+    if fps is None or fps <= 0 or abs(float(fps) - src) < 1e-6:
+        return jq, src
+    from hhtools.io.scene_serialize import resample_joint_q
+
+    rc = int(getattr(retargeted, "root_coord_count", 7))
+    return resample_joint_q(jq, src, float(fps), root_coord_count=rc), float(fps)
+
+
+def resolve_export_frame_window(
+    num_frames: int,
+    sample_rate: float,
+    t_start: float | None,
+    t_end: float | None,
+) -> tuple[int, int]:
+    """Map optional seconds ``[t_start, t_end)`` to half-open frame indices.
+
+    Times are relative to the retargeted clip start (same clock as playback).
+    ``None`` means the natural clip start / end.
+    """
+    n = int(num_frames)
+    if n <= 0:
+        raise ValueError("cannot export an empty trajectory")
+    sr = float(sample_rate)
+    if not np.isfinite(sr) or sr <= 0.0:
+        raise ValueError(f"invalid sample_rate for export window: {sample_rate!r}")
+
+    i0 = 0
+    i1 = n
+    if t_start is not None:
+        i0 = int(round(float(t_start) * sr))
+    if t_end is not None:
+        i1 = int(round(float(t_end) * sr))
+    i0 = max(i0, 0)
+    i1 = min(i1, n)
+    if i0 >= n:
+        raise ValueError(
+            f"t_start={t_start!r}s is past clip end "
+            f"({(n - 1) / sr:.3f}s, {n} frames @ {sr:.3f} Hz)"
+        )
+    if i1 <= i0:
+        raise ValueError(
+            f"empty export window after clamp: t_start={t_start!r}, t_end={t_end!r} "
+            f"→ frames [{i0}, {i1}) of {n}"
+        )
+    return i0, i1
+
+
+def _slice_scene_object(ob: Any, i0: int, i1: int) -> Any:
+    """Return a shallow copy of ``ob`` with per-frame arrays sliced to ``[i0, i1)``."""
+    import dataclasses
+
+    n = int(np.asarray(ob.positions).shape[0])
+    a = max(0, min(int(i0), n))
+    b = max(a + 1 if n else a, min(int(i1), n)) if n else a
+    if a == 0 and b == n:
+        return ob
+    kwargs = {
+        "name": ob.name,
+        "positions": np.asarray(ob.positions, dtype=np.float32)[a:b].copy(),
+        "quaternions": np.asarray(ob.quaternions, dtype=np.float32)[a:b].copy(),
+        "extents": np.asarray(getattr(ob, "extents", (0.3, 0.3, 0.3)), dtype=np.float32),
+        "mesh_path": str(getattr(ob, "mesh_path", "") or ""),
+        "scale": float(getattr(ob, "scale", 1.0)),
+        "opacity": getattr(ob, "opacity", None),
+        "color": getattr(ob, "color", None),
+    }
+    if dataclasses.is_dataclass(ob) and not isinstance(ob, type):
+        return dataclasses.replace(
+            ob,
+            positions=kwargs["positions"],
+            quaternions=kwargs["quaternions"],
+        )
+    from hhtools.core.scene import SceneObject
+
+    return SceneObject(**kwargs)
+
+
+def slice_motion_frames(motion: Any, i0: int, i1: int) -> Any:
+    """Slice skeleton (+ objects) to ``[i0, i1)``; terrain is left unchanged."""
+    import dataclasses
+
+    if motion is None:
+        return None
+    pos = np.asarray(motion.positions)
+    n = int(pos.shape[0])
+    if n <= 0:
+        return motion
+    a = max(0, min(int(i0), n))
+    b = max(a + 1, min(int(i1), n))
+    if a == 0 and b == n:
+        return motion
+    objs = [_slice_scene_object(ob, a, b) for ob in (getattr(motion, "objects", None) or [])]
+    if dataclasses.is_dataclass(motion) and not isinstance(motion, type):
+        return dataclasses.replace(
+            motion,
+            positions=pos[a:b].astype(np.float32, copy=True),
+            quaternions=np.asarray(motion.quaternions, dtype=np.float32)[a:b].copy(),
+            objects=objs,
+        )
+    motion.positions = pos[a:b].astype(np.float32, copy=True)
+    motion.quaternions = np.asarray(motion.quaternions, dtype=np.float32)[a:b].copy()
+    motion.objects = objs
+    return motion
+
+
+def apply_export_time_window(
+    retargeted: Any,
+    source_motion: Any,
+    *,
+    t_start: float | None = None,
+    t_end: float | None = None,
+) -> tuple[Any, Any]:
+    """Trim ``retargeted`` (+ aligned ``source_motion``) before export resampling.
+
+    ``t_start`` / ``t_end`` are seconds on the retargeted clip timeline (playback
+    clock).  Omitted bounds keep the natural start / end.  Exported ``time``
+    columns restart at 0 for the kept window.
+    """
+    import dataclasses
+
+    if t_start is None and t_end is None:
+        return retargeted, source_motion
+
+    jq = np.asarray(retargeted.joint_q)
+    sr = float(getattr(retargeted, "sample_rate", 30.0))
+    i0, i1 = resolve_export_frame_window(jq.shape[0], sr, t_start, t_end)
+    meta = dict(getattr(retargeted, "meta", {}) or {})
+    meta["export_t_start"] = f"{i0 / sr:.6f}"
+    meta["export_t_end"] = f"{i1 / sr:.6f}"
+    meta["export_frame_start"] = str(i0)
+    meta["export_frame_end"] = str(i1)
+    ret2 = dataclasses.replace(
+        retargeted,
+        joint_q=jq[i0:i1].astype(np.float32, copy=True),
+        meta=meta,
+    )
+
+    src_n = (
+        int(np.asarray(getattr(source_motion, "positions", np.zeros((0,)))).shape[0])
+        if source_motion is not None
+        else 0
+    )
+    if source_motion is not None and src_n > 0 and src_n != jq.shape[0]:
+        # Map retargeted frame window onto the source frame grid.
+        src_i0 = int(round(i0 * src_n / jq.shape[0]))
+        src_i1 = int(round(i1 * src_n / jq.shape[0]))
+        motion2 = slice_motion_frames(source_motion, src_i0, src_i1)
+    else:
+        motion2 = slice_motion_frames(source_motion, i0, i1)
+
+    _log.info(
+        "export time window [%.3f, %.3f)s → frames [%d, %d) of %d @ %.3f Hz",
+        i0 / sr, i1 / sr, i0, i1, jq.shape[0], sr,
+    )
+    return ret2, motion2
+
+
+def write_retarget_export_bundle(
+    retargeted: Any,
+    model,
+    source_motion,
+    out_root: str | Path,
+    *,
+    stem: str,
+    fps: float | None,
+    fmt: str,
+    backend: str,
+    resample_fn,
+    csv_header: bool = True,
+    source_path: str | Path | None = None,
+    scaled_preview: dict | None = None,
+    yellow_foot_z: float | None = None,
+    pack_scene: bool = True,
+    t_start: float | None = None,
+    t_end: float | None = None,
+) -> Path:
+    """Write a clip bundle and return the path to a ``.zip`` (or bare file if no scene).
+
+    ``resample_fn`` is ``_resample_retargeted`` from
+    :mod:`hhtools.application.export` to
+    avoid a circular import at module load time.
+
+    Robot ``root_z`` is baked with the same constant ``mesh_z_lift`` the browser
+    applies during playback so external sims match ground / terrain / objects.
+
+    When ``pack_scene`` is False (batch / offline), scene clips keep an uncompressed
+    folder (``<stem>/<stem>.csv`` + terrain/object sidecars) instead of a ``.zip``.
+    File contents match the Web export either way.
+
+    ``t_start`` / ``t_end`` (seconds, retargeted timeline) optionally keep only a
+    sub-clip; exported ``time`` restarts at 0.
+    """
+    import dataclasses
+
+    retargeted, source_motion = apply_export_time_window(
+        retargeted, source_motion, t_start=t_start, t_end=t_end,
+    )
+
+    out_root = Path(out_root)
+    out_root.mkdir(parents=True, exist_ok=True)
+    stem = sanitize_export_stem(stem)
+    fmt = (fmt or "csv").lower()
+    has_scene = motion_has_scene(source_motion)
+
+    joint_q, sample_rate = resample_fn(retargeted, fps)
+    meta = dict(getattr(retargeted, "meta", {}) or {})
+    joint_q, playback_lift = _bake_export_joint_q(
+        model,
+        retargeted,
+        joint_q,
+        source_motion,
+        meta,
+        scaled_preview=scaled_preview,
+        yellow_foot_z=yellow_foot_z,
+    )
+    if abs(playback_lift) > 1e-12:
+        meta["playback_mesh_z_lift"] = f"{playback_lift:.6f}"
+    ret2 = dataclasses.replace(retargeted, joint_q=joint_q, sample_rate=sample_rate, meta=meta)
+    smpl_scale, z_offset, z_terrain = _resolve_export_scene_params(meta, source_motion)
+
+    clip_dir = resolve_clip_export_dir(
+        out_root, stem, source_path, has_scene=has_scene,
+    )
+    # Flat AMASS / LAFAN-style clips share one ``out_root`` (``clip_dir == out_root``).
+    # Wiping ``clip_dir`` before each write would delete every prior CSV in a batch
+    # export — only replace dedicated per-clip bundle directories.
+    flat_shared_dir = (
+        not has_scene
+        and clip_dir.resolve() == out_root.resolve()
+    )
+    if flat_shared_dir:
+        clip_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        if clip_dir.exists() and clip_dir.is_dir():
+            shutil.rmtree(clip_dir, ignore_errors=True)
+        clip_dir.mkdir(parents=True, exist_ok=True)
+
+    csv_meta = {"retarget_backend": backend}
+    if "playback_mesh_z_lift" in meta:
+        csv_meta["playback_mesh_z_lift"] = meta["playback_mesh_z_lift"]
+
+    if fmt == "pkl":
+        blob: dict[str, object] = {
+            "hhtools_export": "retarget_v1",
+            "format": "pkl",
+            "retarget_backend": backend,
+            "robot": _robot_pkl_blob(ret2, joint_q, sample_rate, meta),
+            "objects": _object_track_blobs(
+                ret2,
+                source_motion,
+                smpl_scale=smpl_scale,
+                z_offset=z_offset,
+            ),
+        }
+        terrain_robot = _scaled_terrain(source_motion, smpl_scale, z_terrain)
+        if terrain_robot is not None:
+            blob["terrain_data"] = terrain_robot.to_ms_terrain_data_dict()
+        pkl_path = ensure_export_path(out_root, clip_dir / f"{stem}.pkl")
+        with open(pkl_path, "wb") as f:
+            pickle.dump(blob, f)
+    else:
+        from hhtools.io.robot_csv import save_robot_csv
+
+        trajectory_path = ensure_export_path(out_root, clip_dir / f"{stem}.csv")
+        save_robot_csv(
+            trajectory_path,
+            robot=model,
+            joint_q=joint_q,
+            sample_rate=sample_rate,
+            meta=csv_meta,
+            include_header=csv_header,
+        )
+
+    object_tracks: list[str] = []
+    if getattr(source_motion, "objects", None):
+        object_tracks = _write_object_tracks(
+            clip_dir,
+            ret2,
+            source_motion,
+            smpl_scale=smpl_scale,
+            z_offset=z_offset,
+            fmt=fmt,
+            csv_header=csv_header,
+        )
+
+    mesh_names: list[str] = []
+    if has_scene:
+        mesh_names = _copy_scene_meshes(
+            clip_dir, source_motion, stem, smpl_scale=smpl_scale, z_terrain=z_terrain,
+        )
+
+    if not has_scene:
+        return ensure_export_path(
+            out_root,
+            clip_dir / (f"{stem}.pkl" if fmt == "pkl" else f"{stem}.csv"),
+        )
+
+    if not pack_scene:
+        _log.info(
+            "export folder %s (meshes=%s, object_tracks=%s)",
+            clip_dir,
+            mesh_names,
+            object_tracks,
+        )
+        return clip_dir
+
+    # ``make_archive(out_root/stem, root_dir=clip_dir)`` hangs when
+    # ``clip_dir == out_root`` (batch upload layout: ``out/sub10/sub10/``):
+    # the ``.zip`` is created *inside* the tree being walked and gets re-
+    # included.  ``zip_directory`` always writes the archive beside ``clip_dir``.
+    zip_path = ensure_export_path(out_root, zip_directory(clip_dir, stem))
+    shutil.rmtree(clip_dir, ignore_errors=True)
+    _log.info(
+        "export bundle %s (meshes=%s, object_tracks=%s)",
+        zip_path.name,
+        mesh_names,
+        object_tracks,
+    )
+    return zip_path
+
+
+def zip_directory(
+    src_dir: Path,
+    zip_stem: str,
+    *,
+    compress: bool = False,
+) -> Path:
+    """Zip ``src_dir`` contents to ``zip_stem``.zip`` next to it.
+
+    Batch exports default to ``compress=False`` (``ZIP_STORED``): CSV/PKL are
+    already mostly unique floats; DEFLATE buys little and costs a lot on large
+    trees (43×3000-frame clips).
+    """
+    import zipfile
+
+    src_dir = Path(src_dir)
+    archive_root = src_dir.parent
+    ensure_export_path(archive_root, src_dir)
+    zip_stem = sanitize_export_stem(zip_stem)
+    archive_path = ensure_export_path(archive_root, archive_root / f"{zip_stem}.zip")
+    if archive_path.exists():
+        archive_path.unlink()
+    compression = zipfile.ZIP_DEFLATED if compress else zipfile.ZIP_STORED
+    kwargs: dict = {"compression": compression}
+    if compress:
+        kwargs["compresslevel"] = 3
+    members = sorted(src_dir.rglob("*"))
+    for path in members:
+        if path.is_symlink():
+            raise ValueError(f"export bundle contains a symlink: {path}")
+        if path.is_file():
+            ensure_export_path(src_dir, path)
+    with zipfile.ZipFile(archive_path, "w", **kwargs) as zf:
+        for path in members:
+            if path.is_file():
+                zf.write(path, path.relative_to(src_dir).as_posix())
+    return archive_path

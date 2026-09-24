@@ -1023,7 +1023,7 @@ def load_reference_pose(name: str) -> HumanReferencePose:
 
 
 # Names that indicate a virtual wrapper node above the real pelvis/hips.
-# Mirrors :data:`hhtools.viewer.anatomy._VIRTUAL_ROOT_NAMES` but kept local
+# Mirrors :data:`hhtools.core.anatomy._VIRTUAL_ROOT_NAMES` but kept local
 # so ``reference.py`` stays independent of viewer internals.
 _VIRTUAL_ROOT_NAMES: frozenset[str] = frozenset({
     "root", "reference", "world", "armature", "origin", "root_body",

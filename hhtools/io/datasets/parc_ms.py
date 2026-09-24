@@ -4,7 +4,7 @@ Each clip is a self-contained directory::
 
     parc_ms/<clip_name>/
         <clip_name>.pkl              # PARC MSFileData: motion_data + terrain_data
-        <clip_name>_terrain.obj      # static terrain mesh (optional backup / Viser parity)
+        <clip_name>_terrain.obj      # optional static terrain mesh backup
 
 This mirrors ``intermimic/OMOMO/<clip>/<clip>.pkl`` + sibling ``.obj``.  The
 unified ``.npz`` export is **not** required: skeleton poses are recovered from

@@ -73,11 +73,11 @@ from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.spatial.transform import Rotation as R
+from scipy.spatial.transform import Rotation as R  # noqa: N817
 
 from hhtools.bodymodels.params import SmplMotionParams
 from hhtools.core.motion import Motion
-from hhtools.io.datasets._engine_cache import engine_for_params
+from hhtools.io.datasets._engine_cache import motion_from_params
 from hhtools.io.datasets.base import DatasetAdapter, register_dataset
 
 
@@ -324,8 +324,7 @@ class MotionXAdapter(DatasetAdapter):
         with_mesh = bool(kwargs.pop("with_mesh", False))
         progress_callback = kwargs.pop("progress_callback", None)
         params = self.load_params(sequence_id, **kwargs)
-        engine = engine_for_params(params)
-        return engine.to_motion(
+        return motion_from_params(
             params,
             name=Path(sequence_id).stem,
             source_format=f"motion_x/{params.meta['layout']}",

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Shared progress-hook contract for motion file loaders.
 
-The web UI and :class:`~hhtools.viewer.cache.EphemeralCache` pass an optional
+The web UI and :class:`~hhtools.services.motion_cache.EphemeralCache` pass an optional
 ``progress_callback(frac, message)`` through dataset adapters into format
 loaders (:func:`~hhtools.io.bvh.load_bvh`, :func:`~hhtools.io.npz.load_npz`,
 etc.).  Every registered :class:`~hhtools.io.base.MotionLoader` **must**

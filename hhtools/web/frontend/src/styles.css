@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: var(--canvas);
+  --color-foreground: var(--text);
+  --color-surface: var(--surface);
+  --color-muted: var(--surface-subtle);
+  --color-muted-foreground: var(--text-muted);
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--on-accent);
+  --color-accent: var(--accent-soft);
+  --color-accent-foreground: var(--accent-hover);
+  --color-ring: var(--focus);
+  --color-danger: var(--danger-text);
+  --color-danger-muted: var(--danger-bg);
+  --color-danger-border: var(--danger-border);
+  --color-success: var(--success-text);
+  --color-warning: var(--warning-text);
+  --color-warning-muted: var(--warning-bg);
+  --color-warning-border: var(--warning-border);
+  --color-canvas: var(--canvas);
+  --color-stage-canvas: var(--stage-canvas);
+  --color-stage-skeleton: var(--stage-skeleton-accent);
+  --color-stage-body: var(--stage-body-accent);
+  --color-stage-scene: var(--stage-scene-accent);
+  --color-stage-scaled-skeleton: var(--stage-scaled-skeleton-accent);
+  --color-stage-scaled-scene: var(--stage-scaled-scene-accent);
+  --color-stage-robot: var(--stage-robot-accent);
+  --radius-sm: var(--radius-compact);
+  --radius-md: var(--radius-control);
+  --radius-lg: var(--radius-overlay);
+}
+
+:root {
+  --canvas: #f6f8fa;
+  --stage-canvas: #f5f5f7;
+  --surface: #ffffff;
+  --surface-subtle: #f1f4f7;
+  --text: #02122e;
+  --text-muted: #667085;
+  --border-subtle: #e5eaf0;
+  --border: #d0d7de;
+  --accent: #0071e3;
+  --accent-hover: #005bb5;
+  --accent-soft: #e8f2ff;
+  --on-accent: #ffffff;
+  --stage-skeleton-accent: #0071e3;
+  --stage-body-accent: #b84c32;
+  --stage-scene-accent: #16845b;
+  --stage-scaled-skeleton-accent: #d18b00;
+  --stage-scaled-scene-accent: #007c83;
+  --stage-robot-accent: #8e44ad;
+  --focus: #218bff;
+  --danger-bg: #fff5f4;
+  --danger-border: #efcccc;
+  --danger-text: #8c2929;
+  --success-text: #16845b;
+  --warning-bg: #fffaf0;
+  --warning-border: #ead7b0;
+  --warning-text: #7a4b00;
+  --radius-compact: 4px;
+  --radius-control: 6px;
+  --radius-overlay: 8px;
+  --font: Inter, "Noto Sans SC", "Microsoft YaHei", ui-sans-serif, system-ui,
+    -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --canvas: #101318;
+  --stage-canvas: #171a20;
+  --surface: #1d2128;
+  --surface-subtle: #262c35;
+  --text: #f2f5f9;
+  --text-muted: #a9b2c0;
+  --border-subtle: #303844;
+  --border: #465160;
+  --accent: #4da3ff;
+  --accent-hover: #78b8ff;
+  --accent-soft: #263d59;
+  --on-accent: #07111f;
+  --stage-skeleton-accent: #0b68c9;
+  --stage-body-accent: #b74a2a;
+  --stage-scene-accent: #157a55;
+  --stage-scaled-skeleton-accent: #d59600;
+  --stage-scaled-scene-accent: #08747a;
+  --stage-robot-accent: #9140ae;
+  --focus: #6eb5ff;
+  --danger-bg: #352024;
+  --danger-border: #6b343b;
+  --danger-text: #ffaaa4;
+  --success-text: #62d6a2;
+  --warning-bg: #342b1c;
+  --warning-border: #6f592c;
+  --warning-text: #f0c36b;
+  color-scheme: dark;
+}
+
+html,
+body,
+#app-root {
+  height: 100%;
+}
+
+#app {
+  grid-template-columns:
+    var(--workspace-sidebar-wide) minmax(0, 1fr) var(--workspace-inspector);
+  grid-template-rows: 40px minmax(0, 1fr) auto;
+}
+
+@media (max-width: 900px) {
+  #app {
+    grid-template-columns:
+      var(--workspace-sidebar-compact) minmax(0, 1fr)
+      var(--workspace-inspector);
+  }
+}
+
+@media (max-width: 780px) {
+  #app {
+    grid-template-columns: var(--workspace-sidebar-compact) minmax(0, 1fr);
+    grid-template-rows: 40px minmax(240px, 42vh) minmax(0, 1fr) auto;
+  }
+
+  #app[data-inspector-hidden="true"] {
+    grid-template-rows: 40px minmax(0, 1fr) 0 auto;
+  }
+
+  #app[data-inspector-hidden="true"] #sidebar {
+    grid-row: 2 / 5;
+  }
+}
+
+body {
+  overflow: hidden;
+  background: var(--canvas);
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}

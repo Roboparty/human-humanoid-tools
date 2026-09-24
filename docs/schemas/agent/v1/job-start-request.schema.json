@@ -1,0 +1,40 @@
+{
+  "$defs": {
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Submit one already-preflighted immutable retarget plan.",
+  "properties": {
+    "idempotency_key": {
+      "description": "Caller-generated key binding one logical job submission.",
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~:-]{0,255}$",
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "plan_id": {
+      "description": "Content-addressed plan id.",
+      "pattern": "^plan:sha256:[0-9a-f]{64}$",
+      "title": "Plan Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    }
+  },
+  "required": [
+    "plan_id",
+    "idempotency_key"
+  ],
+  "title": "JobStartRequest",
+  "type": "object"
+}

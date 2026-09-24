@@ -1,6 +1,6 @@
 """hhtools web — Apple-styled HTML/three.js front-end + FastAPI backend.
 
-This package is the modern replacement for the Viser viewer.  The browser
+This package owns the shared browser/Electron renderer backend. The browser
 handles all 3D rendering (three.js) and interaction; the FastAPI backend
 (:mod:`hhtools.web.server`) re-uses the existing ``hhtools`` pipeline for the
 heavy lifting (motion IO, URDF loading, calibration, retargeting, export) that

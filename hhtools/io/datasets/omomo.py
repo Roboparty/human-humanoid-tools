@@ -40,10 +40,10 @@ upstream geometry is internally consistent.
 
 To present a consistent contract downstream (``SceneObject.positions[t]
 == world position of the mesh's geometric centre``, which is what both
-the viser renderer and the interaction-mesh / MPC retargeter assume),
+the Web renderer and the interaction-mesh / MPC retargeter assume),
 the adapter folds the centroid offset into ``positions`` at load time
-and pairs that with :func:`hhtools.viewer.renderers.objects._load_mesh_arrays`
-which centres the loaded mesh on its raw centroid before scaling.  The
+and pairs that with :func:`hhtools.io.scene_serialize.object_mesh_glb`, which
+centres the loaded mesh on its raw centroid before scaling. The
 two steps together preserve the upstream world-vertex formula bit-for-bit
 while giving ``SceneObject.positions`` an unambiguous "object centre"
 meaning.
@@ -226,7 +226,7 @@ def _mesh_raw_centroid(mesh_path: str) -> NDArray | None:
 
     Used to fold OMOMO's "raw mesh origin → world" translation contract
     into a "geometric centre → world" contract that downstream
-    consumers (viser renderer, interaction-mesh / MPC retargeter)
+    consumers (Web renderer, interaction-mesh / MPC retargeter)
     expect.  Returns ``None`` when the mesh is unavailable or
     unreadable; callers then fall back to the raw ``obj_trans`` and
     accept the (small) cuboid-placeholder offset.
@@ -286,10 +286,10 @@ def _build_scene_object(
 
         positions[t] = obj_trans[t] + obj_scale · (R_obj[t] · raw_centroid)
 
-    Pair with :func:`hhtools.viewer.renderers.objects._load_mesh_arrays`,
-    which centres the loaded mesh on the same raw centroid before
+    Pair with :func:`hhtools.io.scene_serialize.object_mesh_glb`, which
+    centres the loaded mesh on the same raw centroid before
     scaling — together they preserve OMOMO's upstream world-vertex
-    formula bit-for-bit while making downstream consumers (viser
+    formula bit-for-bit while making downstream consumers (Web
     renderer, IM / MPC retargeter) see object positions that actually
     align with the actor's hands.
 

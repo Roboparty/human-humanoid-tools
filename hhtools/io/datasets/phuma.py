@@ -18,7 +18,8 @@ returned :class:`SmplMotionParams` as ``up_axis="Y"`` so the viewer's automatic 
 conversion applies.
 
 Betas and framerate are not stored in the ``.npy``; we default to a neutral shape
-(``betas=zeros(10)``) and 30 fps, both overridable via ``load_motion(..., betas=..., framerate=...)``.
+(``betas=zeros(10)``) and 30 fps. Both are overridable via
+``load_motion(..., betas=..., framerate=...)``.
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ import numpy as np
 
 from hhtools.bodymodels.params import SmplMotionParams
 from hhtools.core.motion import Motion
-from hhtools.io.datasets._engine_cache import engine_for_params
+from hhtools.io.datasets._engine_cache import motion_from_params
 from hhtools.io.datasets.base import DatasetAdapter, register_dataset
 
 _DEFAULT_FRAMERATE = 30.0
@@ -95,8 +96,7 @@ class PhumaAdapter(DatasetAdapter):
         with_mesh = bool(kwargs.pop("with_mesh", False))
         progress_callback = kwargs.pop("progress_callback", None)
         params = self.load_params(sequence_id, **kwargs)
-        engine = engine_for_params(params)
-        return engine.to_motion(
+        return motion_from_params(
             params,
             name=Path(sequence_id).stem,
             source_format="phuma/smpl",

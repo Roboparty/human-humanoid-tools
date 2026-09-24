@@ -1,0 +1,117 @@
+{
+  "$defs": {
+    "ErrorStage": {
+      "description": "Stable stage in which an API error occurred.",
+      "enum": [
+        "request",
+        "asset_registration",
+        "asset_inspection",
+        "calibration",
+        "preflight",
+        "admission",
+        "execution",
+        "evaluation",
+        "artifact",
+        "internal"
+      ],
+      "title": "ErrorStage",
+      "type": "string"
+    },
+    "FailureItem": {
+      "additionalProperties": false,
+      "description": "One structured failed input or execution stage.",
+      "properties": {
+        "code": {
+          "description": "Stable, English, machine-readable code.",
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Code",
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": true,
+          "title": "Details",
+          "type": "object"
+        },
+        "item_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item Id"
+        },
+        "message": {
+          "maxLength": 8192,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "retryable": {
+          "default": false,
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "stage": {
+          "$ref": "#/$defs/ErrorStage"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "stage"
+      ],
+      "title": "FailureItem",
+      "type": "object"
+    },
+    "SchemaVersion": {
+      "description": "Version of the transport-neutral HHTools agent schema.",
+      "enum": [
+        "1.0"
+      ],
+      "title": "SchemaVersion",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Structured failures for a failed or partially completed job.",
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "failures": {
+      "items": {
+        "$ref": "#/$defs/FailureItem"
+      },
+      "minItems": 1,
+      "title": "Failures",
+      "type": "array"
+    },
+    "job_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Job Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion",
+      "default": "1.0"
+    }
+  },
+  "required": [
+    "job_id",
+    "failures",
+    "created_at"
+  ],
+  "title": "FailureReport",
+  "type": "object"
+}

@@ -21,6 +21,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
+from hhtools.robot.foot_geometry import quat_xyzw_to_rotmat
+
 if TYPE_CHECKING:
     from hhtools.robot.loader import URDFRobotModel
 
@@ -36,14 +38,12 @@ __all__ = [
 
 
 def _root_transform(root_xyzw: NDArray) -> NDArray[np.float64]:
-    from hhtools.web.serialize import _quat_xyzw_to_rotmat
-
     root = np.asarray(root_xyzw, dtype=np.float64).reshape(-1)
     T = np.eye(4, dtype=np.float64)
     if root.size < 7:
         return T
     T[:3, 3] = root[:3]
-    T[:3, :3] = _quat_xyzw_to_rotmat(root[3:7])
+    T[:3, :3] = quat_xyzw_to_rotmat(root[3:7])
     return T
 
 
