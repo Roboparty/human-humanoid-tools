@@ -36,6 +36,10 @@ Video-to-motion additionally needs a separate CUDA-capable GVHMR installation.
 
 ## Install and run
 
+### Download Desktop GUI Version Here!
+
+https://github.com/Roboparty/human-humanoid-tools/releases/tag/0.1.0(beta)
+
 hhtools has three interactive modes plus an Agent automation interface. They share the same motion,
 robot, and retargeting core, but their installation and launch paths are intentionally separate:
 
