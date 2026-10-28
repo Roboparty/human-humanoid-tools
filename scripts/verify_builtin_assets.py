@@ -22,7 +22,7 @@ sys.path.insert(0, str(REPOSITORY_ROOT))
 DEFAULT_MANIFEST = REPOSITORY_ROOT / "configs" / "builtin-assets.json"
 EXPECTED_MOTION_ENTRIES = 30
 EXPECTED_MOTION_FILES = 58
-EXPECTED_ROBOTS = 6
+EXPECTED_ROBOTS = 7
 
 
 class BuiltinAssetManifestError(ValueError):

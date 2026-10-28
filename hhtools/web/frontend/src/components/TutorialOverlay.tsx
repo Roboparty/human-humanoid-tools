@@ -11,7 +11,7 @@ import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
 import {
-  TUTORIAL_STEPS,
+  getTutorialSteps,
   type TutorialPlacement,
   type TutorialStep,
 } from "@/features/tutorial/model";
@@ -93,6 +93,7 @@ export function TutorialOverlay({
   onClose,
   onStepChange,
 }: TutorialOverlayProps) {
+  const steps = getTutorialSteps();
   const [index, setIndex] = useState(0);
   const [highlightStyle, setHighlightStyle] = useState<RectStyle | null>(null);
   const [popoverStyle, setPopoverStyle] = useState<PointStyle | null>(null);
@@ -100,7 +101,7 @@ export function TutorialOverlay({
   const popover = useRef<HTMLDivElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
   const titleId = useId();
-  const step = TUTORIAL_STEPS[index] ?? TUTORIAL_STEPS[0];
+  const step = steps[index] ?? steps[0];
 
   const position = useCallback(
     (revealAnchor = false) => {
@@ -277,7 +278,7 @@ export function TutorialOverlay({
 
   if (!open) return null;
 
-  const last = index === TUTORIAL_STEPS.length - 1;
+  const last = index === steps.length - 1;
   const text = (english: string, chinese: string) =>
     localize(locale, english, chinese);
 
@@ -308,7 +309,7 @@ export function TutorialOverlay({
       >
         <header className="flex items-center justify-between gap-2">
           <span className="text-[11px] font-bold text-muted-foreground">
-            {index + 1} / {TUTORIAL_STEPS.length}
+            {index + 1} / {steps.length}
           </span>
           <Button size="sm" variant="ghost" onClick={() => close("skipped")}>
             {text("Skip tutorial", "跳过教程")}

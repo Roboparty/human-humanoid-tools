@@ -1,3 +1,5 @@
+import { isVideoToMotionEnabled, isViewAvailable } from "./platformCapabilities.ts";
+
 export type ViewId =
   | "motion"
   | "robot-assets"
@@ -82,3 +84,12 @@ export const navigationGroups: readonly NavigationGroup[] = [
     ],
   },
 ];
+
+export function getNavigationGroups(
+  videoToMotionEnabled = isVideoToMotionEnabled(),
+): readonly NavigationGroup[] {
+  return navigationGroups.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => isViewAvailable(item.id, videoToMotionEnabled)),
+  }));
+}

@@ -17,6 +17,7 @@ import {
 } from "@/components/WorkflowSteps";
 import { useLocaleText } from "@/LocaleProvider";
 import { displayFileName } from "@/lib/api";
+import { robotLabel } from "@/features/robot/presentation";
 import { ResultDiagnostics } from "@/features/result/ResultDiagnostics";
 import { ResultExportControls } from "@/features/result/ResultExportControls";
 import type { ComparisonPreset } from "@/features/result/comparison";
@@ -148,7 +149,7 @@ function RobotSelect({
               value={robot.name}
               disabled={!robot.has_urdf}
             >
-              {robot.display_name} ({robot.num_dof} {text("DoF", "自由度")})
+              {robotLabel(robot)} ({robot.num_dof} {text("DoF", "自由度")})
             </option>
           ))}
         </select>
@@ -164,7 +165,7 @@ function RobotSelect({
       </Button>
       <p className="text-xs text-muted-foreground">
         {loaded
-          ? text(`${loaded.display_name} loaded`, `${loaded.display_name} 已加载`)
+          ? text(`${robotLabel(loaded)} loaded`, `${robotLabel(loaded)} 已加载`)
           : text("Not loaded", "未加载")}
       </p>
     </div>
@@ -552,8 +553,8 @@ export function RobotToRobotView({
       clearRetargetResult();
       setStatus(
         text(
-          `Source robot loaded: ${payload.display_name}`,
-          `源机器人已加载：${payload.display_name}`,
+          `Source robot loaded: ${robotLabel(payload)}`,
+          `源机器人已加载：${robotLabel(payload)}`,
         ),
       );
     } catch (reason) {
@@ -583,8 +584,8 @@ export function RobotToRobotView({
       clearRetargetResult();
       setStatus(
         text(
-          `Target robot loaded: ${payload.display_name}`,
-          `目标机器人已加载：${payload.display_name}`,
+          `Target robot loaded: ${robotLabel(payload)}`,
+          `目标机器人已加载：${robotLabel(payload)}`,
         ),
       );
     } catch (reason) {
@@ -822,7 +823,7 @@ export function RobotToRobotView({
     : errorOwner === "source-robot"
       ? { label: text("Load failed", "加载失败"), tone: "danger" }
       : sourceRobot
-        ? { label: sourceRobot.display_name, tone: "success" }
+        ? { label: robotLabel(sourceRobot), tone: "success" }
         : { label: text("Not loaded", "未加载"), tone: "neutral" };
   const sourceTrajectoryStep: StepStatus = busy === "source-trajectory"
     ? { label: text("Loading…", "加载中…"), tone: "info" }
@@ -839,7 +840,7 @@ export function RobotToRobotView({
     : errorOwner === "target-robot"
       ? { label: text("Load failed", "加载失败"), tone: "danger" }
       : targetRobot
-        ? { label: targetRobot.display_name, tone: "success" }
+        ? { label: robotLabel(targetRobot), tone: "success" }
         : { label: text("Not loaded", "未加载"), tone: "neutral" };
   const calibrationStep: StepStatus = busy === "calibration-open"
     ? { label: text("Opening…", "打开中…"), tone: "info" }
@@ -1017,7 +1018,7 @@ export function RobotToRobotView({
             <div className="flex items-center justify-between gap-3">
               <span className="min-w-0 truncate text-xs text-muted-foreground">
                 {sourceRobot && targetRobot
-                  ? `${sourceRobot.display_name} → ${targetRobot.display_name}`
+                  ? `${robotLabel(sourceRobot)} → ${robotLabel(targetRobot)}`
                   : text("Load both robots first", "请先加载两个机器人")}
               </span>
               <Button

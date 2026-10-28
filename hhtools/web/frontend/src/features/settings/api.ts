@@ -1,4 +1,5 @@
 import { requestJson, type Fetcher } from "@/lib/api";
+import { isVideoToMotionEnabled } from "@/platformCapabilities";
 import {
   getGvhmrRuntimeStatus,
   type GvhmrRuntimeStatus,
@@ -134,4 +135,25 @@ export async function getGvhmrRuntimeSettings(
     options.signal ?? new AbortController().signal,
     options.fetcher,
   );
+}
+
+/** Disabled desktop platforms must not probe or configure the video runtime. */
+export async function getVideoToMotionSettings(
+  options: {
+    readonly signal?: AbortSignal;
+    readonly fetcher?: Fetcher;
+    readonly host?: unknown;
+  } = {},
+): Promise<{
+  readonly runtime: GvhmrRuntimeStatus | null;
+  readonly component: GvhmrOptionalComponentState | null;
+}> {
+  const host = options.host ?? globalThis;
+  if (!isVideoToMotionEnabled(host)) return { runtime: null, component: null };
+  const desktop = desktopSettingsBridge(host);
+  const [runtime, components] = await Promise.all([
+    getGvhmrRuntimeSettings(options).catch(() => null),
+    desktop?.getOptionalComponents() ?? null,
+  ]);
+  return { runtime, component: components?.gvhmr ?? null };
 }

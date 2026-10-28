@@ -34,6 +34,9 @@ export interface GvhmrSetupResult {
 }
 
 export interface HHToolsDesktopApi {
+  readonly capabilities: {
+    readonly videoToMotion: boolean
+  }
   getRuntimeState(): Promise<RuntimeState>
   getOptionalComponents(): Promise<OptionalComponentsState>
   restartBackend(): Promise<RuntimeState>

@@ -5,6 +5,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INSTALLER = REPO_ROOT / "install.sh"
 
@@ -66,7 +68,19 @@ chmod +x "$UV_TOOL_BIN_DIR/hhtools-mcp"
     return executable, arguments
 
 
-def _environment(tmp_path: Path, assets: Path, uv_bin: Path, arguments: Path) -> dict[str, str]:
+def _environment(
+    tmp_path: Path, assets: Path, uv_bin: Path, arguments: Path,
+    *, system: str = "Linux", architecture: str = "x86_64",
+) -> dict[str, str]:
+    # This is a shell contract test with a fake uv, not a native Linux install.
+    # Model the target host explicitly so macOS does not fail at the platform
+    # guard before reaching checksum, rollback and completion-marker assertions.
+    commands = tmp_path / "commands"
+    commands.mkdir(exist_ok=True)
+    _write_executable(
+        commands / "uname",
+        f'#!/bin/sh\ncase "$1" in\n-s) echo {system} ;;\n-m) echo {architecture} ;;\nesac\n',
+    )
     environment = os.environ.copy()
     environment.update(
         {
@@ -75,6 +89,7 @@ def _environment(tmp_path: Path, assets: Path, uv_bin: Path, arguments: Path) ->
             "HHTOOLS_UV_BIN": str(uv_bin),
             "HHTOOLS_TEST_UV_ARGUMENTS": str(arguments),
             "HHTOOLS_VERSION": "1.2.3",
+            "PATH": str(commands) + os.pathsep + environment.get("PATH", ""),
         }
     )
     if os.geteuid() == 0:
@@ -185,4 +200,21 @@ def test_installer_rejects_a_release_checksum_mismatch_before_running_uv(tmp_pat
 
     assert completed.returncode != 0
     assert "release asset verification failed" in completed.stderr
+    assert not arguments.exists()
+
+
+@pytest.mark.parametrize(("system", "architecture"), [("Darwin", "arm64"), ("Linux", "aarch64")])
+def test_installer_rejects_unsupported_platform_before_uv(
+    tmp_path: Path, system: str, architecture: str,
+) -> None:
+    assets = _release_assets(tmp_path)
+    uv_bin, arguments = _fake_uv(tmp_path)
+    completed = subprocess.run(
+        _installer_command(),
+        env=_environment(tmp_path, assets, uv_bin, arguments, system=system, architecture=architecture),
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert completed.returncode != 0
     assert not arguments.exists()

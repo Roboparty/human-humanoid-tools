@@ -2,14 +2,24 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { describe, expect, it, vi } from 'vitest'
+import type { BrowserWindow } from 'electron'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('electron', () => ({
-  dialog: {},
-  shell: {},
+const electronMocks = vi.hoisted(() => ({
+  showMessageBox: vi.fn(),
+  showOpenDialog: vi.fn(),
+  openExternal: vi.fn(),
 }))
 
-import { OptionalComponentStore } from '../src/main/optional-components'
+vi.mock('electron', () => ({
+  dialog: {
+    showMessageBox: electronMocks.showMessageBox,
+    showOpenDialog: electronMocks.showOpenDialog,
+  },
+  shell: { openExternal: electronMocks.openExternal },
+}))
+
+import { OptionalComponentStore, runGvhmrSetup } from '../src/main/optional-components'
 
 function createGvhmrCheckout(root: string): string {
   const checkout = join(root, 'GVHMR')
@@ -27,12 +37,12 @@ describe('OptionalComponentStore', () => {
     mkdirSync(join(localAppData, 'hhtools', 'installer'), { recursive: true })
     writeFileSync(marker, '1\n', 'utf8')
 
-    const store = new OptionalComponentStore({ userData, localAppData, env: {} })
+    const store = new OptionalComponentStore({ userData, localAppData, env: {}, platform: 'win32' })
 
     expect(store.getState({}).gvhmr.requested).toBe(true)
     expect(existsSync(marker)).toBe(false)
 
-    const restored = new OptionalComponentStore({ userData, localAppData, env: {} })
+    const restored = new OptionalComponentStore({ userData, localAppData, env: {}, platform: 'win32' })
     expect(restored.getState({}).gvhmr.requested).toBe(true)
   })
 
@@ -116,5 +126,79 @@ describe('OptionalComponentStore', () => {
     const store = new OptionalComponentStore({ userData: join(root, 'user-data'), env: {} })
 
     expect(() => store.configureGvhmr(root)).toThrow('not an official GVHMR checkout')
+  })
+})
+
+describe('GVHMR platform support', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  it.each([
+    ['darwin', false],
+    ['win32', true],
+    ['linux', true],
+  ] as const)('only exposes saved setup requests on supported platforms: %s', (platform, requested) => {
+    const userData = mkdtempSync(join(tmpdir(), 'hhtools-components-requested-'))
+    writeFileSync(join(userData, 'optional-components.json'), JSON.stringify({
+      schemaVersion: 1,
+      gvhmr: { requested: true },
+    }))
+    const store = new OptionalComponentStore({ userData, env: {}, platform })
+
+    expect(store.getState({}).gvhmr.requested).toBe(requested)
+  })
+
+  it('rejects macOS setup before showing any dialog or changing configuration', async () => {
+    const store = new OptionalComponentStore({
+      userData: mkdtempSync(join(tmpdir(), 'hhtools-components-macos-')),
+      env: {},
+      platform: 'darwin',
+    })
+    const configure = vi.spyOn(store, 'configureGvhmr')
+    const onConfigured = vi.fn(async () => {})
+
+    await expect(runGvhmrSetup({
+      mainWindow: {} as BrowserWindow,
+      store,
+      onConfigured,
+    }, 'darwin')).rejects.toThrow('Video2Motion is not available on macOS')
+
+    expect(electronMocks.showMessageBox).not.toHaveBeenCalled()
+    expect(electronMocks.showOpenDialog).not.toHaveBeenCalled()
+    expect(electronMocks.openExternal).not.toHaveBeenCalled()
+    expect(configure).not.toHaveBeenCalled()
+    expect(onConfigured).not.toHaveBeenCalled()
+  })
+
+  it.each(['win32', 'linux'] as const)('retains the full configuration flow on %s', async (platform) => {
+    const root = mkdtempSync(join(tmpdir(), 'hhtools-components-setup-'))
+    const checkout = createGvhmrCheckout(root)
+    const python = join(root, 'python')
+    writeFileSync(python, '')
+    const store = new OptionalComponentStore({ userData: join(root, 'user-data'), env: {}, platform })
+    const onConfigured = vi.fn(async () => {})
+    electronMocks.showMessageBox.mockResolvedValue({ response: 0 })
+    electronMocks.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [checkout] })
+    if (platform === 'linux') {
+      electronMocks.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [python] })
+    }
+
+    await expect(runGvhmrSetup({
+      mainWindow: {} as BrowserWindow,
+      store,
+      onConfigured,
+    }, platform)).resolves.toMatchObject({
+      action: 'configured',
+      state: {
+        configured: true,
+        root: checkout,
+        runtime: platform === 'linux' ? 'local' : 'docker',
+        ...(platform === 'linux' ? { python } : {}),
+      },
+    })
+    expect(electronMocks.showMessageBox).toHaveBeenCalledTimes(2)
+    expect(electronMocks.showOpenDialog).toHaveBeenCalledTimes(platform === 'linux' ? 2 : 1)
+    expect(onConfigured).toHaveBeenCalledOnce()
   })
 })

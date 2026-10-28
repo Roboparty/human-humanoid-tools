@@ -7,6 +7,8 @@ import type { HHToolsDesktopApi } from '../src/shared/desktop-api'
 
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 const repositoryRoot = resolve(desktopRoot, '..')
+// macOS intentionally omits the CUDA-dependent Video to Motion workflow.
+const supportsVideoToMotion = process.platform !== 'darwin'
 
 function processIsAlive(pid: number): boolean {
   try {
@@ -29,6 +31,14 @@ type DesktopFixture = { page: Page }
 const test = base.extend<DesktopFixture>({
   page: async ({}, use, testInfo) => {
     const packagedExecutable = process.env.HHTOOLS_E2E_EXECUTABLE
+    const launchEnvironment = { ...process.env }
+    if (packagedExecutable === undefined) {
+      launchEnvironment.HHTOOLS_REPO_ROOT = repositoryRoot
+    } else {
+      // A checkout override would hide defects in the shipped Python package.
+      delete launchEnvironment.HHTOOLS_REPO_ROOT
+      delete launchEnvironment.HHTOOLS_PYTHON
+    }
     const electronApp = await electron.launch({
       ...(packagedExecutable === undefined
         ? {}
@@ -44,8 +54,7 @@ const test = base.extend<DesktopFixture>({
       ],
       cwd: desktopRoot,
       env: {
-        ...process.env,
-        HHTOOLS_REPO_ROOT: repositoryRoot,
+        ...launchEnvironment,
         HHTOOLS_WEB_SETTINGS_PATH: testInfo.outputPath('web-settings.json'),
         HHTOOLS_MOTION_LIBRARY_SETTINGS_PATH: testInfo.outputPath(
           'motion-library-settings.json'
@@ -57,6 +66,10 @@ const test = base.extend<DesktopFixture>({
 
     let backendPid: number | undefined
     try {
+      if (packagedExecutable !== undefined) {
+        expect(await electronApp.evaluate(({ app }) => app.isPackaged)).toBe(true)
+        expect(await electronApp.evaluate(() => process.env.HHTOOLS_REPO_ROOT)).toBeUndefined()
+      }
       await expect
         .poll(
           () =>
@@ -74,12 +87,14 @@ const test = base.extend<DesktopFixture>({
       page.on('pageerror', (error) => pageErrors.push(error.message))
 
       await expect(page.locator("#app[data-hhtools-ready='true']")).toBeVisible()
-    const state = await page.evaluate(() =>
-      (window.hhtoolsDesktop as HHToolsDesktopApi).getRuntimeState()
-    )
-    expect(state).toMatchObject({ appPhase: 'after-window-open', backendState: 'ready' })
+      const state = await page.evaluate(() =>
+        (window.hhtoolsDesktop as HHToolsDesktopApi).getRuntimeState()
+      )
+      expect(state).toMatchObject({ appPhase: 'after-window-open', backendState: 'ready' })
       backendPid = state.backendPid
       expect(typeof backendPid).toBe('number')
+      expect(await page.evaluate(() => window.hhtoolsDesktop.capabilities.videoToMotion))
+        .toBe(supportsVideoToMotion)
       await use(page)
       expect(pageErrors).toEqual([])
     } finally {
@@ -164,16 +179,18 @@ test('menus, settings, language and application information', async ({ page }) =
   const fileMenu = page.getByRole('menu', { name: 'File' })
   await fileTrigger.click()
   await expect(fileMenu).toBeVisible()
-  await expect(fileMenu.getByRole('menuitem')).toHaveCount(7)
+  await expect(fileMenu.getByRole('menuitem')).toHaveCount(supportsVideoToMotion ? 7 : 6)
   for (const command of [
     'Import Motion File',
     'Import Motion Folder',
-    'Import Video',
+    ...(supportsVideoToMotion ? ['Import Video'] : []),
     'Import Robot URDF',
     'Import Robot Mesh Folder'
   ]) {
     await expect(fileMenu.getByRole('menuitem', { name: command, exact: true })).toBeEnabled()
   }
+  await expect(fileMenu.getByRole('menuitem', { name: 'Import Video', exact: true }))
+    .toHaveCount(supportsVideoToMotion ? 1 : 0)
   await expect(fileMenu.getByRole('menuitem', { name: /^Current Result/ })).toBeDisabled()
   await expect(fileMenu.getByRole('menuitem', { name: 'Exit', exact: true })).toBeEnabled()
 
@@ -185,6 +202,8 @@ test('menus, settings, language and application information', async ({ page }) =
   await settingsMenu.getByRole('menuitem', { name: 'Settings', exact: true }).click()
   let settingsDialog = page.getByRole('dialog', { name: 'Workspace Settings' })
   await expect(settingsDialog).toBeVisible()
+  await expect(settingsDialog.getByText('GVHMR video-to-motion', { exact: true }))
+    .toHaveCount(supportsVideoToMotion ? 1 : 0)
   const language = settingsDialog.getByLabel('Workspace language')
   await expect(language).toHaveValue('en')
   await language.selectOption('zh-CN')
@@ -285,7 +304,7 @@ test('menus, settings, language and application information', async ({ page }) =
   await workflowsTrigger.hover()
   await expect(workflowsMenu).toBeVisible()
   await expect(workflowsMenu.getByRole('menuitem')).toHaveText([
-    'Video to Motion',
+    ...(supportsVideoToMotion ? ['Video to Motion'] : []),
     'Human to Robot',
     'Robot to Robot',
     'Batch'
@@ -294,7 +313,7 @@ test('menus, settings, language and application information', async ({ page }) =
   if (!workflowsBounds) throw new Error('Workflows menu has no layout box')
   await page.mouse.move(workflowsBounds.x + 12, workflowsBounds.y - 1.5)
   await expect(workflowsMenu).toBeVisible()
-  await workflowsMenu.getByRole('menuitem', { name: 'Video to Motion' }).hover()
+  await workflowsMenu.getByRole('menuitem', { name: 'Human to Robot' }).hover()
   await expect(workflowsMenu).toBeVisible()
   await menu.getByRole('menuitem', { name: 'Analysis', exact: true }).hover()
   await expect(workflowsMenu).toBeHidden()
@@ -311,19 +330,20 @@ test('menus, settings, language and application information', async ({ page }) =
 
 })
 
-test('motion, robot and video import controls', async ({ page }, testInfo) => {
+test('motion and robot import controls', async ({ page }, testInfo) => {
   await skipFirstRun(page)
   const sidebar = page.getByRole('complementary', { name: 'Workspace navigation' })
-  await expect(sidebar.getByRole('button')).toHaveText([
+  const navigationLabels = [
     'Motion',
     'Robot',
-    'Video → Motion',
+    ...(supportsVideoToMotion ? ['Video → Motion'] : []),
     'Human → Robot',
     'Robot → Robot',
     'Batch',
     'Data Analysis'
-  ])
-  await expect(sidebar.locator('.sidebar-icon')).toHaveCount(7)
+  ]
+  await expect(sidebar.getByRole('button')).toHaveText(navigationLabels)
+  await expect(sidebar.locator('.sidebar-icon')).toHaveCount(navigationLabels.length)
   expect(
     await sidebar.locator('.sidebar-icon').evaluateAll((icons) =>
       icons.every((icon) => getComputedStyle(icon).maskImage.includes('/icons/sidebar/'))
@@ -399,33 +419,40 @@ test('motion, robot and video import controls', async ({ page }, testInfo) => {
       rows.every((row) => !/\bLoad(?:ed)?\b/.test(row.textContent ?? ''))
     )
   ).toBe(true)
+})
 
-  await sidebar.getByRole('button', { name: 'Video → Motion' }).click()
-  await expect(inspector.getByRole('heading', { name: 'Video → Motion' })).toBeVisible()
-  await expect(page.getByRole('list', { name: 'Video to Motion pipeline' })).toBeVisible()
-  await expect(
-    inspector.locator('section[aria-label="Video → Motion"] > div > details')
-  ).toHaveCount(4)
-  const v2mPage = inspector.locator('section[aria-label="Video → Motion"]')
-  const v2mSteps = v2mPage.locator(':scope > div > details')
-  await expect(v2mSteps.nth(0).locator('[data-status-tone]')).toHaveAttribute(
-    'data-status-tone',
-    'neutral'
-  )
-  const invalidVideo = testInfo.outputPath('not-a-video.txt')
-  await writeFile(invalidVideo, 'not a video')
-  await v2mPage
-    .getByRole('group', { name: 'Video import area' })
-    .locator('input[type="file"]')
-    .setInputFiles(invalidVideo)
-  const invalidVideoStatus = v2mSteps.nth(0).locator('[data-status-tone]')
-  await expect(invalidVideoStatus).toHaveAttribute('data-status-tone', 'danger')
-  await expect(invalidVideoStatus).toHaveClass(/text-danger/)
-  await expect(invalidVideoStatus).toHaveText('Invalid video')
-  await expect(inspector.getByRole('group', { name: 'Video import area' })).toBeVisible()
-  await expectBorderless(inspector.getByRole('button', { name: 'Refresh GVHMR status' }))
+test.describe('Video to Motion', () => {
+  test.skip(!supportsVideoToMotion, 'macOS does not expose Video to Motion')
 
-
+  test('video import controls', async ({ page }, testInfo) => {
+    await skipFirstRun(page)
+    const sidebar = page.getByRole('complementary', { name: 'Workspace navigation' })
+    const inspector = page.getByRole('complementary', { name: 'Inspector' })
+    await sidebar.getByRole('button', { name: 'Video → Motion' }).click()
+    await expect(inspector.getByRole('heading', { name: 'Video → Motion' })).toBeVisible()
+    await expect(page.getByRole('list', { name: 'Video to Motion pipeline' })).toBeVisible()
+    await expect(
+      inspector.locator('section[aria-label="Video → Motion"] > div > details')
+    ).toHaveCount(4)
+    const v2mPage = inspector.locator('section[aria-label="Video → Motion"]')
+    const v2mSteps = v2mPage.locator(':scope > div > details')
+    await expect(v2mSteps.nth(0).locator('[data-status-tone]')).toHaveAttribute(
+      'data-status-tone',
+      'neutral'
+    )
+    const invalidVideo = testInfo.outputPath('not-a-video.txt')
+    await writeFile(invalidVideo, 'not a video')
+    await v2mPage
+      .getByRole('group', { name: 'Video import area' })
+      .locator('input[type="file"]')
+      .setInputFiles(invalidVideo)
+    const invalidVideoStatus = v2mSteps.nth(0).locator('[data-status-tone]')
+    await expect(invalidVideoStatus).toHaveAttribute('data-status-tone', 'danger')
+    await expect(invalidVideoStatus).toHaveClass(/text-danger/)
+    await expect(invalidVideoStatus).toHaveText('Invalid video')
+    await expect(inspector.getByRole('group', { name: 'Video import area' })).toBeVisible()
+    await expectBorderless(inspector.getByRole('button', { name: 'Refresh GVHMR status' }))
+  })
 })
 
 test('retarget, batch and analysis workflow navigation', async ({ page }) => {
@@ -482,6 +509,11 @@ test('retarget, batch and analysis workflow navigation', async ({ page }) => {
   await expect(inspector.getByRole('heading', { name: 'Batch' })).toBeVisible()
   await expectBorderless(inspector.getByRole('button', { name: 'Refresh Batch catalogs' }))
   const batchMode = inspector.getByRole('radiogroup', { name: 'Batch workflow' })
+  await expect(batchMode.getByRole('radio')).toHaveText([
+    ...(supportsVideoToMotion ? ['V2M'] : []),
+    'H2R',
+    'R2R'
+  ])
   await expect(batchMode.getByRole('radio', { name: 'H2R' })).toBeChecked()
   await batchMode.getByRole('radio', { name: 'R2R' }).click()
   await expect(inspector.getByText('1. Source trajectories')).toBeVisible()

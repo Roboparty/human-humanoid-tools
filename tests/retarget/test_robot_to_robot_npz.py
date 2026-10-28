@@ -109,6 +109,18 @@ def test_native_npz_keeps_precedence_and_quaternion_convention(
     assert inspection.metadata["dof_names"] == ["native_joint"]
 
 
+@pytest.mark.parametrize("fps", [np.nan, np.inf, -np.inf])
+@pytest.mark.parametrize("metadata", [True, False], ids=["file", "override"])
+def test_training_npz_rejects_nonfinite_timing(tmp_path, training_arrays, fps, metadata):
+    training_arrays.pop("framerate")
+    if metadata:
+        training_arrays["framerate"] = np.array(fps)
+    path = tmp_path / "invalid-timing.npz"
+    np.savez(path, **training_arrays)
+    with pytest.raises(ValueError, match="frame rate must be finite"):
+        load_source_trajectory(path, source_fps=None if metadata else fps)
+
+
 @pytest.mark.parametrize(
     ("key", "invalid"),
     [

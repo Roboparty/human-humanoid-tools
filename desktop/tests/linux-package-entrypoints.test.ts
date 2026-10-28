@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 interface DesktopPackage {
+  version: string
   desktopName: string
   license: string
   scripts: Record<string, string>
@@ -38,7 +39,7 @@ function bootstrapFixture(): string {
   const bin = join(root, 'bin')
   mkdirSync(assets, { recursive: true })
   mkdirSync(bin, { recursive: true })
-  writeFileSync(join(assets, 'hhtools-0.1.0-py3-none-any.whl'), 'wheel\n', 'utf8')
+  writeFileSync(join(assets, `hhtools-${packageMetadata.version}-py3-none-any.whl`), 'wheel\n', 'utf8')
   writeFileSync(join(assets, 'requirements-all.txt'), 'dependency==1.0\n', 'utf8')
   writeFileSync(join(assets, 'installer-uv.toml'), '', 'utf8')
   const uv = join(bin, 'uv')
@@ -106,10 +107,11 @@ describe('Linux package entry points', () => {
 
     expect(result.status, result.stderr).toBe(0)
     const installer = readFileSync(join(output, 'install.sh'), 'utf8')
-    expect(installer).toContain("embedded_version='0.1.0'")
-    expect(installer).toContain("embedded_wheel='hhtools-0.1.0-py3-none-any.whl'")
+    expect(installer).toContain(`embedded_version='${packageMetadata.version}'`)
+    expect(installer).toContain(`embedded_wheel='hhtools-${packageMetadata.version}-py3-none-any.whl'`)
     const runtimeId = readFileSync(join(output, 'RUNTIME_ID'), 'utf8').trim()
-    expect(runtimeId).toMatch(/^0\.1\.0\+sha256\.[a-f0-9]{20}$/)
+    expect(runtimeId.startsWith(`${packageMetadata.version}+sha256.`)).toBe(true)
+    expect(runtimeId.split('+sha256.')[1]).toMatch(/^[a-f0-9]{20}$/)
     expect(installer).toContain(`embedded_runtime_id='${runtimeId}'`)
     expect(installer).not.toMatch(/(^|[;&|]\s*)curl(?:\s|$)/m)
     expect(

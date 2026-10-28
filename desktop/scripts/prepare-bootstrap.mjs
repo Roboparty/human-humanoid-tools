@@ -177,6 +177,13 @@ try {
   if (!wheelName.startsWith(expectedPrefix)) {
     fail(`wheel ${wheelName} does not match desktop version ${version}`)
   }
+  if (!fixtureRoot) {
+    run(uv, [
+      'run', '--no-project', '--python', '3.12', 'python',
+      join(repositoryRoot, 'scripts', 'verify_wheel_contents.py'),
+      join(assetsRoot, wheelName),
+    ])
+  }
 
   const template = readFileSync(templatePath, 'utf8')
   const payloadPaths = [

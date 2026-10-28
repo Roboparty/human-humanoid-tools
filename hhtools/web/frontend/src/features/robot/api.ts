@@ -8,6 +8,7 @@ import {
 } from "@/lib/api";
 import { createRequestCache } from "@/lib/requestCache";
 import type { StageRobotPayload } from "@/stage/types";
+import { sortRobots } from "@/features/robot/presentation";
 
 export interface RobotSummary {
   readonly name: string;
@@ -52,7 +53,7 @@ export async function getRobotLibrary(
               Boolean(robot) &&
               typeof robot.name === "string" &&
               typeof robot.display_name === "string",
-          )
+          ).sort(sortRobots)
         : [],
     };
   };

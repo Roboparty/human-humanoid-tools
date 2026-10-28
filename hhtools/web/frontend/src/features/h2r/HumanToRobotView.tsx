@@ -32,6 +32,7 @@ import {
   type RobotPayload,
   type RobotSummary,
 } from "@/features/robot/api";
+import { robotLabel } from "@/features/robot/presentation";
 import { ResultDiagnostics } from "@/features/result/ResultDiagnostics";
 import { ResultExportControls } from "@/features/result/ResultExportControls";
 import type { ComparisonPreset } from "@/features/result/comparison";
@@ -551,7 +552,7 @@ export function HumanToRobotView({
       const payload = await loadRobot(robotName, { signal });
       if (signal.aborted) return;
       setLocalRobot(payload);
-      setStatus(text(`Loaded ${payload.display_name}`, `已加载 ${payload.display_name}`));
+      setStatus(text(`Loaded ${robotLabel(payload)}`, `已加载 ${robotLabel(payload)}`));
       onRobotLoaded?.(payload);
     });
   }
@@ -727,7 +728,7 @@ export function HumanToRobotView({
     : errorOwner === "robot"
       ? { label: text("Load failed", "加载失败"), tone: "danger" }
       : robot
-        ? { label: robot.display_name, tone: "success" }
+        ? { label: robotLabel(robot), tone: "success" }
         : { label: text("Not loaded", "未加载"), tone: "neutral" };
   const calibrationStep: StepStatus = busy === "calibration"
     ? { label: text("Opening…", "打开中…"), tone: "info" }
@@ -828,7 +829,7 @@ export function HumanToRobotView({
                 value={entry.name}
                 disabled={!entry.has_urdf}
               >
-                {entry.display_name} ({entry.num_dof} {text("DoF", "自由度")})
+                {robotLabel(entry)} ({entry.num_dof} {text("DoF", "自由度")})
               </option>
             ))}
           </Picker>

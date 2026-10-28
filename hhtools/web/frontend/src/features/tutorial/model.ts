@@ -1,4 +1,5 @@
 import type { ViewId } from "@/navigation";
+import { isVideoToMotionEnabled } from "../../platformCapabilities.ts";
 
 export const TUTORIAL_STORAGE_KEY = "hhtools.web.tutorial.v2.seen";
 export const LEGACY_TUTORIAL_STORAGE_KEY = "hhtools.web.tutorial.v1.done";
@@ -205,3 +206,21 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     ),
   },
 ];
+
+const TUTORIAL_STEPS_WITHOUT_VIDEO: readonly TutorialStep[] = TUTORIAL_STEPS.map(
+  (step) => step.id === "done"
+    ? {
+        ...step,
+        body: copy(
+          "The guide opens automatically only on your first visit. To review it later, open Help, then Tutorial. Robot to Robot, Batch, and Data Analysis remain available from the left navigation.",
+          "教程只会在首次进入时自动显示。以后需要复习时，请打开顶部的帮助菜单，再选择教程。机器人到机器人、批处理和数据分析仍可从左侧导航进入。",
+        ),
+      }
+    : step,
+);
+
+export function getTutorialSteps(
+  videoToMotionEnabled = isVideoToMotionEnabled(),
+): readonly TutorialStep[] {
+  return videoToMotionEnabled ? TUTORIAL_STEPS : TUTORIAL_STEPS_WITHOUT_VIDEO;
+}

@@ -27,13 +27,14 @@ Design notes:
   the yaml" bugs.
 * **Discovery roots**:
     1. ``<workspace>/configs/robots/`` (source tree; primary for dev).
-    2. ``~/.config/hhtools/robots/`` (user-installed robots — the target for
+    2. ``HHTOOLS_BUNDLED_ROBOT_PATH`` (desktop-packaged robot assets).
+    3. ``~/.config/hhtools/robots/`` (user-installed robots — the target for
        ``hhtools add-robot``).
-    3. Anything on the ``HHTOOLS_ROBOT_PATH`` env var (colon-separated).
+    4. Anything on the ``HHTOOLS_ROBOT_PATH`` env var (colon-separated).
   We iterate in that order; **later** roots win on name collisions so a
   user-installed robot under ``~/.config/hhtools/robots/`` overrides a
-  same-named built-in from the workspace (e.g. uploading ``rpo`` when the
-  repo already ships ``configs/robots/rpo``).
+  same-named built-in from the workspace or desktop bundle, preserving
+  user calibration. Explicit ``HHTOOLS_ROBOT_PATH`` overrides still win.
 * **Zero-config robots** (user dropped a URDF + mesh/ but didn't write any
   yaml): we auto-synthesise a ``robot.yaml`` via
   :mod:`hhtools.robot.scaffold` the first time we see the directory, then
@@ -202,12 +203,21 @@ def _discovery_roots() -> list[Path]:
             roots.append(candidate)
             break
 
-    # 2. User-installed (web UI uploads, ``hhtools robot add`` to user dir).
+    # 2. Packaged defaults must not replace user robot YAMLs or calibration.
+    bundled = os.environ.get("HHTOOLS_BUNDLED_ROBOT_PATH", "")
+    for part in bundled.split(os.pathsep):
+        if not part:
+            continue
+        p = Path(part).expanduser()
+        if p.is_dir():
+            roots.append(p)
+
+    # 3. User-installed (web UI uploads, ``hhtools robot add`` to user dir).
     user_root = user_robot_dir()
     if user_root.is_dir():
         roots.append(user_root)
 
-    # 3. Explicit env override.
+    # 4. Explicit env override.
     env = os.environ.get("HHTOOLS_ROBOT_PATH", "")
     for part in env.split(os.pathsep):
         if not part:

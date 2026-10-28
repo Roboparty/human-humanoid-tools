@@ -1,7 +1,8 @@
 import { _electron as electron, expect, test } from '@playwright/test'
+import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 import type { HHToolsDesktopApi } from '../src/shared/desktop-api'
 import type { RuntimeInstallProgress } from '../src/shared/installer-api'
@@ -10,6 +11,10 @@ test('installs and opens the macOS package without a checkout or system Python',
   test.skip(process.platform !== 'darwin' || !process.env.HHTOOLS_E2E_EXECUTABLE)
   // Includes downloads and macOS's first validation of scientific native libraries.
   test.setTimeout(1_800_000)
+  const executable = resolve(process.env.HHTOOLS_E2E_EXECUTABLE!)
+  const expectedRuntimeId = (await readFile(
+    join(dirname(dirname(executable)), 'Resources', 'bootstrap', 'RUNTIME_ID'), 'utf8'
+  )).trim()
   const root = await mkdtemp(join(tmpdir(), 'hhtools-mac-package-'))
   const home = join(root, 'home')
   const runtimeRoot = join(home, 'Library', 'Application Support', 'hhtools')
@@ -30,7 +35,7 @@ test('installs and opens the macOS package without a checkout or system Python',
     HHTOOLS_MOTION_LIBRARY_SETTINGS_PATH: join(root, 'motion-library.json')
   })
   const launch = () => electron.launch({
-    executablePath: resolve(process.env.HHTOOLS_E2E_EXECUTABLE!),
+    executablePath: executable,
     args: [`--user-data-dir=${join(root, 'user-data')}`, '--lang=en-US'],
     cwd: root,
     env
@@ -73,7 +78,24 @@ test('installs and opens the macOS package without a checkout or system Python',
     const failure = await result
     if (failure) throw new Error(failure)
     expect((await readFile(join(runtimeRoot, 'runtime-version'), 'utf8')).trim())
-      .toMatch(/^0\.1\.0\+sha256\.[a-f0-9]{20}$/)
+      .toBe(expectedRuntimeId)
+    const referenceCheck = execFileSync(
+      join(runtimeRoot, 'tools', 'hhtools', 'bin', 'python'),
+      ['-I', '-c', [
+        'from pathlib import Path',
+        'import hhtools',
+        'from hhtools.retarget.newton_basic.rest_pose import bundled_reference_bvh_path',
+        'from hhtools.retarget.calibration.reference import load_reference_pose',
+        'names = ("lafan_bvh", "soma_bvh", "mocap_bvh", "xsens_mocap")',
+        'package = Path(hhtools.__file__).resolve().parent',
+        'paths = [bundled_reference_bvh_path(name) for name in names]',
+        'assert all(path is not None and path.is_relative_to(package) for path in paths)',
+        'assert all(not load_reference_pose(name).fallback for name in names)',
+        'print("bundled-reference-poses-ok")'
+      ].join('\n')],
+      { cwd: root, env, encoding: 'utf8', timeout: 60_000 }
+    )
+    expect(referenceCheck.trim()).toBe('bundled-reference-poses-ok')
   } finally {
     if (!setupClosed) await setup.close()
   }
@@ -86,6 +108,8 @@ test('installs and opens the macOS package without a checkout or system Python',
     }).toContain('http://127.0.0.1:')
     const page = app.windows().find((page) => page.url().startsWith('http:'))!
     await expect(page.locator('#app[data-hhtools-ready="true"]')).toBeVisible()
+    expect(await page.evaluate(() => window.hhtoolsDesktop.capabilities.videoToMotion))
+      .toBe(false)
     const state = await page.evaluate(() =>
       (window.hhtoolsDesktop as HHToolsDesktopApi).getRuntimeState()
     )

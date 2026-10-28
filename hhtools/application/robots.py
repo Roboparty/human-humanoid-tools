@@ -16,6 +16,7 @@ _log = logging.getLogger(__name__)
 # with the front-end Robot Library catalog.
 _BUILTIN_ROBOT_PRESET_NAMES = frozenset(
     {
+        "rp1",
         "g1_29dof",
         "roboto_origin",
         "agibot_x2_ultra",

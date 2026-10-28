@@ -27,7 +27,7 @@ from hhtools.web.output.export_bundle import (
 
 @pytest.fixture()
 def woodchair_motion() -> Motion:
-    root = Path("assets/motions/intermimic/OMOMO")
+    root = Path(__file__).resolve().parents[2] / "assets/motions/intermimic/OMOMO"
     pkl = root / "sub12_woodchair_000" / "sub12_woodchair_000.pkl"
     if not pkl.is_file():
         pytest.skip(f"OMOMO demo missing: {pkl}")

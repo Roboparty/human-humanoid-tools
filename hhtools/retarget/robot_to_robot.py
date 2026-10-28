@@ -436,10 +436,14 @@ def _resolve_source_framerate(
     source_fps: float | None,
 ) -> float:
     """Prefer file metadata; otherwise use ``source_fps`` or the R2R default."""
-    if declared is not None and float(declared) > 0:
-        return float(declared)
-    if source_fps is not None and float(source_fps) > 0:
-        return float(source_fps)
+    for value in (declared, source_fps):
+        if value is None:
+            continue
+        fps = float(value)
+        if not math.isfinite(fps):
+            raise ValueError("source frame rate must be finite")
+        if fps > 0:
+            return fps
     return float(DEFAULT_SOURCE_FRAMERATE)
 
 

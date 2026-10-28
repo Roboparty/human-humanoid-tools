@@ -19,18 +19,12 @@ import {
   type RobotSummary,
 } from "@/features/robot/api";
 import { useLocaleText } from "@/LocaleProvider";
+import { isVideoToMotionEnabled } from "@/platformCapabilities";
 
 import { HumanBatchView } from "./HumanBatchView";
 import { RobotBatchView } from "./RobotBatchView";
 import { appendUniqueEntries } from "./model";
-
-type BatchMode = "v2m" | "h2r" | "r2r";
-
-const modes = [
-  { id: "v2m", label: "V2M" },
-  { id: "h2r", label: "H2R" },
-  { id: "r2r", label: "R2R" },
-] as const;
+import { getBatchModes, type BatchMode } from "./modes";
 
 const VideoBatchView = lazy(async () => ({
   default: (await import("./VideoBatchView")).VideoBatchView,
@@ -57,6 +51,7 @@ export function BatchView({
   onMotionLibraryChange?: () => void;
 }) {
   const text = useLocaleText();
+  const videoToMotionEnabled = isVideoToMotionEnabled();
   const [mode, setMode] = useState<BatchMode>("h2r");
   const [videoModeMounted, setVideoModeMounted] = useState(false);
   const [motions, setMotions] = useState<readonly MotionLibraryEntry[]>([]);
@@ -105,8 +100,8 @@ export function BatchView({
   useEffect(() => () => catalogRequest.current?.abort(), []);
 
   useEffect(() => {
-    if (mode === "v2m") setVideoModeMounted(true);
-  }, [mode]);
+    if (videoToMotionEnabled && mode === "v2m") setVideoModeMounted(true);
+  }, [mode, videoToMotionEnabled]);
 
   function addPublishedMotion(entry: MotionLibraryEntry): void {
     const next = appendUniqueEntries(humanEntriesRef.current, [entry]);
@@ -130,12 +125,14 @@ export function BatchView({
     >
       <SegmentedControl
         label={text("Batch workflow", "批处理流程")}
-        items={modes}
+        items={getBatchModes(videoToMotionEnabled)}
         value={mode}
-        onValueChange={setMode}
+        onValueChange={(next) => {
+          if (next !== "v2m" || videoToMotionEnabled) setMode(next);
+        }}
       />
 
-      {(videoModeMounted || mode === "v2m") && (
+      {videoToMotionEnabled && (videoModeMounted || mode === "v2m") && (
         <div hidden={mode !== "v2m"}>
           <Suspense
             fallback={

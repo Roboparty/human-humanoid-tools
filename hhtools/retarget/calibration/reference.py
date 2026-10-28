@@ -1011,14 +1011,24 @@ def load_reference_pose(name: str) -> HumanReferencePose:
         return _load_smplx()
     if key == "gvhmr":
         return _load_gvhmr()
-    if key == "soma_bvh":
-        return _build_static_soma()
-    if key == "lafan_bvh":
-        return _build_static_lafan()
-    if key == "mocap_bvh":
-        return _build_static_mocap()
-    if key == "xsens_mocap":
-        return _build_static_xsens_mocap()
+    static_builders = {
+        "soma_bvh": _build_static_soma,
+        "lafan_bvh": _build_static_lafan,
+        "mocap_bvh": _build_static_mocap,
+        "xsens_mocap": _build_static_xsens_mocap,
+    }
+    if key in static_builders:
+        pose = static_builders[key]()
+        # These references ship with every installation. Their old synthetic
+        # substitutes change calibration offsets and limb scales substantially;
+        # treating a broken installation like an optional body model is unsafe.
+        if pose.fallback:
+            raise ValueError(
+                f"Bundled reference pose {key!r} is missing or invalid. "
+                "Reinstall hhtools with its data/reference_poses resources "
+                "before calibrating or retargeting."
+            )
+        return pose
     raise ValueError(f"Unknown reference name: {name!r}")
 
 

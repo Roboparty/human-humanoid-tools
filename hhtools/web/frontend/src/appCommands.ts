@@ -1,6 +1,7 @@
 import type { ViewId } from "./navigation";
 import type { ApplicationImportTarget } from "./importIntent";
 import { localize, type WorkspaceLocale } from "./localization.ts";
+import { isVideoToMotionEnabled } from "./platformCapabilities.ts";
 
 export type {
   ApplicationImportRequest,
@@ -53,6 +54,7 @@ export interface ApplicationCommandContext {
   readonly theme: ApplicationTheme;
   readonly canExportResult: boolean;
   readonly canExitApplication: boolean;
+  readonly videoToMotionEnabled?: boolean;
   readonly onNavigate: (view: ViewId) => void;
   readonly onImport: (target: ApplicationImportTarget) => void;
   readonly onExportResult: () => void;
@@ -151,6 +153,8 @@ export function createApplicationMenus(
 ): readonly ApplicationMenu[] {
   const text = (english: string, chinese: string) =>
     localize(context.locale, english, chinese);
+  const videoToMotionEnabled =
+    context.videoToMotionEnabled ?? isVideoToMotionEnabled();
   const exitCommands: readonly ApplicationCommand[] = context.canExitApplication
     ? [
         {
@@ -181,14 +185,18 @@ export function createApplicationMenus(
           "motion-folder",
           context.onImport,
         ),
-        importCommand(
-          "import-video",
-          text("Import Video", "导入视频"),
-          text("Select a Video to Motion source", "选择视频转动作输入"),
-          "video-file",
-          context.onImport,
-          true,
-        ),
+        ...(videoToMotionEnabled
+          ? [
+              importCommand(
+                "import-video",
+                text("Import Video", "导入视频"),
+                text("Select a Video to Motion source", "选择视频转动作输入"),
+                "video-file",
+                context.onImport,
+                true,
+              ),
+            ]
+          : []),
         importCommand(
           "import-robot-urdf",
           text("Import Robot URDF", "导入机器人 URDF"),
@@ -227,13 +235,17 @@ export function createApplicationMenus(
       id: "workflows",
       label: text("Workflows", "工作流"),
       commands: [
-        navigationCommand(
-          "navigate-video-to-motion",
-          text("Video to Motion", "视频转动作"),
-          text("Generate motion from video with GVHMR", "使用 GVHMR 从视频生成动作"),
-          "video-to-motion",
-          context.onNavigate,
-        ),
+        ...(videoToMotionEnabled
+          ? [
+              navigationCommand(
+                "navigate-video-to-motion",
+                text("Video to Motion", "视频转动作"),
+                text("Generate motion from video with GVHMR", "使用 GVHMR 从视频生成动作"),
+                "video-to-motion",
+                context.onNavigate,
+              ),
+            ]
+          : []),
         navigationCommand(
           "navigate-h2r",
           text("Human to Robot", "人体转机器人"),

@@ -357,6 +357,15 @@
   ],
   "robots": [
     {
+      "preset": "rp1",
+      "display_name": "ROBOTO 01",
+      "repository": "https://github.com/Roboparty/rp1_description.git",
+      "commit": "84529a55649b5c9796d49093c266208c879f9f29",
+      "main_urdf": "urdf/rp1.urdf",
+      "license_paths": [],
+      "bundle_manifest": "SOURCE.json"
+    },
+    {
       "preset": "g1_29dof",
       "display_name": "Unitree G1",
       "repository": "https://github.com/unitreerobotics/unitree_ros.git",

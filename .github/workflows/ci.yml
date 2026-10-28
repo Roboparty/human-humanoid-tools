@@ -63,6 +63,17 @@ jobs:
       - name: Verify wheel contents
         run: uv run --no-sync python scripts/verify_wheel_contents.py dist/*.whl
 
+      - name: Verify installed wheel numerical resources
+        shell: bash
+        run: |
+          uv run --no-sync python scripts/verify_installed_resources.py --output "$RUNNER_TEMP/source-resources.json"
+          uv export --frozen --all-extras --no-dev --no-emit-project --no-header --output-file "$RUNNER_TEMP/wheel-requirements.txt"
+          uv venv --python 3.12 "$RUNNER_TEMP/hhtools-wheel"
+          wheel_python="$RUNNER_TEMP/hhtools-wheel/bin/python"
+          uv pip install --python "$wheel_python" --config-file packaging/installer/uv.toml -r "$RUNNER_TEMP/wheel-requirements.txt"
+          uv pip install --python "$wheel_python" --no-deps dist/*.whl
+          "$wheel_python" -I scripts/verify_installed_resources.py --installed --compare "$RUNNER_TEMP/source-resources.json"
+
   portable-contracts:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}

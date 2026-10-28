@@ -36,6 +36,8 @@ Apple Silicon macOS 桌面版使用 CPU 重定向。桌面打包要求见下方�
 
 ## 安装与启动
 
+[Windows 0.1.5 EXE（x64）](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-selfsigned-setup.exe) · [Linux 0.1.5 DEB（amd64）](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-linux-amd64.deb) · [macOS 0.1.5 DMG（Apple Silicon）](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-mac-arm64.dmg) · [安装说明](#桌面-gui)
+
 hhtools 有三种交互式运行方式，另提供一个 Agent 自动化接口。它们共享同一套动作、机器人与
 重映射核心，但安装和启动入口彼此独立：
 
@@ -69,6 +71,17 @@ uv run hhtools web
 浏览器打开 `http://127.0.0.1:8009`。GVHMR 与受单独许可约束的 SMPL 系模型权重仍由用户
 独立准备；`all` 安装的是对应 Python 集成库，不包含这些模型文件。
 
+源码 / WebUI 安装如需使用 **ROBOTO 01**，请在启动 WebUI 前显式安装 `rp1` 预设：
+
+```bash
+uv run python scripts/install_builtin_robots.py --only rp1
+uv run hhtools web
+```
+
+GitHub 源码仓库只包含预设和下载配置，不包含机器人模型大文件或 SMPL 系权重。
+安装器从公开的 [`Roboparty/rp1_description`](https://github.com/Roboparty/rp1_description/tree/84529a55649b5c9796d49093c266208c879f9f29)
+固定提交下载 ROBOTO 01 的 URDF 及其引用的 mesh，保存到用户 Robot Library。
+
 如果希望环境更小，可以只安装实际工作流。核心终端命令不需要 extra：
 
 ```bash
@@ -96,25 +109,45 @@ HHTools 提供供脚本使用的严格 JSON CLI，以及供兼容 Agent 使用�
 
 ### 桌面 GUI
 
-按平台下载 **0.1.0 预览版**桌面安装包：
+按平台下载桌面预览版。[0.1.5 Release](https://github.com/Eleanor1018/human-humanoid-tools/releases/tag/0.1.5) 已包含 Windows x64、Linux amd64 和 macOS Apple Silicon 安装包。Linux 包在 Ubuntu 22.04 构建，并在 Ubuntu 22.04、24.04、26.04 上验证。
 
-| 平台 | 下载 | 架构 |
-|------|------|------|
-| Windows | [EXE 安装程序](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/v0.1.0%28beta%29/hhtools-0.1.0-x64-setup.exe) | x64 |
-| Linux | [Debian 安装包](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/v0.1.0%28beta%29/hhtools-0.1.0-amd64.deb) | amd64 |
-| macOS 12+ | [DMG 安装包](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/v0.1.0%28beta%29/hhtools-0.1.0-mac-arm64.dmg) | Apple Silicon（arm64） |
+| 平台 | 下载 | 架构 | 版本 |
+|------|------|------|------|
+| Windows | [EXE 安装程序](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-selfsigned-setup.exe) · [SHA-256](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-selfsigned-setup.exe.sha256) | x64 | **0.1.5** |
+| Linux | [Debian 安装包](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-linux-amd64.deb) · [SHA-256](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-linux-amd64.deb.sha256) | amd64 | **0.1.5** |
+| macOS 12+ | [DMG 安装包](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-mac-arm64.dmg) | Apple Silicon（arm64） | **0.1.5** |
 
 Debian 包包含 Electron、精选内置动作与机器人。首次启动页使用同一 deb 内置的 HHTools wheel、
 锁定依赖清单、uv 配置和 uv 二进制安装独立运行环境；推荐的当前用户安装不需要管理员密码，
 所有用户安装则使用操作系统认证窗口：
 
 ```bash
-sudo apt install ./hhtools-0.1.0-amd64.deb
+sha256sum -c hhtools-0.1.5-linux-amd64.deb.sha256
+sudo apt install ./hhtools-0.1.5-linux-amd64.deb
 hhtools-desktop
 ```
 
-Windows 安装程序会直接打包 Python runtime 与应用源码，不需要目标机器另行准备 checkout 或
-系统 Python。
+Ubuntu 22.04 和 26.04 已通过容器内安装、启动及动作播放检查；Ubuntu 24.04 已通过实机桌面、
+CUDA 重定向及 NVIDIA 硬件渲染检查。
+SHA-256：`7d08c6979de02d26a46ab4eb2bc810a0c2651daad3558a1b1a1fbf4c965548d9`。
+
+**Windows 安装步骤：** 下载并运行上方 EXE，默认的当前用户安装无需管理员权限。
+安装包内置 Python、应用依赖及 Microsoft C++ 运行库，核心功能不需要源码 checkout、
+系统 Python 或首次启动时下载依赖。本预览版使用**自签名证书**，并非公众信任的商业代码签名；
+Windows 可能显示 SmartScreen 或未知发布者提示。
+
+安装包大小为 526,100,560 字节（约 502 MiB），SHA-256 为
+`920e8b848a7c366c508b4959f5b38b8eff7a7a86945ce307e2cad3fce2fcce73`。
+可在 PowerShell 中核对下载文件：
+
+```powershell
+Get-FileHash .\hhtools-0.1.5-x64-selfsigned-setup.exe -Algorithm SHA256
+```
+
+Windows 10 x64 实测通过安装/卸载、全部七款机器人模型加载、动作导入、H2R/R2R 标定、
+四帧 LAFAN→G1 Newton 重定向及 CSV 导出；六项桌面界面检查也已通过。
+包内 Torch 为 CPU 版本。可选的 GVHMR 视频转动作使用 Docker，需另备兼容的 NVIDIA GPU、
+镜像/权重及获授权的 SMPL-X 模型；这些资源不随包分发，本安装包未验证 GPU 推理。
 
 **macOS 安装步骤：**
 
@@ -124,8 +157,14 @@ Windows 安装程序会直接打包 Python runtime 与应用源码，不需要�
 3. 按首次启动页提示完成安装，下载独立 Python 3.12 环境期间请保持联网。无需预装 Python、
    源码仓库或 Homebrew；运行环境仅安装到当前用户目录，不需要管理员密码。
 
-macOS 包与其他桌面版一样，包含 30 个内置动作和 6 款机器人。
-Warp 重定向使用 CPU；不支持 Intel Mac 或本机 GVHMR 的 NVIDIA GPU 流程。
+Windows、Linux 和 macOS 的 **0.1.5** 安装包均包含 30 个内置动作和 7 款机器人。Linux 包在 Ubuntu 22.04 构建，并已在 Ubuntu 22.04、24.04、26.04 上验证。
+第七款内置机器人 **ROBOTO 01**（`rp1`）排列在 Unitree G1 前面的首位；
+**ROBOTO_ORIGIN**（`roboto_origin`）仍是独立模型。
+macOS 的 Warp 重定向使用 CPU；不支持 Intel Mac 或本机 GVHMR 的 NVIDIA GPU 流程。
+
+当前 macOS 桌面构建隐藏视频转动作、视频导入、V2M 批处理及 GVHMR 配置入口。
+H2R、R2R、已有动作导入及 SMPL 系动作支持继续保留；Windows、Linux 和普通 WebUI
+仍保留视频转动作入口。
 
 三端都不默认打包 GVHMR 和受单独许可约束的 SMPL 系权重。构建说明见
 [`desktop/README.md`](desktop/README.md#desktop-packages)。
@@ -245,22 +284,24 @@ uv run hhtools import run --dataset omnicontact \
 **机器人**
 
 ```bash
-# 将六个精选机器人安装到 ~/.config/hhtools/robots。
+# 将七个精选机器人安装到用户 Robot Library。
 uv run python scripts/install_builtin_robots.py
 # 也可以只安装一个；重复 --only 可选择多个。
-uv run python scripts/install_builtin_robots.py --only g1_29dof
+uv run python scripts/install_builtin_robots.py --only rp1
 
 uv run hhtools robot list
-uv run hhtools robot info g1_29dof --no-mjcf
-uv run hhtools robot schema g1_29dof -o /tmp/g1_header.csv
-uv run hhtools robot validate g1_29dof
+uv run hhtools robot info rp1 --no-mjcf
+uv run hhtools robot schema rp1 -o /tmp/rp1_header.csv
+uv run hhtools robot validate rp1
 uv run hhtools robot scaffold unitree_g1          # 已有 yaml 则跳过
 # uv run hhtools robot add /path/to/urdf_or_dir  # 写入 configs/robots/
 ```
 
-安装器下载固定提交的官方归档（合计约 772 MiB），只保留约 237 MiB 的引用
-文件；每个预设都会保留上游许可证和带校验和的 `SOURCE.json`。`--replace`
-会原子替换所选预设的本地修改。桌面包可用 `HHTOOLS_BUNDLED_ROBOT_DIR`
+七款预设为 ROBOTO 01（`rp1`，28 自由度）、Unitree G1、ROBOTO_ORIGIN（RPO）、
+AgiBot X2、Asimov 1、Fourier GR-2 和 Berkeley Humanoid Lite。安装器下载固定提交的
+官方归档，只保留所选 URDF、其引用的 mesh、上游实际提供的许可证文件，以及带校验和的
+`SOURCE.json`。RP1 本次固定提交 `84529a55649b5c9796d49093c266208c879f9f29` 未提供
+`LICENSE` 文件。`--replace` 会原子替换所选预设的本地修改。桌面包可用 `HHTOOLS_BUNDLED_ROBOT_DIR`
 指向审核后的 Robot Library。
 
 **重映射（可用 `--limit-frames` 冒烟）**

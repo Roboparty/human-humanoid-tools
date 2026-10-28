@@ -43,3 +43,32 @@ def test_lafan_calibration_reference_uses_bundled_bvh() -> None:
 
     ref._lafan17_from_zero_bvh.cache_clear()
     assert ref._lafan17_from_zero_bvh() is not None
+
+
+@pytest.mark.parametrize(
+    ("reference", "loader"),
+    [
+        ("soma_bvh", "_soma17_from_zero_bvh"),
+        ("lafan_bvh", "_lafan17_from_zero_bvh"),
+        ("mocap_bvh", "_mocap17_from_zero_bvh"),
+        ("xsens_mocap", "_xsens17_from_zero_bvh"),
+    ],
+)
+@pytest.mark.parametrize("damaged", [False, True], ids=["missing", "corrupt"])
+def test_required_bvh_reference_never_silently_uses_synthetic_pose(
+    tmp_path: Path, monkeypatch, reference: str, loader: str, damaged: bool,
+) -> None:
+    from hhtools.retarget.calibration import reference as ref
+    from hhtools.retarget.newton_basic import rest_pose
+
+    if damaged:
+        (tmp_path / _BUNDLED_REFERENCE_BVH[reference]).write_text("truncated BVH\n")
+    monkeypatch.setattr(rest_pose, "_reference_poses_dir", lambda: tmp_path)
+    cached_loader = getattr(ref, loader)
+    cached_loader.cache_clear()
+    try:
+        message = "expected 'HIERARCHY'" if damaged else "Bundled reference pose .* missing or invalid"
+        with pytest.raises(ValueError, match=message):
+            ref.load_reference_pose(reference)
+    finally:
+        cached_loader.cache_clear()

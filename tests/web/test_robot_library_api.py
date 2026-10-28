@@ -11,6 +11,7 @@ from hhtools.web import server
 from hhtools.web.server import state as server_state
 
 CURATED_ROBOT_NAMES = (
+    "rp1",
     "g1_29dof",
     "roboto_origin",
     "agibot_x2_ultra",

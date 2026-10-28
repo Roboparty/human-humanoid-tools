@@ -25,60 +25,13 @@ import {
   type RobotPayload,
   type RobotSummary,
 } from "./api";
-
-/** Keep curated models in the same visual order as the previous inspector. */
-const CURATED_ORDER: Readonly<Record<string, number>> = {
-  g1_29dof: 0,
-  roboto_origin: 1,
-  agibot_x2_ultra: 2,
-  asimov_1: 3,
-  fourier_gr2: 4,
-  berkeley_humanoid_lite: 5,
-};
-
-const CURATED_LABELS: Readonly<Record<string, string>> = {
-  g1_29dof: "Unitree G1",
-  roboto_origin: "ROBOTO_ORIGIN (RPO)",
-  agibot_x2_ultra: "AgiBot X2",
-  asimov_1: "Asimov 1",
-  fourier_gr2: "Fourier GR-2",
-  berkeley_humanoid_lite: "Berkeley Humanoid Lite",
-};
-
-const CURATED_ICONS: Readonly<Record<string, string>> = {
-  g1_29dof: "/robot-icons/unitree-g1.webp",
-  roboto_origin: "/robot-icons/roboto-origin.webp",
-  agibot_x2_ultra: "/robot-icons/agibot-x2.webp",
-  asimov_1: "/robot-icons/asimov-1.webp",
-  fourier_gr2: "/robot-icons/fourier-gr2.webp",
-  berkeley_humanoid_lite: "/robot-icons/berkeley-humanoid-lite.webp",
-};
-
-const FALLBACK_ICON = "/hhtools-robot.svg";
-const CURATED_NAMES = Object.keys(CURATED_LABELS);
-
-function mapValue<T>(map: Readonly<Record<string, T>>, key: string): T | undefined {
-  return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : undefined;
-}
-
-function robotLabel(robot: RobotSummary): string {
-  return mapValue(CURATED_LABELS, robot.name) ?? (robot.display_name || robot.name);
-}
-
-function sortRobots(left: RobotSummary, right: RobotSummary): number {
-  const leftOrder = mapValue(CURATED_ORDER, left.name);
-  const rightOrder = mapValue(CURATED_ORDER, right.name);
-  if (leftOrder !== undefined || rightOrder !== undefined) {
-    if (leftOrder === undefined) return 1;
-    if (rightOrder === undefined) return -1;
-    return leftOrder - rightOrder;
-  }
-  return robotLabel(left).localeCompare(robotLabel(right));
-}
-
-function robotIcon(name: string): string {
-  return mapValue(CURATED_ICONS, name) ?? FALLBACK_ICON;
-}
+import {
+  CURATED_LABELS,
+  CURATED_NAMES,
+  FALLBACK_ICON,
+  robotIcon,
+  robotLabel,
+} from "./presentation";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -162,20 +115,18 @@ export function RobotView({
 
   const filteredRobots = useMemo(() => {
     const tokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    return [...robots]
-      .sort(sortRobots)
-      .filter((robot) => {
-        const haystack = [
-          robot.name,
-          robotLabel(robot),
-          robot.display_name,
-          String(robot.num_dof),
-          robot.builtin ? "built-in builtin 内置" : "imported custom 导入",
-        ]
-          .join(" ")
-          .toLowerCase();
-        return tokens.every((token) => haystack.includes(token));
-      });
+    return robots.filter((robot) => {
+      const haystack = [
+        robot.name,
+        robotLabel(robot),
+        robot.display_name,
+        String(robot.num_dof),
+        robot.builtin ? "built-in builtin 内置" : "imported custom 导入",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return tokens.every((token) => haystack.includes(token));
+    });
   }, [robots, search]);
 
   const loadedName = currentRobot?.name ?? null;
@@ -391,8 +342,8 @@ export function RobotView({
                   )
                 : currentRobot
                   ? text(
-                      `Loaded: ${currentRobot.display_name}`,
-                      `已加载：${currentRobot.display_name}`,
+                      `Loaded: ${robotLabel(currentRobot)}`,
+                      `已加载：${robotLabel(currentRobot)}`,
                     )
                   : text("No URDF selected.", "尚未选择 URDF。")}
         </p>
@@ -496,7 +447,7 @@ export function RobotView({
                       onClick={() => load(robot)}
                     >
                       <img
-                        className="size-8 rounded-sm object-cover"
+                        className="size-8 rounded-sm object-contain"
                         src={robotIcon(robot.name)}
                         alt=""
                         aria-hidden="true"

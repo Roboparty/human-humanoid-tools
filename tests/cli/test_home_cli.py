@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import subprocess
 import sys
 
 from rich.console import Console
@@ -88,16 +89,22 @@ def test_root_without_arguments_renders_homepage_without_prompting() -> None:
 
 
 def test_root_help_and_version_keep_their_existing_behavior() -> None:
-    runner = CliRunner()
+    # Command registration reads sys.argv on import. CliRunner cannot replace
+    # the argv that pytest used while importing main during collection.
+    def invoke(option: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-I", "-c", "from hhtools.cli.main import app; app()", option],
+            capture_output=True, text=True, check=False,
+        )
 
-    help_result = runner.invoke(main.app, ["--help"])
-    version_result = runner.invoke(main.app, ["--version"])
+    help_result = invoke("--help")
+    version_result = invoke("--version")
 
-    assert help_result.exit_code == 0
+    assert help_result.returncode == 0, help_result.stderr
     assert "Usage:" in help_result.stdout
     assert "Commands" in help_result.stdout
     assert "retarget" in help_result.stdout
-    assert version_result.exit_code == 0
+    assert version_result.returncode == 0, version_result.stderr
     assert version_result.stdout.startswith("hhtools ")
 
 

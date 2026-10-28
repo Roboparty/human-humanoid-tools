@@ -85,7 +85,7 @@ export class OptionalComponentStore {
 
     return {
       gvhmr: {
-        requested: this.configuration.gvhmr?.requested === true,
+        requested: this.platform !== 'darwin' && this.configuration.gvhmr?.requested === true,
         configured: root !== undefined && (runtime === 'docker' || python !== undefined),
         root,
         python,
@@ -179,7 +179,10 @@ export async function runGvhmrSetup(options: {
   mainWindow: BrowserWindow
   store: OptionalComponentStore
   onConfigured: () => Promise<void>
-}): Promise<GvhmrSetupResult> {
+}, platform: NodeJS.Platform = process.platform): Promise<GvhmrSetupResult> {
+  if (platform === 'darwin') {
+    throw new Error('Video2Motion is not available on macOS')
+  }
   const current = options.store.getState().gvhmr
   const localRuntime = current.runtime === 'local'
   const decision = await dialog.showMessageBox(options.mainWindow, {

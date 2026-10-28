@@ -1,11 +1,21 @@
 # Robot Library icon sources
 
-These 128 px WebP thumbnails identify the six robot presets curated by
+`rp1.png` is the original 1920 × 2563 PNG supplied by the project owner on
+2026-10-11 for the ROBOTO 01 library thumbnail (stable model ID: `rp1`). It is
+copied without image changes and displayed with its aspect ratio preserved in
+the same 32 × 32 CSS-pixel container as the other robot icons. This supplied image is separate from the
+URDF-derived thumbnails and licenses documented below.
+
+The ROBOTO 01 model assets are installed separately from the public
+[`Roboparty/rp1_description`](https://github.com/Roboparty/rp1_description/tree/84529a55649b5c9796d49093c266208c879f9f29)
+repository. The supplied thumbnail was not obtained from that repository.
+
+The 128 px WebP thumbnails identify the other six robot presets curated by
 HHTools. They are deterministic zero-pose renders made from the official URDF
 and mesh assets listed below, rather than vendor logos or promotional photos.
 The reproducible renderer is `scripts/render_robot_library_icons.py`.
 
-For every thumbnail, HHTools contributors made the following changes on
+For every WebP thumbnail, HHTools contributors made the following changes on
 2026-08-28: assembled the upstream meshes through the upstream URDF, rendered a
 fixed orthographic three-quarter projection, applied depth shading and a
 coloured identification tile, resized the result to 128 x 128 pixels, and
@@ -42,4 +52,5 @@ the surrounding HHTools application.
 
 Names and trademarks belong to their respective owners. Inclusion identifies
 compatible models and does not imply endorsement. The unmodified HHTools robot
-mark remains the icon for every user-imported model.
+mark remains the fallback icon for user-imported models without a dedicated
+thumbnail.

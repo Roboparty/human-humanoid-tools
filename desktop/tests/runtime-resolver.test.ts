@@ -374,8 +374,33 @@ describe('resolveRuntime', () => {
     const environment = buildSidecarEnvironment(undefined, { PATH: '/usr/bin' }, undefined, robots)
 
     expect(environment.PYTHONPATH).toBeUndefined()
-    expect(environment.HHTOOLS_ROBOT_PATH).toBe(robots)
+    expect(environment.HHTOOLS_BUNDLED_ROBOT_PATH).toBe(robots)
+    expect(environment.HHTOOLS_ROBOT_PATH).toBeUndefined()
     expect(environment.PATH).toBe('/usr/bin')
+  })
+
+  it('exposes bundled robots separately from explicit robot overrides', () => {
+    const environment = buildSidecarEnvironment(
+      undefined,
+      { HHTOOLS_ROBOT_PATH: '/custom/robots' },
+      undefined,
+      '/packaged/robots'
+    )
+
+    expect(environment.HHTOOLS_BUNDLED_ROBOT_PATH).toBe('/packaged/robots')
+    expect(environment.HHTOOLS_ROBOT_PATH).toBe('/custom/robots')
+  })
+
+  it('preserves an explicit bundled robot root', () => {
+    const environment = buildSidecarEnvironment(
+      undefined,
+      { HHTOOLS_BUNDLED_ROBOT_PATH: '/custom/bundle' },
+      undefined,
+      '/packaged/robots'
+    )
+
+    expect(environment.HHTOOLS_BUNDLED_ROBOT_PATH).toBe('/custom/bundle')
+    expect(environment.HHTOOLS_ROBOT_PATH).toBeUndefined()
   })
 
   it('does not inject a host PYTHONPATH into a bundled runtime', () => {

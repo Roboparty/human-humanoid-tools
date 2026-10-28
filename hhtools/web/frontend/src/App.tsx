@@ -89,6 +89,11 @@ import {
   storeWorkspaceLayout,
 } from "./workspaceLayout";
 import { preloadCoreWorkspace } from "./workspaceBootstrap";
+import {
+  isImportAvailable,
+  isVideoToMotionEnabled,
+  isViewAvailable,
+} from "./platformCapabilities";
 
 const VideoToMotionView = lazy(async () => ({
   default: (await import("./features/video-to-motion/VideoToMotionView"))
@@ -167,6 +172,7 @@ function VideoWorkspaceLoading() {
 }
 
 export function App() {
+  const videoToMotionEnabled = isVideoToMotionEnabled();
   const themeOverride = useRef<ApplicationTheme | null | undefined>(undefined);
   const localeOverride = useRef<WorkspaceLocale | null | undefined>(undefined);
   if (themeOverride.current === undefined) {
@@ -177,6 +183,9 @@ export function App() {
   }
 
   const [activeView, setActiveView] = useState<ViewId>("motion");
+  const navigate = useCallback((view: ViewId) => {
+    if (isViewAvailable(view, videoToMotionEnabled)) setActiveView(view);
+  }, [videoToMotionEnabled]);
   const [coreWorkspaceReady, setCoreWorkspaceReady] = useState(false);
   const [videoToMotionMounted, setVideoToMotionMounted] = useState(false);
   const [theme, setTheme] = useState<ApplicationTheme>(() =>
@@ -283,8 +292,10 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (activeView === "video-to-motion") setVideoToMotionMounted(true);
-  }, [activeView]);
+    if (videoToMotionEnabled && activeView === "video-to-motion") {
+      setVideoToMotionMounted(true);
+    }
+  }, [activeView, videoToMotionEnabled]);
 
   useLayoutEffect(() => {
     document.documentElement.lang = locale;
@@ -357,10 +368,11 @@ export function App() {
   }, []);
 
   const requestImport = useCallback((target: ApplicationImportTarget) => {
+    if (!isImportAvailable(target, videoToMotionEnabled)) return;
     setActiveView(viewForImport(target));
     nextImportRequestId.current += 1;
     setImportRequest({ id: nextImportRequestId.current, target });
-  }, []);
+  }, [videoToMotionEnabled]);
 
   const currentExportUrl =
     activeView === "h2r" && h2rResult
@@ -639,7 +651,8 @@ export function App() {
         theme={theme}
         canExportResult={currentExportUrl !== null}
         canExitApplication={Boolean(desktopBridge()?.exitApplication)}
-        onNavigate={setActiveView}
+        videoToMotionEnabled={videoToMotionEnabled}
+        onNavigate={navigate}
         onImport={requestImport}
         onExportResult={() => exportLink.current?.click()}
         onOpenSettings={() => setDialog("settings")}
@@ -652,7 +665,7 @@ export function App() {
         activeView={activeView}
         locale={locale}
         hidden={sidebarHidden}
-        onSelect={setActiveView}
+        onSelect={navigate}
       />
       <Stage
         motion={stageMotion}
@@ -700,7 +713,7 @@ export function App() {
             importRequest={importRequest}
           />
         </div>
-        {(videoToMotionMounted || activeView === "video-to-motion") && (
+        {videoToMotionEnabled && (videoToMotionMounted || activeView === "video-to-motion") && (
           <div className={activeView === "video-to-motion" ? "h-full" : "hidden"}>
             <Suspense fallback={<VideoWorkspaceLoading />}>
               <VideoToMotionView
@@ -812,7 +825,7 @@ export function App() {
       <TutorialOverlay
         open={tutorialOpen}
         locale={locale}
-        onNavigate={setActiveView}
+        onNavigate={navigate}
         onClose={closeTutorial}
         onStepChange={changeTutorialStep}
       />

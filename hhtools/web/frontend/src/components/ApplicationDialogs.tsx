@@ -11,7 +11,7 @@ import { RefreshButton } from "@/components/RefreshButton";
 import { Button } from "@/components/ui/button";
 import {
   desktopSettingsBridge,
-  getGvhmrRuntimeSettings,
+  getVideoToMotionSettings,
   getJobAdmissionSettings,
   getMotionLibrarySettings,
   invalidateGvhmrRuntimeStatus,
@@ -24,6 +24,7 @@ import {
 } from "@/features/settings/api";
 import { localize, type WorkspaceLocale } from "@/localization";
 import { SmplxModelLinks } from "@/features/video-to-motion/SmplxModelLinks";
+import { isVideoToMotionEnabled } from "@/platformCapabilities";
 
 export type ApplicationDialog = "settings" | "about" | null;
 
@@ -155,6 +156,7 @@ interface SettingsDialogProps
 }
 
 function SettingsDialog(props: SettingsDialogProps) {
+  const videoToMotionEnabled = isVideoToMotionEnabled();
   const text = (english: string, chinese: string) =>
     localize(props.locale, english, chinese);
   const [jobAdmission, setJobAdmission] =
@@ -178,7 +180,7 @@ function SettingsDialog(props: SettingsDialogProps) {
   const refreshRequest = useRef<AbortController | null>(null);
 
   const refresh = useCallback(async (freshGvhmr = false) => {
-    if (freshGvhmr) invalidateGvhmrRuntimeStatus();
+    if (freshGvhmr && videoToMotionEnabled) invalidateGvhmrRuntimeStatus();
     refreshRequest.current?.abort();
     const request = new AbortController();
     refreshRequest.current = request;
@@ -186,12 +188,10 @@ function SettingsDialog(props: SettingsDialogProps) {
     setSaved(false);
     setError(null);
     try {
-      const desktop = desktopSettingsBridge();
-      const [jobs, library, runtime, components] = await Promise.all([
+      const [jobs, library, video] = await Promise.all([
         getJobAdmissionSettings({ signal: request.signal }),
         getMotionLibrarySettings({ signal: request.signal }),
-        getGvhmrRuntimeSettings({ signal: request.signal }).catch(() => null),
-        desktop?.getOptionalComponents() ?? null,
+        getVideoToMotionSettings({ signal: request.signal }),
       ]);
       if (request.signal.aborted) return null;
       setJobAdmission(jobs);
@@ -200,16 +200,16 @@ function SettingsDialog(props: SettingsDialogProps) {
       setBatchItemLimit(String(jobs.max_batch_items));
       setBatchFrameLimit(String(jobs.max_batch_total_frames));
       setMotionLibrary(library);
-      setGvhmrRuntime(runtime);
-      setGvhmrComponent(components?.gvhmr ?? null);
-      return runtime;
+      setGvhmrRuntime(video.runtime);
+      setGvhmrComponent(video.component);
+      return video.runtime;
     } catch (reason) {
       if (!request.signal.aborted) setError(errorMessage(reason));
       return null;
     } finally {
       if (!request.signal.aborted) setLoading(false);
     }
-  }, []);
+  }, [videoToMotionEnabled]);
 
   useEffect(() => {
     void refresh();
@@ -283,6 +283,7 @@ function SettingsDialog(props: SettingsDialogProps) {
   };
 
   const setupGvhmr = async () => {
+    if (!videoToMotionEnabled) return;
     const desktop = desktopSettingsBridge();
     if (!desktop) return;
     setAction("gvhmr");
@@ -363,33 +364,37 @@ function SettingsDialog(props: SettingsDialogProps) {
           </>
         )}
 
-        <SectionTitle>{text("Optional components", "可选组件")}</SectionTitle>
-        <SettingRow
-          title={text("GVHMR video-to-motion", "GVHMR 视频转动作")}
-          detail={
-            gvhmrRuntime?.ready
-              ? text("Ready", "已就绪")
-              : gvhmrRuntime?.missing.slice(0, 2).join(" · ") ||
-                text("Needs configuration", "需要配置")
-          }
-        >
-          {gvhmrComponent ? (
-              <Button
-                size="sm"
-                disabled={busy}
-                onClick={() => void setupGvhmr()}
-              >
-                {action === "gvhmr"
-                  ? text("Setting up…", "配置中……")
-                  : text("Set up / repair", "配置 / 修复")}
-              </Button>
-          ) : (
-            <span className="text-[11px] text-muted-foreground">
-              {text("Desktop setup only", "仅桌面端可配置")}
-            </span>
-          )}
-        </SettingRow>
-        <SmplxModelLinks runtime={gvhmrRuntime} />
+        {videoToMotionEnabled && (
+          <>
+            <SectionTitle>{text("Optional components", "可选组件")}</SectionTitle>
+            <SettingRow
+              title={text("GVHMR video-to-motion", "GVHMR 视频转动作")}
+              detail={
+                gvhmrRuntime?.ready
+                  ? text("Ready", "已就绪")
+                  : gvhmrRuntime?.missing.slice(0, 2).join(" · ") ||
+                    text("Needs configuration", "需要配置")
+              }
+            >
+              {gvhmrComponent ? (
+                <Button
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void setupGvhmr()}
+                >
+                  {action === "gvhmr"
+                    ? text("Setting up…", "配置中……")
+                    : text("Set up / repair", "配置 / 修复")}
+                </Button>
+              ) : (
+                <span className="text-[11px] text-muted-foreground">
+                  {text("Desktop setup only", "仅桌面端可配置")}
+                </span>
+              )}
+            </SettingRow>
+            <SmplxModelLinks runtime={gvhmrRuntime} />
+          </>
+        )}
 
         <SectionTitle>{text("Analysis", "分析")}</SectionTitle>
         <SettingRow title={text("Force re-analysis", "强制重新分析")}>

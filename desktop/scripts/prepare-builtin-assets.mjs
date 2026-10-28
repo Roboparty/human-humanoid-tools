@@ -23,7 +23,7 @@ const outputRoot = resolve(desktopRoot, '.builtin')
 const stagingRoot = resolve(desktopRoot, `.builtin.staging-${process.pid}`)
 const expectedMotionEntries = 30
 const expectedMotionFiles = 58
-const expectedRobots = 6
+const expectedRobots = 7
 
 function fail(message) {
   throw new Error(`[prepare-builtin-assets] ${message}`)

@@ -44,11 +44,29 @@ def test_builtin_motion_allowlist_excludes_generated_and_user_assets() -> None:
     ]
 
 
-def test_builtin_asset_manifest_rejects_unreviewed_baseline_paths(tmp_path: Path) -> None:
+def test_builtin_asset_manifest_rejects_unreviewed_baseline_paths(tmp_path: Path, monkeypatch) -> None:
     payload = json.loads(DEFAULT_MANIFEST.read_text(encoding="utf-8"))
+    # Source archives and shallow clones may have no historical Git object.
+    # Exercise the comparison itself with an explicit baseline in every runner.
+    baseline = set(motion_packaging_paths(payload)) | {
+        "assets/motions/mimic/GVHMR/hmr4d_results.pt",
+    }
+    monkeypatch.setattr("scripts.verify_builtin_assets._git_paths", lambda *_: baseline)
     payload["baseline_exclusions"] = []
     changed = tmp_path / "builtin-assets.json"
     changed.write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(BuiltinAssetManifestError, match="reviewed motion paths differ"):
+        validate_manifest(changed)
+
+
+@pytest.mark.parametrize("field", ["repository", "commit", "main_urdf", "license_paths"])
+def test_builtin_manifest_rejects_unreviewed_rp1_source(tmp_path: Path, field: str) -> None:
+    payload = json.loads(DEFAULT_MANIFEST.read_text(encoding="utf-8"))
+    robot = next(entry for entry in payload["robots"] if entry["preset"] == "rp1")
+    robot[field] = ["LICENSE"] if field == "license_paths" else "unreviewed-source"
+    changed = tmp_path / "builtin-assets.json"
+    changed.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(BuiltinAssetManifestError, match=rf"rp1\.{field} differs"):
         validate_manifest(changed)

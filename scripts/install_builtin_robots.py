@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install HHTools' six curated robots from pinned official archives.
+"""Install HHTools' seven curated robots from pinned official archives.
 
 Models are installed into the user Robot Library, never the Git repository.
 Each archive is pinned to a commit; only the primary URDF, meshes referenced by
@@ -40,6 +40,12 @@ class RobotSource:
 
 
 SOURCES: tuple[RobotSource, ...] = (
+    RobotSource(
+        "rp1", "ROBOTO 01",
+        "https://github.com/Roboparty/rp1_description.git",
+        "84529a55649b5c9796d49093c266208c879f9f29",
+        "urdf/rp1.urdf", (),
+    ),
     RobotSource(
         "g1_29dof", "Unitree G1",
         "https://github.com/unitreerobotics/unitree_ros.git",

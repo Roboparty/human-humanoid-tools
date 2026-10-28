@@ -241,6 +241,7 @@ const ENV_ALLOWLIST = new Set([
   'HHTOOLS_MOTION_LIBRARY_ROOT',
   'HHTOOLS_MOTION_LIBRARY_SETTINGS_PATH',
   'HHTOOLS_BODY_MODELS',
+  'HHTOOLS_BUNDLED_ROBOT_PATH',
   'HHTOOLS_GVHMR_BODY_MODELS',
   'HHTOOLS_GVHMR_IMAGE',
   'HHTOOLS_GVHMR_PYTHON',
@@ -318,8 +319,8 @@ export function buildSidecarEnvironment(
       result.HHTOOLS_GVHMR_BODY_MODELS = bundledBodyModels
     }
   }
-  if (bundledRobotRoot && source.HHTOOLS_ROBOT_PATH === undefined) {
-    result.HHTOOLS_ROBOT_PATH = bundledRobotRoot
+  if (bundledRobotRoot && source.HHTOOLS_BUNDLED_ROBOT_PATH === undefined) {
+    result.HHTOOLS_BUNDLED_ROBOT_PATH = bundledRobotRoot
   }
   return result
 }

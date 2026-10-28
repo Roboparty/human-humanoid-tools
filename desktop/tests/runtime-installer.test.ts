@@ -133,7 +133,7 @@ describe('runtime installer', () => {
     })
     const html = decodeURIComponent(url.slice(url.indexOf(',') + 1))
 
-    expect(html).toContain('30 motions and 6 robots')
+    expect(html).toContain('30 motions and 7 robots')
     expect(html).toContain('HHTools never receives your password')
     expect(html).toContain('设置本地运行环境')
     expect(html).toContain('prefers-reduced-motion')

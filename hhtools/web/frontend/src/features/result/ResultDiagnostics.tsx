@@ -65,10 +65,7 @@ export function ResultDiagnostics({
       ? { label: text("Stable", "稳定"), className: "bg-success/10 text-success" }
       : tracking.p95_error_m <= 0.1
         ? { label: text("Review", "需检查"), className: "bg-warning-muted text-warning" }
-        : {
-            label: text("Large deviation", "偏差较大"),
-            className: "bg-danger-muted text-danger",
-          };
+        : null;
 
   return (
     <section
@@ -84,11 +81,13 @@ export function ResultDiagnostics({
             {text("Preview-frame tracking and contact checks", "预览帧跟踪与接触检查")}
           </p>
         </div>
-        <span
-          className={`shrink-0 rounded px-2 py-1 text-[10px] font-semibold ${quality.className}`}
-        >
-          {quality.label}
-        </span>
+        {quality && (
+          <span
+            className={`shrink-0 rounded px-2 py-1 text-[10px] font-semibold ${quality.className}`}
+          >
+            {quality.label}
+          </span>
+        )}
       </header>
 
       {preset && (

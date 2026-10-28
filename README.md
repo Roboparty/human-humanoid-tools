@@ -38,7 +38,7 @@ Video-to-motion additionally needs a separate CUDA-capable GVHMR installation.
 
 ### Download Desktop GUI Version Here!
 
-https://github.com/Roboparty/human-humanoid-tools/releases/tag/0.1.0(beta)
+[Windows 0.1.5 EXE (x64)](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-selfsigned-setup.exe) · [Linux 0.1.5 DEB (amd64)](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-linux-amd64.deb) · [macOS 0.1.5 DMG (Apple Silicon)](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-mac-arm64.dmg) · [Installation notes](#desktop-gui)
 
 hhtools has three interactive modes plus an Agent automation interface. They share the same motion,
 robot, and retargeting core, but their installation and launch paths are intentionally separate:
@@ -75,6 +75,19 @@ uv run hhtools web
 Open `http://127.0.0.1:8009`. GVHMR and separately licensed SMPL-family model weights remain
 external; the `all` extra installs their Python integration libraries, not those model files.
 
+For **ROBOTO 01** in a source/WebUI installation, explicitly install the `rp1` preset before
+starting the WebUI:
+
+```bash
+uv run python scripts/install_builtin_robots.py --only rp1
+uv run hhtools web
+```
+
+The GitHub source repository contains the preset and download instructions, not the large robot
+model assets or SMPL-family weights. The installer downloads ROBOTO 01's URDF and referenced
+meshes from the pinned public [`Roboparty/rp1_description`](https://github.com/Roboparty/rp1_description/tree/84529a55649b5c9796d49093c266208c879f9f29)
+repository into the user Robot Library.
+
 For a smaller environment, install only the workflow you need. The core terminal commands require
 no extra:
 
@@ -104,13 +117,13 @@ ownership, and the included Codex project configuration.
 
 ### Desktop GUI
 
-Download the **0.1.0 preview** desktop package for your platform:
+Download the desktop preview for your platform. The [0.1.5 release](https://github.com/Eleanor1018/human-humanoid-tools/releases/tag/0.1.5) includes Windows x64, Linux amd64, and macOS Apple Silicon packages. The Linux package is built on Ubuntu 22.04 and tested on Ubuntu 22.04, 24.04, and 26.04.
 
-| Platform | Download | Architecture |
-|----------|----------|--------------|
-| Windows | [EXE installer](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/v0.1.0%28beta%29/hhtools-0.1.0-x64-setup.exe) | x64 |
-| Linux | [Debian package](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/v0.1.0%28beta%29/hhtools-0.1.0-amd64.deb) | amd64 |
-| macOS 12+ | [DMG installer](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/v0.1.0%28beta%29/hhtools-0.1.0-mac-arm64.dmg) | Apple Silicon (arm64) |
+| Platform | Download | Architecture | Version |
+|----------|----------|--------------|---------|
+| Windows | [EXE installer](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-selfsigned-setup.exe) · [SHA-256](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-selfsigned-setup.exe.sha256) | x64 | **0.1.5** |
+| Linux | [Debian package](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-linux-amd64.deb) · [SHA-256](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-linux-amd64.deb.sha256) | amd64 | **0.1.5** |
+| macOS 12+ | [DMG installer](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-mac-arm64.dmg) | Apple Silicon (arm64) | **0.1.5** |
 
 The Debian package contains Electron plus the curated built-in motions and robots. On first launch,
 its setup page uses the HHTools wheel, locked dependency list, uv configuration, and uv executable
@@ -118,12 +131,34 @@ carried inside that same package. The recommended per-user option needs no admin
 while the all-users option opens the operating system authentication dialog:
 
 ```bash
-sudo apt install ./hhtools-0.1.0-amd64.deb
+sha256sum -c hhtools-0.1.5-linux-amd64.deb.sha256
+sudo apt install ./hhtools-0.1.5-linux-amd64.deb
 hhtools-desktop
 ```
 
-The Windows installer instead bundles its Python runtime and application source, so it starts
-without a checkout or system Python.
+Ubuntu 22.04 and 26.04 passed container installation, startup, and motion playback checks;
+Ubuntu 24.04 passed native desktop, CUDA retargeting, and NVIDIA rendering checks.
+SHA-256: `7d08c6979de02d26a46ab4eb2bc810a0c2651daad3558a1b1a1fbf4c965548d9`.
+
+**Windows installation:** download and run the EXE above. The default current-user installation
+does not require administrator privileges. It bundles Python, application dependencies and the
+Microsoft C++ runtime, so the core application starts without a checkout, system Python, or
+first-run dependency downloads. This preview is **self-signed**, not signed with a publicly trusted
+commercial certificate; Windows may show a SmartScreen or untrusted-publisher warning.
+
+The 526,100,560-byte installer (about 502 MiB) has SHA-256
+`920e8b848a7c366c508b4959f5b38b8eff7a7a86945ce307e2cad3fce2fcce73`.
+To check a downloaded copy in PowerShell:
+
+```powershell
+Get-FileHash .\hhtools-0.1.5-x64-selfsigned-setup.exe -Algorithm SHA256
+```
+
+Windows 10 x64 installation/uninstallation, all seven robot models, motion import, H2R/R2R
+calibration, a four-frame LAFAN-to-G1 Newton retarget and CSV export passed; six desktop UI
+checks also passed. The bundled Torch build is CPU-only. Optional GVHMR video-to-motion uses
+Docker and needs a compatible NVIDIA GPU, its image/checkpoints and licensed SMPL-X assets;
+these are not included, and GPU inference was not validated for this installer.
 
 **macOS installation:**
 
@@ -134,8 +169,13 @@ without a checkout or system Python.
    Python 3.12 environment. No existing Python, source checkout, or Homebrew installation is needed;
    the runtime is installed for the current user without an administrator password.
 
-The macOS package includes the same 30 built-in motions and six robots as the other desktop packages.
-Warp retargeting runs on CPU; Intel Macs and the local NVIDIA GVHMR pipeline are unsupported.
+The Windows, Linux, and macOS **0.1.5** packages each include 30 built-in motions and seven robots. The Linux package is built on Ubuntu 22.04 and has been checked on Ubuntu 22.04, 24.04, and 26.04. **ROBOTO 01** (`rp1`) is the seventh built-in robot, listed first,
+ahead of Unitree G1; **ROBOTO_ORIGIN** (`roboto_origin`) remains a separate model.
+On macOS, Warp retargeting runs on CPU; Intel Macs and the local NVIDIA GVHMR pipeline are unsupported.
+
+Current macOS desktop builds hide Video → Motion, video import, V2M batch, and GVHMR setup.
+H2R, R2R, existing-motion imports, and SMPL-family motion support remain available. Windows,
+Linux, and ordinary WebUI retain their video-to-motion entry points.
 
 GVHMR and separately licensed SMPL-family weights remain optional on all platforms. Build details are in
 [`desktop/README.md`](desktop/README.md#desktop-packages).
@@ -270,23 +310,25 @@ uv run hhtools import run --dataset omnicontact \
 **Robots**
 
 ```bash
-# Install all six curated robots into ~/.config/hhtools/robots.
+# Install all seven curated robots into the user Robot Library.
 uv run python scripts/install_builtin_robots.py
 # Install one preset only (repeat --only to select several).
-uv run python scripts/install_builtin_robots.py --only g1_29dof
+uv run python scripts/install_builtin_robots.py --only rp1
 
 uv run hhtools robot list
-uv run hhtools robot info g1_29dof --no-mjcf
-uv run hhtools robot schema g1_29dof -o /tmp/g1_header.csv
-uv run hhtools robot validate g1_29dof
+uv run hhtools robot info rp1 --no-mjcf
+uv run hhtools robot schema rp1 -o /tmp/rp1_header.csv
+uv run hhtools robot validate rp1
 uv run hhtools robot scaffold unitree_g1          # skip existing yaml
 # uv run hhtools robot add /path/to/urdf_or_dir  # ingest into configs/robots/
 ```
 
-The installer downloads pinned official archives (about 772 MiB total) and
-keeps about 237 MiB of referenced files. Each preset retains its upstream
-license and a checksummed `SOURCE.json`. `--replace` atomically replaces local
-changes in the selected preset. Desktop bundles can point
+The seven presets are ROBOTO 01 (`rp1`, 28 DoF), Unitree G1, ROBOTO_ORIGIN (RPO),
+AgiBot X2, Asimov 1, Fourier GR-2, and Berkeley Humanoid Lite. The installer downloads
+pinned official archives and keeps the selected URDFs, referenced meshes, and upstream
+license files where provided, plus a checksummed `SOURCE.json`. The pinned RP1 revision
+`84529a55649b5c9796d49093c266208c879f9f29` does not provide a `LICENSE` file.
+`--replace` atomically replaces local changes in the selected preset. Desktop bundles can point
 `HHTOOLS_BUNDLED_ROBOT_DIR` at an audited Robot Library.
 
 **Retarget (smoke with `--limit-frames`)**
