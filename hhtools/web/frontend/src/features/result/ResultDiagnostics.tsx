@@ -6,6 +6,7 @@ import { useLocaleText } from "@/LocaleProvider";
 
 import {
   buildTrackingChart,
+  resolveTrackingQuality,
   topEffectors,
   type ResultDiagnosticsPayload,
 } from "./model";
@@ -56,16 +57,37 @@ export function ResultDiagnostics({
   const tracking = resolved.tracking;
   const chart = buildTrackingChart(tracking?.series ?? []);
   const effectors = topEffectors(tracking?.effectors ?? []);
-  const quality = !resolved.available || tracking == null
-    ? {
-        label: text("Unavailable", "不可用"),
-        className: "bg-accent text-muted-foreground",
-      }
-    : tracking.p95_error_m <= 0.05
-      ? { label: text("Stable", "稳定"), className: "bg-success/10 text-success" }
-      : tracking.p95_error_m <= 0.1
-        ? { label: text("Review", "需检查"), className: "bg-warning-muted text-warning" }
-        : null;
+  const resolvedQuality = resolveTrackingQuality(resolved);
+  const quality = {
+    unavailable: {
+      label: text("Unavailable", "不可用"),
+      className: "bg-accent text-muted-foreground",
+    },
+    stable: { label: text("Stable", "稳定"), className: "bg-success/10 text-success" },
+    review: { label: text("Review", "需检查"), className: "bg-warning-muted text-warning" },
+    high_error: {
+      label: text("Large deviation", "偏差较大"),
+      className: "bg-danger-muted text-danger",
+    },
+  }[resolvedQuality.band];
+  const { stableMaxM, reviewMaxM, robotHeightM } = resolvedQuality;
+  let qualityHint: string | undefined;
+  if (stableMaxM !== undefined && reviewMaxM !== undefined) {
+    const stable = formatCm(stableMaxM);
+    const review = formatCm(reviewMaxM);
+    qualityHint = text(
+      `P95 ≤ ${stable} stable, ≤ ${review} review`,
+      `P95 ≤ ${stable} 为稳定，≤ ${review} 为需检查`,
+    );
+    if (robotHeightM !== undefined) {
+      const shares = `${formatPercent(stableMaxM / robotHeightM)} / ${formatPercent(reviewMaxM / robotHeightM)}`;
+      const height = `${robotHeightM.toFixed(2)} m`;
+      qualityHint += text(
+        ` (${shares} of the ${height} robot height)`,
+        `（机器人身高 ${height} 的 ${shares}）`,
+      );
+    }
+  }
 
   return (
     <section
@@ -81,13 +103,12 @@ export function ResultDiagnostics({
             {text("Preview-frame tracking and contact checks", "预览帧跟踪与接触检查")}
           </p>
         </div>
-        {quality && (
-          <span
-            className={`shrink-0 rounded px-2 py-1 text-[10px] font-semibold ${quality.className}`}
-          >
-            {quality.label}
-          </span>
-        )}
+        <span
+          className={`shrink-0 rounded px-2 py-1 text-[10px] font-semibold ${quality.className}`}
+          title={qualityHint}
+        >
+          {quality.label}
+        </span>
       </header>
 
       {preset && (
