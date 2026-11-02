@@ -219,13 +219,25 @@ def _motion_for_retarget(motion: Any, retarget_fps: float | None):
     """Optionally resample the clip before IK/MPC.
 
     Returns ``(motion_for_solver, effective_fps)``. When the rate is unchanged,
-    the same ``Motion`` instance is returned.
+    a detached shallow copy is returned: ``limit_frames`` truncation in
+    :func:`_retarget_single` / :func:`_apply_limit_frames` reassigns the
+    solver motion's (and its objects') arrays, which must not leak into the
+    session-cached clip the caller passed in.
     """
+    import dataclasses
+
     from hhtools.application.export import _parse_optional_fps
     from hhtools.core.resample import resample_motion_with_objects
 
     src = float(motion.framerate)
     target = _parse_optional_fps(retarget_fps)
     if target is None or abs(target - src) < 1e-6:
-        return motion, src
+        if not dataclasses.is_dataclass(motion):
+            return motion, src
+        detached = dataclasses.replace(
+            motion,
+            meta=dict(motion.meta or {}),
+            objects=[dataclasses.replace(obj) for obj in motion.objects],
+        )
+        return detached, src
     return resample_motion_with_objects(motion, target), float(target)
