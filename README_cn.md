@@ -36,7 +36,7 @@ Apple Silicon macOS 桌面版使用 CPU 重定向。桌面打包要求见下方�
 
 ## 安装与启动
 
-[Windows 0.1.5 EXE（x64）](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-selfsigned-setup.exe) · [Linux 0.1.5 DEB（amd64）](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-linux-amd64.deb) · [macOS 0.1.5 DMG（Apple Silicon）](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-mac-arm64.dmg) · [安装说明](#桌面-gui)
+[Windows 0.1.5 EXE（x64）](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-setup.exe) · [Linux 0.1.5 DEB（amd64）](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-linux-amd64.deb) · [macOS 0.1.5 DMG（Apple Silicon）](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-mac-arm64.dmg) · [安装说明](#桌面-gui)
 
 hhtools 有三种交互式运行方式，另提供一个 Agent 自动化接口。它们共享同一套动作、机器人与
 重映射核心，但安装和启动入口彼此独立：
@@ -113,7 +113,7 @@ HHTools 提供供脚本使用的严格 JSON CLI，以及供兼容 Agent 使用�
 
 | 平台 | 下载 | 架构 | 版本 |
 |------|------|------|------|
-| Windows | [EXE 安装程序](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-selfsigned-setup.exe) · [SHA-256](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-selfsigned-setup.exe.sha256) | x64 | **0.1.5** |
+| Windows | [EXE 安装程序](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-setup.exe) · [SHA-256](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-setup.exe.sha256) | x64 | **0.1.5** |
 | Linux | [Debian 安装包](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-linux-amd64.deb) · [SHA-256](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-linux-amd64.deb.sha256) | amd64 | **0.1.5** |
 | macOS 12+ | [DMG 安装包](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-mac-arm64.dmg) | Apple Silicon（arm64） | **0.1.5** |
 
@@ -141,7 +141,7 @@ Windows 可能显示 SmartScreen 或未知发布者提示。
 可在 PowerShell 中核对下载文件：
 
 ```powershell
-Get-FileHash .\hhtools-0.1.5-x64-selfsigned-setup.exe -Algorithm SHA256
+Get-FileHash .\hhtools-0.1.5-x64-setup.exe -Algorithm SHA256
 ```
 
 Windows 10 x64 实测通过安装/卸载、全部七款机器人模型加载、动作导入、H2R/R2R 标定、

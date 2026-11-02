@@ -340,7 +340,13 @@ def _uniform_scaled_preview_fallback(
         "num_frames_total": int(motion.num_frames),
         "framerate": float(motion.framerate),
         "duration": float(motion.duration),
+        "robot_height_m": _robot_height_m(scaler_cfg),
     }
+
+
+def _robot_height_m(scaler_cfg) -> float:
+    """Robot stature the overlay is scaled to (drives diagnostics bands)."""
+    return round(float(scaler_cfg.model_height), 4)
 
 
 def compute_web_scaled_preview(
@@ -352,12 +358,26 @@ def compute_web_scaled_preview(
     max_frames: int = 0,
 ) -> dict[str, Any]:
     """Build scaled skeleton payload for the browser (dense topology when possible)."""
-    from hhtools.io.scene_serialize import _downsample_indices, serialize_scaled_preview
-    from hhtools.retarget.newton_basic.scaler import HumanToRobotScaler
-
     scaler_cfg = resolve_web_scaler_config(
         model, motion, reference, float(human_height),
     )
+    payload = _web_scaled_preview_payload(
+        model, motion, scaler_cfg, human_height, max_frames=max_frames,
+    )
+    payload["robot_height_m"] = _robot_height_m(scaler_cfg)
+    return payload
+
+
+def _web_scaled_preview_payload(
+    model,
+    motion: Motion,
+    scaler_cfg,
+    human_height: float,
+    *,
+    max_frames: int,
+) -> dict[str, Any]:
+    from hhtools.io.scene_serialize import _downsample_indices, serialize_scaled_preview
+    from hhtools.retarget.newton_basic.scaler import HumanToRobotScaler
     from hhtools.robot.ik_map_policy import ik_map_canonicals_for_motion
 
     ik_canons = ik_map_canonicals_for_motion(

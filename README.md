@@ -38,7 +38,7 @@ Video-to-motion additionally needs a separate CUDA-capable GVHMR installation.
 
 ### Download Desktop GUI Version Here!
 
-[Windows 0.1.5 EXE (x64)](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-selfsigned-setup.exe) · [Linux 0.1.5 DEB (amd64)](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-linux-amd64.deb) · [macOS 0.1.5 DMG (Apple Silicon)](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-mac-arm64.dmg) · [Installation notes](#desktop-gui)
+[Windows 0.1.5 EXE (x64)](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-setup.exe) · [Linux 0.1.5 DEB (amd64)](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-linux-amd64.deb) · [macOS 0.1.5 DMG (Apple Silicon)](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-mac-arm64.dmg) · [Installation notes](#desktop-gui)
 
 hhtools has three interactive modes plus an Agent automation interface. They share the same motion,
 robot, and retargeting core, but their installation and launch paths are intentionally separate:
@@ -121,7 +121,7 @@ Download the desktop preview for your platform. The [0.1.5 release](https://gith
 
 | Platform | Download | Architecture | Version |
 |----------|----------|--------------|---------|
-| Windows | [EXE installer](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-selfsigned-setup.exe) · [SHA-256](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-selfsigned-setup.exe.sha256) | x64 | **0.1.5** |
+| Windows | [EXE installer](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-setup.exe) · [SHA-256](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-setup.exe.sha256) | x64 | **0.1.5** |
 | Linux | [Debian package](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-linux-amd64.deb) · [SHA-256](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-linux-amd64.deb.sha256) | amd64 | **0.1.5** |
 | macOS 12+ | [DMG installer](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-mac-arm64.dmg) | Apple Silicon (arm64) | **0.1.5** |
 
@@ -151,7 +151,7 @@ The 526,100,560-byte installer (about 502 MiB) has SHA-256
 To check a downloaded copy in PowerShell:
 
 ```powershell
-Get-FileHash .\hhtools-0.1.5-x64-selfsigned-setup.exe -Algorithm SHA256
+Get-FileHash .\hhtools-0.1.5-x64-setup.exe -Algorithm SHA256
 ```
 
 Windows 10 x64 installation/uninstallation, all seven robot models, motion import, H2R/R2R

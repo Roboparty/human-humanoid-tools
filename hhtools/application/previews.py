@@ -50,6 +50,63 @@ def _compute_r2r_scaled_preview(
     )
 
 
+def _anchor_scaled_preview_to_ik_root(
+    scaled_preview: dict,
+    retargeted,
+    motion,
+) -> dict:
+    """Translate the yellow overlay so its hips follow the Newton IK root in XY.
+
+    The overlay scales source XY about the world origin, but the Newton
+    scaler keeps the root at its frame-0 position and scales only the root
+    displacement (by ``trajectory_scale``).  Clips whose root does not start
+    at the origin (R2R sources, rigs whose bone 0 is not the pelvis) then
+    draw the overlay away from the robot.  A per-frame XY translation onto
+    the recorded hips target keeps the overlay pose unchanged.
+
+    Interaction-scene clips keep the origin anchor so the overlay stays
+    co-aligned with the uniformly scaled terrain / props.
+    """
+    import numpy as np
+
+    from hhtools.analysis.result_diagnostics import _canonical_name_to_index
+    from hhtools.core.anatomy import motion_has_interaction_scene
+
+    trace = getattr(retargeted, "ik_targets", None)
+    if trace is None or motion_has_interaction_scene(motion):
+        return scaled_preview
+    canonical = tuple(trace.canonical_names)
+    root_column = next(
+        (canonical.index(name) for name in ("hips", "pelvis") if name in canonical),
+        None,
+    )
+    bone_names = [str(name) for name in scaled_preview.get("bone_names") or []]
+    bone_index = _canonical_name_to_index(bone_names)
+    # Rigs the alias table cannot classify still name their root plainly.
+    for index, name in enumerate(bone_names):
+        bone_index.setdefault(name.lower(), index)
+    root_bone = next(
+        (bone_index[name] for name in ("hips", "pelvis") if name in bone_index),
+        None,
+    )
+    positions = np.asarray(scaled_preview.get("positions") or [], dtype=np.float32)
+    if root_column is None or root_bone is None or positions.ndim != 3:
+        return scaled_preview
+
+    targets = np.asarray(trace.positions, dtype=np.float32)
+    frame_indices = scaled_preview.get("frame_indices") or list(range(positions.shape[0]))
+    anchored = positions.copy()
+    for row, frame_index in enumerate(frame_indices[: positions.shape[0]]):
+        if not 0 <= int(frame_index) < targets.shape[0]:
+            continue
+        target_xy = targets[int(frame_index), root_column, :2]
+        if np.all(np.isfinite(target_xy)):
+            anchored[row, :, :2] += target_xy - positions[row, root_bone, :2]
+    out = dict(scaled_preview)
+    out["positions"] = np.round(anchored, 4).tolist()
+    return out
+
+
 def _align_scaled_preview_to_robot_playback(
     target_model,
     retargeted,
@@ -240,6 +297,7 @@ def _compute_scaled_preview(
 
 __all__ = [
     "_align_scaled_preview_to_robot_playback",
+    "_anchor_scaled_preview_to_ik_root",
     "_compute_r2r_scaled_preview",
     "_compute_scaled_preview",
     "_compute_scaled_scene",

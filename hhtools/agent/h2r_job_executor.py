@@ -296,13 +296,26 @@ def _quality_verdict(
                 if math.isfinite(normalized):
                     metrics[target] = normalized
 
-    if p95 <= _TRACKING_STABLE_P95_M:
+    stable_max, review_max, robot_height = _tracking_band_limits(diagnostics.get("quality"))
+    if p95 <= stable_max:
         quality_band = "stable"
-    elif p95 <= _TRACKING_REVIEW_P95_M:
+    elif p95 <= review_max:
         quality_band = "review"
     else:
         quality_band = "high_error"
     metrics["quality_band"] = quality_band
+    check: dict[str, Any] = {
+        "code": "TRACKING_P95_ERROR",
+        "status": "review_required",
+        "observed_band": quality_band,
+        "value_m": p95,
+        "stable_max_m": stable_max,
+        "review_max_m": review_max,
+        "evidence_level": evidence,
+    }
+    if robot_height is not None:
+        metrics["robot_height_m"] = robot_height
+        check["robot_height_m"] = robot_height
     return (
         JobOutcome.REVIEW_REQUIRED,
         (
@@ -310,18 +323,29 @@ def _quality_verdict(
             "a validated evaluator or human must decide acceptance."
         ),
         metrics,
-        [
-            {
-                "code": "TRACKING_P95_ERROR",
-                "status": "review_required",
-                "observed_band": quality_band,
-                "value_m": p95,
-                "stable_max_m": _TRACKING_STABLE_P95_M,
-                "review_max_m": _TRACKING_REVIEW_P95_M,
-                "evidence_level": evidence,
-            }
-        ],
+        [check],
     )
+
+
+def _tracking_band_limits(quality: object) -> tuple[float, float, float | None]:
+    """Return ``(stable_max_m, review_max_m, robot_height_m)`` for the band.
+
+    Prefers the robot-height-normalized limits the Web diagnostics report and
+    falls back to the absolute defaults for older or partial payloads.
+    """
+
+    def _number(value: object) -> float | None:
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            return None
+        number = float(value)
+        return number if math.isfinite(number) and number > 0.0 else None
+
+    if isinstance(quality, Mapping):
+        stable_max = _number(quality.get("stable_max_m"))
+        review_max = _number(quality.get("review_max_m"))
+        if stable_max is not None and review_max is not None and stable_max <= review_max:
+            return stable_max, review_max, _number(quality.get("robot_height_m"))
+    return _TRACKING_STABLE_P95_M, _TRACKING_REVIEW_P95_M, None
 
 
 _WINDOWS_RESERVED_STEMS = frozenset(

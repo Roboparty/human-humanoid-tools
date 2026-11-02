@@ -81,7 +81,7 @@ a screenshot, closes the app, and verifies that the supervised Python process ex
 
 The [0.1.5 release](https://github.com/Eleanor1018/human-humanoid-tools/releases/tag/0.1.5) includes Windows x64, Linux amd64, and macOS Apple Silicon packages.
 
-For Windows, download the [self-signed EXE installer](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-selfsigned-setup.exe) and its [SHA-256 checksum](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-selfsigned-setup.exe.sha256).
+For Windows, download the [EXE installer](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-setup.exe) and its [SHA-256 checksum](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-setup.exe.sha256).
 The installer is 526,100,560 bytes (about 502 MiB), with SHA-256
 `920e8b848a7c366c508b4959f5b38b8eff7a7a86945ce307e2cad3fce2fcce73`.
 It includes Python 3.12, the application dependencies, Microsoft x64 CRT/OpenMP libraries,
