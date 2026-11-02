@@ -20,6 +20,7 @@ from hhtools.application.motions import (
 )
 from hhtools.application.previews import (
     _align_scaled_preview_to_robot_playback,
+    _anchor_scaled_preview_to_ik_root,
     _compute_r2r_scaled_preview,
     _compute_scaled_preview,
     _compute_scaled_scene,
@@ -576,13 +577,17 @@ def assemble_agent_services(
             serialize_robot_trajectory,
         )
 
-        scaled = _compute_scaled_preview(
-            model,
-            robot_id,
+        scaled = _anchor_scaled_preview_to_ik_root(
+            _compute_scaled_preview(
+                model,
+                robot_id,
+                motion,
+                reference,
+                human_height,
+                max_frames=agent_preview_max_frames,
+            ),
+            retargeted,
             motion,
-            reference,
-            human_height,
-            max_frames=agent_preview_max_frames,
         )
         trajectory = serialize_robot_trajectory(
             model,
@@ -767,11 +772,15 @@ def assemble_agent_services(
             serialize_robot_trajectory,
         )
 
-        scaled = _compute_r2r_scaled_preview(
-            source_model,
-            target_model,
+        scaled = _anchor_scaled_preview_to_ik_root(
+            _compute_r2r_scaled_preview(
+                source_model,
+                target_model,
+                motion,
+                calibration,
+            ),
+            retargeted,
             motion,
-            calibration,
         )
         target_trajectory = serialize_robot_trajectory(
             target_model,

@@ -14,6 +14,7 @@ from hhtools.application.export import _parse_optional_fps, _write_export
 from hhtools.application.motions import _motion_for_retarget
 from hhtools.application.previews import (
     _align_scaled_preview_to_robot_playback,
+    _anchor_scaled_preview_to_ik_root,
     _compute_scaled_preview,
     _compute_scaled_scene,
 )
@@ -276,12 +277,16 @@ def register_h2r_routes(app, *, state, jobs) -> H2RRouteOperations:
             )
             from hhtools.io.scene_serialize import serialize_robot_trajectory
 
-            scaled = _compute_scaled_preview(
-                model,
-                robot,
+            scaled = _anchor_scaled_preview_to_ik_root(
+                _compute_scaled_preview(
+                    model,
+                    robot,
+                    motion,
+                    reference,
+                    human_height,
+                ),
+                ret,
                 motion,
-                reference,
-                human_height,
             )
             traj = serialize_robot_trajectory(
                 model,
