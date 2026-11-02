@@ -301,6 +301,7 @@ def register_h2r_routes(app, *, state, jobs) -> H2RRouteOperations:
                 scaled,
                 ik_map=model.preset.ik_map,
                 feet=model.preset.feet,
+                ik_targets=getattr(ret, "ik_targets", None),
             )
             scaled_scene = _compute_scaled_scene(
                 model,

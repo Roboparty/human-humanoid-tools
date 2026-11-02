@@ -494,7 +494,10 @@ class ScaledMotionPreview:
         return int(self.transforms.shape[0])
 
 
-from hhtools.retarget.retarget_result import RetargetedMotion  # noqa: F401 — re-export
+from hhtools.retarget.retarget_result import (  # noqa: F401 — re-export
+    IKTargetTrace,
+    RetargetedMotion,
+)
 
 # --------------------------------------------------------------------------- pipeline
 
@@ -837,6 +840,10 @@ class NewtonBasicPipeline:
             ik_targets, self.ik_mapping.entries, self.robot.preset,
             robot_model=self.robot,
         )
+        # Real-frame position targets exactly as the solver will see them
+        # (later steps only touch rotation columns or pad), kept for
+        # result diagnostics.
+        solved_target_positions = ik_targets[:, :, 0:3].astype(np.float32, copy=True)
 
         _pelvis_col = next(
             (
@@ -1033,6 +1040,28 @@ class NewtonBasicPipeline:
                 "clip_floor_snap_m": float(clip_floor_snap_m),
                 "execution_provenance": self.execution_provenance(),
             },
+            ik_targets=self._ik_target_trace(solved_target_positions),
+        )
+
+    def _ik_target_trace(self, target_positions: NDArray) -> IKTargetTrace:
+        """Express solver-frame position targets in the output ``joint_q`` heading.
+
+        Applies the same heading undo as :meth:`_align_root_to_source_heading`.
+        Post-IK grounding (foot clamps, clip floor snap) is deliberately *not*
+        applied: targets are already floor-referenced, so those root shifts
+        are part of the result being evaluated.
+        """
+        entries = self.ik_mapping.entries
+        F, M = target_positions.shape[:2]
+        transforms = np.zeros((F, M, 7), dtype=np.float32)
+        transforms[:, :, 0:3] = target_positions
+        transforms[:, :, 6] = 1.0
+        aligned = self._align_preview_to_source_heading(transforms)[:, :, 0:3]
+        return IKTargetTrace(
+            canonical_names=tuple(e.canonical_name for e in entries),
+            t_body_links=tuple(e.t_body_link for e in entries),
+            link_offsets=np.asarray([e.t_offset for e in entries], dtype=np.float32).reshape(M, 3),
+            positions=np.ascontiguousarray(aligned, dtype=np.float32),
         )
 
     def run_many(self, motions: Iterable[Motion]) -> list[RetargetedMotion]:

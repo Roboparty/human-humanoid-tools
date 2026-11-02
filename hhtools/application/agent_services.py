@@ -601,6 +601,7 @@ def assemble_agent_services(
             scaled,
             ik_map=model.preset.ik_map,
             feet=model.preset.feet,
+            ik_targets=getattr(retargeted, "ik_targets", None),
         )
         scaled_scene = _compute_scaled_scene(
             model,
@@ -791,6 +792,7 @@ def assemble_agent_services(
             scaled,
             ik_map=target_model.preset.ik_map,
             feet=target_model.preset.feet,
+            ik_targets=getattr(retargeted, "ik_targets", None),
         )
         return R2RPreview(
             document={

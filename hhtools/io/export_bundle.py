@@ -718,7 +718,9 @@ def write_retarget_export_bundle(
     )
     if abs(playback_lift) > 1e-12:
         meta["playback_mesh_z_lift"] = f"{playback_lift:.6f}"
-    ret2 = dataclasses.replace(retargeted, joint_q=joint_q, sample_rate=sample_rate, meta=meta)
+    ret2 = dataclasses.replace(
+        retargeted, joint_q=joint_q, sample_rate=sample_rate, meta=meta, ik_targets=None,
+    )
     smpl_scale, z_offset, z_terrain = _resolve_export_scene_params(meta, source_motion)
 
     clip_dir = resolve_clip_export_dir(

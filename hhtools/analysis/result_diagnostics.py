@@ -1,8 +1,14 @@
 """Lightweight result diagnostics for Web H2R and R2R previews.
 
 The diagnostics operate on the same downsampled payloads rendered by Three.js.
-They are intentionally solver-independent: no IK, simulation, or model rebuild is
-performed after a retarget job completes.
+No IK, simulation, or model rebuild is performed after a retarget job completes.
+
+Tracking error is measured against the position targets the solver actually
+tracked when the backend records them (:class:`IKTargetTrace`, Newton IK).
+The yellow scaled overlay is only a fallback reference: it is a *uniform*
+``robot_height / human_height`` scaling of the source skeleton, so on robots
+whose limb proportions or link origins differ from a human it sits far from
+the per-joint scaled IK targets even when the robot tracks them closely.
 """
 
 from __future__ import annotations
@@ -55,17 +61,31 @@ def _quat_rotate_xyzw(vector: np.ndarray, quaternion: Sequence[float]) -> np.nda
     return vector + 2.0 * np.cross(xyz, np.cross(xyz, vector) + q[3] * vector)
 
 
-def _robot_link_position(frame: Mapping[str, Any], link: str) -> np.ndarray | None:
+def _robot_link_position(
+    frame: Mapping[str, Any],
+    link: str,
+    local_offset: np.ndarray | None = None,
+    *,
+    include_mesh_lift: bool = True,
+) -> np.ndarray | None:
+    """World position of ``link`` (plus ``local_offset`` in its frame).
+
+    ``include_mesh_lift`` adds the viewer's display-only grounding lift; turn
+    it off when comparing against solver-frame IK targets.
+    """
     flat = (frame.get("links") or {}).get(link)
     if not isinstance(flat, Sequence) or len(flat) != 16:
         return None
     matrix = np.asarray(flat, dtype=np.float64).reshape(4, 4)
     local = matrix[:3, 3]
+    if local_offset is not None:
+        local = local + matrix[:3, :3] @ local_offset
     root = frame.get("root")
     if not isinstance(root, Sequence) or len(root) < 7:
         return local
     translation = np.asarray(root[:3], dtype=np.float64)
-    translation[2] += float(frame.get("mesh_z_lift") or 0.0)
+    if include_mesh_lift:
+        translation[2] += float(frame.get("mesh_z_lift") or 0.0)
     return translation + _quat_rotate_xyzw(local, root[3:7])
 
 
@@ -236,38 +256,79 @@ def _contact_diagnostics(
     )
 
 
-def build_result_diagnostics(
+_EffectorErrors = dict[tuple[str, str], list[float]]
+_FrameErrors = list[tuple[int, list[float]]]
+
+
+def _ik_target_errors(
     trajectory: Mapping[str, Any],
-    scaled_preview: Mapping[str, Any] | None,
-    *,
+    ik_targets: Any,
     ik_map: Mapping[str, object] | None,
-    feet: Mapping[str, object] | None = None,
-) -> dict[str, Any]:
-    """Compare rendered IK targets with rendered robot link trajectories."""
-    if not scaled_preview:
-        return {
-            "schema_version": 1,
-            "available": False,
-            "reason": "scaled target preview is unavailable",
-        }
+) -> tuple[_EffectorErrors, _FrameErrors, int] | None:
+    """Robot link vs recorded IK target, per rendered trajectory frame.
 
-    names = [str(name) for name in (scaled_preview.get("bone_names") or [])]
-    name_to_index = _canonical_name_to_index(names)
-    frame_pairs = _frame_pairs(trajectory, scaled_preview)
-    mappings = [
-        (canonical, link)
-        for canonical, link in _mapping_pairs(ik_map)
-        if canonical in name_to_index
-    ]
-    if not frame_pairs or not mappings:
-        return {
-            "schema_version": 1,
-            "available": False,
-            "reason": "no mapped target frames are available for comparison",
-        }
+    Returns ``None`` when the trace is missing or does not line up with the
+    trajectory, so callers can fall back to the scaled overlay.
+    """
+    if ik_targets is None:
+        return None
+    positions = np.asarray(getattr(ik_targets, "positions", ()), dtype=np.float64)
+    names = tuple(getattr(ik_targets, "canonical_names", ()) or ())
+    links = tuple(getattr(ik_targets, "t_body_links", ()) or ())
+    offsets = np.asarray(getattr(ik_targets, "link_offsets", ()), dtype=np.float64)
+    if (
+        positions.ndim != 3
+        or positions.shape[1:] != (len(names), 3)
+        or len(links) != len(names)
+        or offsets.shape != (len(names), 3)
+    ):
+        return None
+    # Report the robot.yaml ik_map slots (the same set the overlay path uses);
+    # auto-added endpoint objectives (toe tips, hand ends) stay solver-internal.
+    wanted = {str(name) for name in (ik_map or {})}
+    columns = [i for i, name in enumerate(names) if not wanted or name in wanted]
+    if not columns:
+        return None
 
-    per_effector_errors: dict[tuple[str, str], list[float]] = {mapping: [] for mapping in mappings}
-    frame_errors: list[tuple[int, list[float]]] = []
+    robot_frames = trajectory.get("frames") or []
+    robot_indices = trajectory.get("frame_indices") or list(range(len(robot_frames)))
+    per_effector: _EffectorErrors = {(names[i], links[i]): [] for i in columns}
+    frame_errors: _FrameErrors = []
+    for index, robot_frame in enumerate(robot_frames):
+        frame_index = int(robot_indices[index]) if index < len(robot_indices) else index
+        if not 0 <= frame_index < positions.shape[0]:
+            continue
+        errors: list[float] = []
+        for column in columns:
+            target = positions[frame_index, column]
+            if not np.all(np.isfinite(target)):
+                continue
+            achieved = _robot_link_position(
+                robot_frame,
+                links[column],
+                offsets[column],
+                include_mesh_lift=False,
+            )
+            if achieved is None:
+                continue
+            error = float(np.linalg.norm(achieved - target))
+            errors.append(error)
+            per_effector[(names[column], links[column])].append(error)
+        if errors:
+            frame_errors.append((frame_index, errors))
+    if not frame_errors:
+        return None
+    return per_effector, frame_errors, len(columns)
+
+
+def _scaled_overlay_errors(
+    frame_pairs: Sequence[tuple[int, Sequence[Sequence[float]], Mapping[str, Any]]],
+    name_to_index: Mapping[str, int],
+    mappings: Sequence[tuple[str, str]],
+) -> tuple[_EffectorErrors, _FrameErrors]:
+    """Robot link vs yellow scaled-overlay joint (fallback reference)."""
+    per_effector: _EffectorErrors = {mapping: [] for mapping in mappings}
+    frame_errors: _FrameErrors = []
     for frame_index, scaled_frame, robot_frame in frame_pairs:
         errors: list[float] = []
         for canonical, link in mappings:
@@ -282,9 +343,59 @@ def build_result_diagnostics(
                 continue
             error = float(np.linalg.norm(target - source))
             errors.append(error)
-            per_effector_errors[(canonical, link)].append(error)
+            per_effector[(canonical, link)].append(error)
         if errors:
             frame_errors.append((frame_index, errors))
+    return per_effector, frame_errors
+
+
+def build_result_diagnostics(
+    trajectory: Mapping[str, Any],
+    scaled_preview: Mapping[str, Any] | None,
+    *,
+    ik_map: Mapping[str, object] | None,
+    feet: Mapping[str, object] | None = None,
+    ik_targets: Any = None,
+) -> dict[str, Any]:
+    """Compare robot link trajectories with the targets they were solved for.
+
+    ``ik_targets`` (an :class:`~hhtools.retarget.retarget_result.IKTargetTrace`)
+    is the preferred tracking reference; without it the rendered scaled
+    overlay is used.  Contact checks always use the scaled overlay feet.
+    """
+    names = [str(name) for name in ((scaled_preview or {}).get("bone_names") or [])]
+    name_to_index = _canonical_name_to_index(names)
+    frame_pairs = _frame_pairs(trajectory, scaled_preview) if scaled_preview else []
+
+    traced = _ik_target_errors(trajectory, ik_targets, ik_map)
+    if traced is not None:
+        per_effector_errors, frame_errors, requested_effectors = traced
+        reference = "ik_targets"
+    else:
+        if not scaled_preview:
+            return {
+                "schema_version": 1,
+                "available": False,
+                "reason": "scaled target preview is unavailable",
+            }
+        mappings = [
+            (canonical, link)
+            for canonical, link in _mapping_pairs(ik_map)
+            if canonical in name_to_index
+        ]
+        if not frame_pairs or not mappings:
+            return {
+                "schema_version": 1,
+                "available": False,
+                "reason": "no mapped target frames are available for comparison",
+            }
+        per_effector_errors, frame_errors = _scaled_overlay_errors(
+            frame_pairs,
+            name_to_index,
+            mappings,
+        )
+        requested_effectors = len(mappings)
+        reference = "scaled_preview"
 
     all_errors = [error for _, errors in frame_errors for error in errors]
     if not all_errors:
@@ -297,16 +408,24 @@ def build_result_diagnostics(
     fps = float(
         trajectory.get("framerate")
         or trajectory.get("sample_rate")
-        or scaled_preview.get("framerate")
+        or (scaled_preview or {}).get("framerate")
         or 30.0
     )
-    contact, contacts_by_frame = _contact_diagnostics(
-        frame_pairs,
-        names,
-        ik_map,
-        feet,
-        fps,
-    )
+    if frame_pairs:
+        contact, contacts_by_frame = _contact_diagnostics(
+            frame_pairs,
+            names,
+            ik_map,
+            feet,
+            fps,
+        )
+    else:
+        contact = {
+            "available": False,
+            "reason": "scaled target preview is unavailable",
+            "feet": [],
+        }
+        contacts_by_frame = {}
     effectors = []
     for (canonical, link), errors in per_effector_errors.items():
         if not errors:
@@ -342,8 +461,9 @@ def build_result_diagnostics(
         "available": True,
         "frame_count": len(frame_errors),
         "mapped_effectors": len(effectors),
-        "requested_effectors": len(mappings),
+        "requested_effectors": requested_effectors,
         "tracking": {
+            "reference": reference,
             "mean_error_m": round(float(np.mean(all_errors)), 5),
             "p95_error_m": round(_percentile(all_errors, 95.0), 5),
             "max_error_m": round(float(np.max(all_errors)), 5),

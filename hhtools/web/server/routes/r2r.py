@@ -295,6 +295,7 @@ def register_r2r_routes(app, *, state, jobs, uploads) -> None:
                 scaled,
                 ik_map=tgt.preset.ik_map,
                 feet=tgt.preset.feet,
+                ik_targets=getattr(ret, "ik_targets", None),
             )
             from hhtools.io.r2r_export_bundle import clip_has_export_scene
             from hhtools.io.r2r_scene import compute_r2r_target_scaled_scene

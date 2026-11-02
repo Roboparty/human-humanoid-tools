@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
+from hhtools.retarget.retarget_result import IKTargetTrace
 from hhtools.web.analysis.result_diagnostics import build_result_diagnostics
 
 
@@ -204,3 +206,136 @@ def test_missing_scaled_targets_return_an_explicit_unavailable_reason() -> None:
 
     assert diagnostics["available"] is False
     assert "scaled target" in diagnostics["reason"]
+
+
+def _rotation_z(transform: list[float], yaw_deg: float) -> list[float]:
+    """Return ``transform`` with its rotation block set to a yaw about +Z."""
+    c = float(np.cos(np.radians(yaw_deg)))
+    s = float(np.sin(np.radians(yaw_deg)))
+    out = list(transform)
+    out[0], out[1], out[4], out[5] = c, -s, s, c
+    return out
+
+
+def _trace(names, links, positions, offsets=None) -> IKTargetTrace:
+    return IKTargetTrace(
+        canonical_names=tuple(names),
+        t_body_links=tuple(links),
+        link_offsets=np.zeros((len(names), 3), dtype=np.float32)
+        if offsets is None
+        else np.asarray(offsets, dtype=np.float32),
+        positions=np.asarray(positions, dtype=np.float32),
+    )
+
+
+def _exact_trace(trajectory, ik_map) -> IKTargetTrace:
+    """IK targets that the payload robot links reach exactly."""
+    names = list(ik_map)
+    links = [ik_map[name] for name in names]
+    positions = [
+        [frame["links"][link][3::4][:3] for link in links] for frame in trajectory["frames"]
+    ]
+    return _trace(names, links, positions)
+
+
+def test_ik_target_trace_is_preferred_over_the_uniform_scaled_overlay() -> None:
+    # The yellow overlay is a uniform rescale of the source skeleton; on robots
+    # whose proportions differ it sits far from the per-joint IK targets even
+    # when the robot tracks those targets perfectly.
+    trajectory, scaled, ik_map, feet = _payloads(x_offset=0.5)
+    trace = _trace(
+        list(ik_map),
+        [ik_map[name] for name in ik_map],
+        [
+            [[0.5, 0.0, 1.0], [0.4, 0.0, 0.0], [0.6, 0.0, 0.0]]
+            for _ in range(4)
+        ],
+    )
+
+    diagnostics = build_result_diagnostics(
+        trajectory,
+        scaled,
+        ik_map=ik_map,
+        feet=feet,
+        ik_targets=trace,
+    )
+
+    assert diagnostics["available"] is True
+    assert diagnostics["tracking"]["reference"] == "ik_targets"
+    assert diagnostics["tracking"]["max_error_m"] == pytest.approx(0.0, abs=1e-6)
+    assert diagnostics["contact"]["available"] is True
+
+
+def test_ik_target_trace_uses_link_offsets_and_ignores_display_lift() -> None:
+    trajectory = {
+        "frames": [
+            {
+                # 180 degree yaw root, display-only grounding lift.
+                "root": [1.0, 2.0, 0.1, 0.0, 0.0, 1.0, 0.0],
+                "mesh_z_lift": 0.05,
+                # Link yawed +90 degrees inside the root frame at local (0.2, 0, 0).
+                "links": {"hand": _rotation_z(_transform(0.2, 0.0, 0.0), 90.0)},
+            }
+        ],
+        "framerate": 30.0,
+    }
+    # Offset +X in the link frame -> +Y in root frame -> -Y in world.
+    trace = _trace(
+        ["left_wrist"],
+        ["hand"],
+        [[[0.8, 1.9, 0.1]]],
+        offsets=[[0.1, 0.0, 0.0]],
+    )
+
+    diagnostics = build_result_diagnostics(
+        trajectory,
+        None,
+        ik_map={"left_wrist": "hand"},
+        ik_targets=trace,
+    )
+
+    assert diagnostics["available"] is True
+    assert diagnostics["tracking"]["max_error_m"] == pytest.approx(0.0, abs=1e-6)
+    assert diagnostics["contact"]["available"] is False
+
+
+def test_ik_target_trace_reports_only_robot_ik_map_slots() -> None:
+    trajectory, scaled, ik_map, feet = _payloads()
+    exact = _exact_trace(trajectory, ik_map)
+    # Auto-added endpoint objective (e.g. a toe tip) far from its link.
+    trace = _trace(
+        [*exact.canonical_names, "left_toe_tip"],
+        [*exact.t_body_links, "left_foot"],
+        np.concatenate(
+            [exact.positions, np.full((4, 1, 3), 5.0, dtype=np.float32)],
+            axis=1,
+        ),
+    )
+
+    diagnostics = build_result_diagnostics(
+        trajectory,
+        scaled,
+        ik_map=ik_map,
+        feet=feet,
+        ik_targets=trace,
+    )
+
+    assert diagnostics["requested_effectors"] == 3
+    assert {item["canonical"] for item in diagnostics["tracking"]["effectors"]} == set(ik_map)
+    assert diagnostics["tracking"]["max_error_m"] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_malformed_ik_target_trace_falls_back_to_scaled_overlay() -> None:
+    trajectory, scaled, ik_map, feet = _payloads(x_offset=0.1)
+    trace = _trace(list(ik_map), [ik_map[name] for name in ik_map], np.zeros((4, 2, 3)))
+
+    diagnostics = build_result_diagnostics(
+        trajectory,
+        scaled,
+        ik_map=ik_map,
+        feet=feet,
+        ik_targets=trace,
+    )
+
+    assert diagnostics["tracking"]["reference"] == "scaled_preview"
+    assert diagnostics["tracking"]["mean_error_m"] == pytest.approx(0.1)
