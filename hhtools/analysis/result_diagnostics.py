@@ -20,6 +20,15 @@ import numpy as np
 
 from hhtools.retarget.newton_basic.human_aliases import auto_source_to_canonical
 
+# Display bands for tracking p95 as a fraction of robot stature.  4 % / 8 %
+# reproduce the historical 5 cm / 10 cm bands on ~1.3 m robots (G1, RP1)
+# without over-flagging tall robots or under-flagging small ones.  The
+# absolute bands remain the fallback when the stature is unknown.
+STABLE_P95_HEIGHT_FRACTION = 0.04
+REVIEW_P95_HEIGHT_FRACTION = 0.08
+STABLE_P95_FALLBACK_M = 0.05
+REVIEW_P95_FALLBACK_M = 0.10
+
 _FOOT_CANONICALS = {
     "left": ("left_ankle", "left_foot", "left_toe"),
     "right": ("right_ankle", "right_foot", "right_toe"),
@@ -111,6 +120,39 @@ def _frame_pairs(
         if scaled_frame is not None:
             pairs.append((frame_index, scaled_frame, robot_frame))
     return pairs
+
+
+def tracking_quality_band(
+    p95_error_m: float,
+    robot_height_m: float | None,
+) -> dict[str, Any]:
+    """Classify tracking p95 into ``stable`` / ``review`` / ``high_error``.
+
+    Thresholds scale with ``robot_height_m`` when it is a plausible stature;
+    otherwise the absolute fallback bands apply.
+    """
+    height = float(robot_height_m) if robot_height_m is not None else float("nan")
+    normalized = bool(np.isfinite(height) and 0.2 <= height <= 4.0)
+    if normalized:
+        stable_max = STABLE_P95_HEIGHT_FRACTION * height
+        review_max = REVIEW_P95_HEIGHT_FRACTION * height
+    else:
+        stable_max = STABLE_P95_FALLBACK_M
+        review_max = REVIEW_P95_FALLBACK_M
+    p95 = float(p95_error_m)
+    if p95 <= stable_max:
+        band = "stable"
+    elif p95 <= review_max:
+        band = "review"
+    else:
+        band = "high_error"
+    return {
+        "band": band,
+        "stable_max_m": round(stable_max, 5),
+        "review_max_m": round(review_max, 5),
+        "robot_height_m": round(height, 4) if normalized else None,
+        "p95_height_ratio": round(p95 / height, 5) if normalized else None,
+    }
 
 
 def _percentile(values: Sequence[float], percentile: float) -> float:
@@ -362,6 +404,8 @@ def build_result_diagnostics(
     ``ik_targets`` (an :class:`~hhtools.retarget.retarget_result.IKTargetTrace`)
     is the preferred tracking reference; without it the rendered scaled
     overlay is used.  Contact checks always use the scaled overlay feet.
+    The quality band is normalized by the robot stature the scaled preview
+    reports (``robot_height_m``), when present.
     """
     names = [str(name) for name in ((scaled_preview or {}).get("bone_names") or [])]
     name_to_index = _canonical_name_to_index(names)
@@ -456,16 +500,21 @@ def build_result_diagnostics(
             }
         )
 
+    p95_error_m = round(_percentile(all_errors, 95.0), 5)
     return {
         "schema_version": 1,
         "available": True,
+        "quality": tracking_quality_band(
+            p95_error_m,
+            (scaled_preview or {}).get("robot_height_m"),
+        ),
         "frame_count": len(frame_errors),
         "mapped_effectors": len(effectors),
         "requested_effectors": requested_effectors,
         "tracking": {
             "reference": reference,
             "mean_error_m": round(float(np.mean(all_errors)), 5),
-            "p95_error_m": round(_percentile(all_errors, 95.0), 5),
+            "p95_error_m": p95_error_m,
             "max_error_m": round(float(np.max(all_errors)), 5),
             "effectors": effectors,
             "series": series,
@@ -474,4 +523,4 @@ def build_result_diagnostics(
     }
 
 
-__all__ = ["build_result_diagnostics"]
+__all__ = ["build_result_diagnostics", "tracking_quality_band"]

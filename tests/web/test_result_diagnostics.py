@@ -6,7 +6,10 @@ import numpy as np
 import pytest
 
 from hhtools.retarget.retarget_result import IKTargetTrace
-from hhtools.web.analysis.result_diagnostics import build_result_diagnostics
+from hhtools.web.analysis.result_diagnostics import (
+    build_result_diagnostics,
+    tracking_quality_band,
+)
 
 
 def _transform(x: float, y: float, z: float) -> list[float]:
@@ -339,3 +342,33 @@ def test_malformed_ik_target_trace_falls_back_to_scaled_overlay() -> None:
 
     assert diagnostics["tracking"]["reference"] == "scaled_preview"
     assert diagnostics["tracking"]["mean_error_m"] == pytest.approx(0.1)
+
+
+@pytest.mark.parametrize(
+    ("robot_height_m", "p95", "band", "stable_max_m"),
+    [
+        (1.3, 0.052, "stable", 0.052),  # ~historical 5 cm on a G1 / RP1-sized robot
+        (1.8, 0.09, "review", 0.072),  # tall robot: 9 cm is no longer "large"
+        (0.8, 0.07, "high_error", 0.032),  # small robot: 7 cm is a large share
+        (None, 0.07, "review", 0.05),  # unknown stature keeps absolute bands
+    ],
+)
+def test_quality_band_scales_with_robot_height(robot_height_m, p95, band, stable_max_m) -> None:
+    quality = tracking_quality_band(p95, robot_height_m)
+
+    assert quality["band"] == band
+    assert quality["stable_max_m"] == pytest.approx(stable_max_m)
+    assert quality["robot_height_m"] == (
+        pytest.approx(robot_height_m) if robot_height_m else None
+    )
+
+
+def test_diagnostics_report_quality_band_from_scaled_preview_robot_height() -> None:
+    trajectory, scaled, ik_map, feet = _payloads(x_offset=0.09)
+    scaled["robot_height_m"] = 1.8
+
+    diagnostics = build_result_diagnostics(trajectory, scaled, ik_map=ik_map, feet=feet)
+
+    assert diagnostics["quality"]["band"] == "review"
+    assert diagnostics["quality"]["review_max_m"] == pytest.approx(0.144)
+    assert diagnostics["quality"]["p95_height_ratio"] == pytest.approx(0.05)
