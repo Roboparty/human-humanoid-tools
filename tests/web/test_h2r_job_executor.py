@@ -13,6 +13,7 @@ from hhtools.agent.h2r_job_executor import (
     H2RJobExecutor,
     H2RPreview,
     ResolvedMotion,
+    _quality_verdict,
 )
 from hhtools.contracts import (
     ApiError,
@@ -403,6 +404,35 @@ def test_executor_reports_web_tracking_band_without_claiming_quality_acceptance(
     assert result.evaluation_metrics["quality_band"] == expected_band
     assert result.evaluation_checks[0]["code"].startswith("TRACKING_")
     assert result.evaluation_checks[0]["status"] == "review_required"
+
+
+def test_quality_verdict_uses_robot_height_normalized_limits() -> None:
+    diagnostics = {
+        "available": True,
+        "tracking": {"p95_error_m": 0.09},
+        "quality": {"stable_max_m": 0.072, "review_max_m": 0.144, "robot_height_m": 1.8},
+    }
+
+    _outcome, _summary, metrics, checks = _quality_verdict(diagnostics)
+
+    assert metrics["quality_band"] == "review"
+    assert metrics["robot_height_m"] == pytest.approx(1.8)
+    assert checks[0]["stable_max_m"] == pytest.approx(0.072)
+    assert checks[0]["review_max_m"] == pytest.approx(0.144)
+
+
+def test_quality_verdict_ignores_inconsistent_limits() -> None:
+    diagnostics = {
+        "available": True,
+        "tracking": {"p95_error_m": 0.12},
+        "quality": {"stable_max_m": 0.3, "review_max_m": 0.2},
+    }
+
+    _outcome, _summary, metrics, checks = _quality_verdict(diagnostics)
+
+    assert metrics["quality_band"] == "high_error"
+    assert "robot_height_m" not in metrics
+    assert checks[0]["review_max_m"] == pytest.approx(0.10)
 
 
 @pytest.mark.parametrize("backend", ["newton", "interaction_mesh"])

@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-const { buildTrackingChart, topEffectors, validateExportOptions } = await import(
-  "../src/features/result/model.ts"
-);
+const { buildTrackingChart, resolveTrackingQuality, topEffectors, validateExportOptions } =
+  await import("../src/features/result/model.ts");
 
 test("export options preserve valid FPS, time window, format, and CSV header", () => {
   assert.deepEqual(
@@ -112,4 +111,38 @@ test("top effectors are ranked by P95 error without mutating the payload", () =>
     "left_ankle",
     "hips",
   ]);
+});
+
+function diagnostics(p95: number, quality?: Record<string, unknown>) {
+  return {
+    schema_version: 1,
+    available: true,
+    quality,
+    tracking: { mean_error_m: p95, p95_error_m: p95, max_error_m: p95, effectors: [], series: [] },
+  };
+}
+
+test("tracking quality uses robot-height-normalized limits from the backend", () => {
+  // 1.8 m robot: 4 % / 8 % -> 7.2 cm / 14.4 cm, so 9 cm is only "review".
+  const quality = { band: "review", stable_max_m: 0.072, review_max_m: 0.144, robot_height_m: 1.8 };
+  assert.deepEqual(resolveTrackingQuality(diagnostics(0.09, quality)), {
+    band: "review",
+    stableMaxM: 0.072,
+    reviewMaxM: 0.144,
+    robotHeightM: 1.8,
+  });
+  assert.equal(resolveTrackingQuality(diagnostics(0.15, quality)).band, "high_error");
+  assert.equal(resolveTrackingQuality(diagnostics(0.07, quality)).band, "stable");
+});
+
+test("tracking quality falls back to absolute limits and flags large deviations", () => {
+  assert.equal(resolveTrackingQuality(diagnostics(0.05)).band, "stable");
+  assert.equal(resolveTrackingQuality(diagnostics(0.08)).band, "review");
+  assert.equal(resolveTrackingQuality(diagnostics(0.12)).band, "high_error");
+  const broken = { band: "stable", stable_max_m: 0.2, review_max_m: 0.1 };
+  assert.equal(resolveTrackingQuality(diagnostics(0.12, broken)).band, "high_error");
+  assert.equal(
+    resolveTrackingQuality({ schema_version: 1, available: false }).band,
+    "unavailable",
+  );
 });

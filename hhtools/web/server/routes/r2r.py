@@ -13,6 +13,7 @@ from fastapi.responses import Response
 from hhtools.application.export import _parse_optional_fps, _write_r2r_export
 from hhtools.application.motions import _motion_for_retarget
 from hhtools.application.previews import (
+    _anchor_scaled_preview_to_ik_root,
     _compute_r2r_scaled_preview,
 )
 from hhtools.application.robots import _join_robot_prewarm, _require_newton_package
@@ -280,7 +281,11 @@ def register_r2r_routes(app, *, state, jobs, uploads) -> None:
             )
             from hhtools.io.scene_serialize import serialize_robot_trajectory
 
-            scaled = _compute_r2r_scaled_preview(src, tgt, motion, calib)
+            scaled = _anchor_scaled_preview_to_ik_root(
+                _compute_r2r_scaled_preview(src, tgt, motion, calib),
+                ret,
+                motion,
+            )
             traj = serialize_robot_trajectory(
                 tgt,
                 ret,
@@ -295,6 +300,7 @@ def register_r2r_routes(app, *, state, jobs, uploads) -> None:
                 scaled,
                 ik_map=tgt.preset.ik_map,
                 feet=tgt.preset.feet,
+                ik_targets=getattr(ret, "ik_targets", None),
             )
             from hhtools.io.r2r_export_bundle import clip_has_export_scene
             from hhtools.io.r2r_scene import compute_r2r_target_scaled_scene

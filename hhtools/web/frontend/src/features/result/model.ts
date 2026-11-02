@@ -40,14 +40,27 @@ export interface ContactDiagnostics {
   readonly feet: readonly FootContactDiagnostic[];
 }
 
+export type TrackingQualityBand = "stable" | "review" | "high_error";
+
+/** Backend display band; limits scale with robot height when it is known. */
+export interface TrackingQuality {
+  readonly band: TrackingQualityBand;
+  readonly stable_max_m: number;
+  readonly review_max_m: number;
+  readonly robot_height_m?: number | null;
+  readonly p95_height_ratio?: number | null;
+}
+
 export interface ResultDiagnosticsPayload {
   readonly schema_version: number;
   readonly available: boolean;
   readonly reason?: string;
+  readonly quality?: TrackingQuality;
   readonly frame_count?: number;
   readonly mapped_effectors?: number;
   readonly requested_effectors?: number;
   readonly tracking?: {
+    readonly reference?: "ik_targets" | "scaled_preview";
     readonly mean_error_m: number;
     readonly p95_error_m: number;
     readonly max_error_m: number;
@@ -158,6 +171,47 @@ export function buildTrackingChart(
     peak,
     meanPoints: path("mean_error_m"),
     maxPoints: path("max_error_m"),
+  };
+}
+
+/** Absolute limits for payloads that predate height-normalized bands. */
+export const FALLBACK_STABLE_P95_M = 0.05;
+export const FALLBACK_REVIEW_P95_M = 0.1;
+
+export interface ResolvedTrackingQuality {
+  readonly band: TrackingQualityBand | "unavailable";
+  readonly stableMaxM?: number;
+  readonly reviewMaxM?: number;
+  readonly robotHeightM?: number;
+}
+
+function positiveFinite(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : undefined;
+}
+
+/** Resolve the tracking band, preferring the backend's height-normalized limits. */
+export function resolveTrackingQuality(
+  diagnostics: ResultDiagnosticsPayload,
+): ResolvedTrackingQuality {
+  const p95 = diagnostics.tracking?.p95_error_m;
+  if (!diagnostics.available || p95 == null || !Number.isFinite(p95)) {
+    return { band: "unavailable" };
+  }
+  const stable = positiveFinite(diagnostics.quality?.stable_max_m);
+  const review = positiveFinite(diagnostics.quality?.review_max_m);
+  const normalized = stable !== undefined && review !== undefined && stable <= review;
+  const stableMaxM = normalized ? stable : FALLBACK_STABLE_P95_M;
+  const reviewMaxM = normalized ? review : FALLBACK_REVIEW_P95_M;
+  const band = p95 <= stableMaxM ? "stable" : p95 <= reviewMaxM ? "review" : "high_error";
+  return {
+    band,
+    stableMaxM,
+    reviewMaxM,
+    robotHeightM: normalized
+      ? positiveFinite(diagnostics.quality?.robot_height_m ?? undefined)
+      : undefined,
   };
 }
 
