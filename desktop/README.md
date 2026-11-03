@@ -79,11 +79,12 @@ a screenshot, closes the app, and verifies that the supervised Python process ex
 
 ## Desktop packages
 
-The [0.1.5 release](https://github.com/Eleanor1018/human-humanoid-tools/releases/tag/0.1.5) includes Windows x64, Linux amd64, and macOS Apple Silicon packages.
+The [0.1.6 release](https://github.com/Eleanor1018/human-humanoid-tools/releases/tag/0.1.6) includes Windows x64, Linux amd64, and macOS Apple Silicon packages.
+The HHTools code bundled in all three packages matches `release/0.1.6` (`ee04b87`).
 
-For Windows, download the [EXE installer](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-setup.exe) and its [SHA-256 checksum](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-setup.exe.sha256).
-The installer is 526,100,560 bytes (about 502 MiB), with SHA-256
-`920e8b848a7c366c508b4959f5b38b8eff7a7a86945ce307e2cad3fce2fcce73`.
+For Windows, download the [EXE installer](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.6/hhtools-0.1.6-x64-setup.exe) and its [SHA-256 checksum](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.6/hhtools-0.1.6-x64-setup.exe.sha256).
+The installer is 453,923,264 bytes (about 433 MiB), with SHA-256
+`50b57519bfe0cce1df110385198fb9f7a795cada808794d220e65a739212f8c9`.
 It includes Python 3.12, the application dependencies, Microsoft x64 CRT/OpenMP libraries,
 30 motions and seven robot bundles. Core use needs no system Python or first-run downloads;
 the default current-user installation requires no administrator privileges. Windows may show a
@@ -91,16 +92,12 @@ SmartScreen or untrusted-publisher warning because this preview uses a self-sign
 The package uses CPU Torch; optional GVHMR needs a separate NVIDIA-capable Docker environment
 and model assets. GPU inference was not validated for this installer.
 
-The installed Windows 10 x64 application passed six desktop UI checks, all seven robot loads,
-motion import, H2R/R2R calibration, four-frame LAFAN-to-G1 Newton retargeting and CSV export.
-Non-administrator installation/uninstallation, packaged PR #12/#14 regressions, native runtime
-dependencies, and signatures/timestamps were also checked.
+The 0.1.6 installer was installed and launched on Windows x64 before release; it is self-signed
+with an RFC 3161 timestamp.
 
-For Linux, [download the Debian package](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-linux-amd64.deb) and its [SHA-256 checksum](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-linux-amd64.deb.sha256).
-The Linux package is built on Ubuntu 22.04.
-Ubuntu 22.04 and 26.04 passed container installation, startup, and motion playback checks;
-Ubuntu 24.04 passed native desktop, CUDA retargeting, and NVIDIA rendering checks.
-For macOS 12+ on Apple Silicon, [download the DMG](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-mac-arm64.dmg),
+For Linux, [download the Debian package](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.6/hhtools-0.1.6-linux-amd64.deb) and its [SHA-256 checksum](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.6/hhtools-0.1.6-linux-amd64.deb.sha256).
+The 0.1.6 package was installed and launched on Linux before release.
+For macOS 12+ on Apple Silicon, [download the DMG](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.6/hhtools-0.1.6-mac-arm64.dmg),
 drag **Human-Humanoid Tools** into **Applications**, and launch it to complete the online first-run setup.
 See the signing and compatibility notes below before installing this preview.
 
@@ -133,9 +130,8 @@ uv run python scripts/install_builtin_robots.py --destination /path/to/release-r
 export HHTOOLS_BUNDLED_ROBOT_DIR=/path/to/release-robots
 ```
 
-The Linux package uses source tag `0.1.5`. The published Windows installer is based on
-`0bf1e08`, with additional Windows runtime-staging, installer and signing adjustments; it is not
-an unmodified build of that tag. Build the shared frontend first:
+The 0.1.6 packages are built from `release/0.1.6` (`ee04b87`); source tag `0.1.6` contains the same code.
+Build the shared frontend first:
 
 ```bash
 cd hhtools/web/frontend
@@ -148,9 +144,9 @@ npm ci
 Then invoke electron-builder through the package scripts:
 
 ```bash
-npm run dist:linux   # release/hhtools-0.1.5-amd64.deb
-npm run dist:win     # release/hhtools-0.1.5-x64-setup.exe
-npm run dist:mac     # release/hhtools-0.1.5-mac-arm64.dmg (and .zip)
+npm run dist:linux   # release/hhtools-0.1.6-amd64.deb
+npm run dist:win     # release/hhtools-0.1.6-x64-setup.exe
+npm run dist:mac     # release/hhtools-0.1.6-mac-arm64.dmg (and .zip)
 ```
 
 All seven robots use the same installer and staging path. Staging verifies each pinned
@@ -202,8 +198,8 @@ SMPL-family model files and GVHMR weights are not part of the default distributa
 `npm run prepare:models` command exists only for a locally authorized build; a user checkbox cannot
 grant redistribution rights for a model file.
 
-Verify the downloaded package with `sha256sum -c hhtools-0.1.5-linux-amd64.deb.sha256`.
-Install it with `sudo apt install ./hhtools-0.1.5-linux-amd64.deb`, then launch
+Verify the downloaded package with `sha256sum -c hhtools-0.1.6-linux-amd64.deb.sha256`.
+Install it with `sudo apt install ./hhtools-0.1.6-linux-amd64.deb`, then launch
 `hhtools-desktop`. The first-run setup may download several gigabytes, shows live output, verifies
 the bundled checksums, and restarts the app only after `hhtools doctor` succeeds. Network access is
 still required for uv to acquire Python and the third-party packages named by the bundled lock. The

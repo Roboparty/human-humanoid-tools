@@ -36,7 +36,7 @@ Apple Silicon macOS 桌面版使用 CPU 重定向。桌面打包要求见下方�
 
 ## 安装与启动
 
-[Windows 0.1.5 EXE（x64）](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-setup.exe) · [Linux 0.1.5 DEB（amd64）](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-linux-amd64.deb) · [macOS 0.1.5 DMG（Apple Silicon）](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-mac-arm64.dmg) · [安装说明](#桌面-gui)
+[Windows 0.1.6 EXE（x64）](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.6/hhtools-0.1.6-x64-setup.exe) · [Linux 0.1.6 DEB（amd64）](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.6/hhtools-0.1.6-linux-amd64.deb) · [macOS 0.1.6 DMG（Apple Silicon）](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.6/hhtools-0.1.6-mac-arm64.dmg) · [安装说明](#桌面-gui)
 
 hhtools 有三种交互式运行方式，另提供一个 Agent 自动化接口。它们共享同一套动作、机器人与
 重映射核心，但安装和启动入口彼此独立：
@@ -109,44 +109,41 @@ HHTools 提供供脚本使用的严格 JSON CLI，以及供兼容 Agent 使用�
 
 ### 桌面 GUI
 
-按平台下载桌面预览版。[0.1.5 Release](https://github.com/Eleanor1018/human-humanoid-tools/releases/tag/0.1.5) 已包含 Windows x64、Linux amd64 和 macOS Apple Silicon 安装包。Linux 包在 Ubuntu 22.04 构建，并在 Ubuntu 22.04、24.04、26.04 上验证。
+按平台下载桌面预览版。[0.1.6 Release](https://github.com/Eleanor1018/human-humanoid-tools/releases/tag/0.1.6) 已包含 Windows x64、Linux amd64 和 macOS Apple Silicon 安装包。本版本改为以 IK 实际跟踪的目标计算结果诊断误差，并按机器人身高划分质量等级，详见 Release 说明。
 
 | 平台 | 下载 | 架构 | 版本 |
 |------|------|------|------|
-| Windows | [EXE 安装程序](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-setup.exe) · [SHA-256](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-x64-setup.exe.sha256) | x64 | **0.1.5** |
-| Linux | [Debian 安装包](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-linux-amd64.deb) · [SHA-256](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-linux-amd64.deb.sha256) | amd64 | **0.1.5** |
-| macOS 12+ | [DMG 安装包](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.5/hhtools-0.1.5-mac-arm64.dmg) | Apple Silicon（arm64） | **0.1.5** |
+| Windows | [EXE 安装程序](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.6/hhtools-0.1.6-x64-setup.exe) · [SHA-256](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.6/hhtools-0.1.6-x64-setup.exe.sha256) | x64 | **0.1.6** |
+| Linux | [Debian 安装包](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.6/hhtools-0.1.6-linux-amd64.deb) · [SHA-256](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.6/hhtools-0.1.6-linux-amd64.deb.sha256) | amd64 | **0.1.6** |
+| macOS 12+ | [DMG 安装包](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.6/hhtools-0.1.6-mac-arm64.dmg) · [SHA-256](https://github.com/Eleanor1018/human-humanoid-tools/releases/download/0.1.6/hhtools-0.1.6-mac-arm64.dmg.sha256) | Apple Silicon（arm64） | **0.1.6** |
 
 Debian 包包含 Electron、精选内置动作与机器人。首次启动页使用同一 deb 内置的 HHTools wheel、
 锁定依赖清单、uv 配置和 uv 二进制安装独立运行环境；推荐的当前用户安装不需要管理员密码，
 所有用户安装则使用操作系统认证窗口：
 
 ```bash
-sha256sum -c hhtools-0.1.5-linux-amd64.deb.sha256
-sudo apt install ./hhtools-0.1.5-linux-amd64.deb
+sha256sum -c hhtools-0.1.6-linux-amd64.deb.sha256
+sudo apt install ./hhtools-0.1.6-linux-amd64.deb
 hhtools-desktop
 ```
 
-Ubuntu 22.04 和 26.04 已通过容器内安装、启动及动作播放检查；Ubuntu 24.04 已通过实机桌面、
-CUDA 重定向及 NVIDIA 硬件渲染检查。
-SHA-256：`7d08c6979de02d26a46ab4eb2bc810a0c2651daad3558a1b1a1fbf4c965548d9`。
+0.1.6 安装包已在 Linux 上完成安装与启动检查。
+SHA-256：`6c0a0864a197c34cc1ea05582dfeb1d14a284d8d620e4e6e6742337a669ecd8a`。
 
 **Windows 安装步骤：** 下载并运行上方 EXE，默认的当前用户安装无需管理员权限。
 安装包内置 Python、应用依赖及 Microsoft C++ 运行库，核心功能不需要源码 checkout、
 系统 Python 或首次启动时下载依赖。本预览版使用**自签名证书**，并非公众信任的商业代码签名；
 Windows 可能显示 SmartScreen 或未知发布者提示。
 
-安装包大小为 526,100,560 字节（约 502 MiB），SHA-256 为
-`920e8b848a7c366c508b4959f5b38b8eff7a7a86945ce307e2cad3fce2fcce73`。
+安装包大小为 453,923,264 字节（约 433 MiB），SHA-256 为
+`50b57519bfe0cce1df110385198fb9f7a795cada808794d220e65a739212f8c9`。
 可在 PowerShell 中核对下载文件：
 
 ```powershell
-Get-FileHash .\hhtools-0.1.5-x64-setup.exe -Algorithm SHA256
+Get-FileHash .\hhtools-0.1.6-x64-setup.exe -Algorithm SHA256
 ```
 
-Windows 10 x64 实测通过安装/卸载、全部七款机器人模型加载、动作导入、H2R/R2R 标定、
-四帧 LAFAN→G1 Newton 重定向及 CSV 导出；六项桌面界面检查也已通过。
-包内 Torch 为 CPU 版本。可选的 GVHMR 视频转动作使用 Docker，需另备兼容的 NVIDIA GPU、
+0.1.6 安装包已在 Windows x64 上完成安装与启动检查。包内 Torch 为 CPU 版本。可选的 GVHMR 视频转动作使用 Docker，需另备兼容的 NVIDIA GPU、
 镜像/权重及获授权的 SMPL-X 模型；这些资源不随包分发，本安装包未验证 GPU 推理。
 
 **macOS 安装步骤：**
@@ -157,7 +154,7 @@ Windows 10 x64 实测通过安装/卸载、全部七款机器人模型加载、�
 3. 按首次启动页提示完成安装，下载独立 Python 3.12 环境期间请保持联网。无需预装 Python、
    源码仓库或 Homebrew；运行环境仅安装到当前用户目录，不需要管理员密码。
 
-Windows、Linux 和 macOS 的 **0.1.5** 安装包均包含 30 个内置动作和 7 款机器人。Linux 包在 Ubuntu 22.04 构建，并已在 Ubuntu 22.04、24.04、26.04 上验证。
+Windows、Linux 和 macOS 的 **0.1.6** 安装包均包含 30 个内置动作和 7 款机器人。
 第七款内置机器人 **ROBOTO 01**（`rp1`）排列在 Unitree G1 前面的首位；
 **ROBOTO_ORIGIN**（`roboto_origin`）仍是独立模型。
 macOS 的 Warp 重定向使用 CPU；不支持 Intel Mac 或本机 GVHMR 的 NVIDIA GPU 流程。
