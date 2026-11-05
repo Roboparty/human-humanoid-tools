@@ -18,12 +18,31 @@ ruff check hhtools
 ruff format --check hhtools
 ```
 
+## Frontend development
+
+The WebUI and Electron GUI use one React + TypeScript renderer from `hhtools/web/frontend`;
+Electron loads the same page through its local FastAPI sidecar, so there is no second GUI renderer.
+Tailwind CSS is wired into the build, and shadcn/ui primitives are copied into the project only
+when a real view needs them.
+
+```bash
+cd hhtools/web/frontend
+npm install
+npm run typecheck
+npm test
+npm run build
+```
+
+The production build is written to `hhtools/web/static`, which is served unchanged by both FastAPI
+and Electron. Desktop packaging is covered in [`desktop/README.md`](desktop/README.md).
+
 ## Code style
 
 - Python 3.12+, `ruff` for linting and formatting (`line-length = 100`).
 - Type-annotated public APIs.
 - Every new module includes a module-level docstring.
-- User-facing documentation lives in `README.md` (亮点与用法) and `framework.md` (框架与原理).
+- User-facing documentation lives in `README.md` (亮点与快速开始), the guides under `docs/`
+  (安装、CLI、机器人调参、数据集等), and `framework.md` (框架与原理).
 
 ## Commit messages
 
